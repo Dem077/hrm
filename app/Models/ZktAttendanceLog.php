@@ -31,6 +31,11 @@ class ZktAttendanceLog extends Model
         return $this->belongsTo(ZktDevice::class, 'zkt_device_id');
     }
 
+    public function employee(): BelongsTo
+    {
+        return $this->belongsTo(Employee::class, 'device_user_id', 'staff_id');
+    }
+
     public function punchStateLabel(): string
     {
         return match ($this->punch_state) {
@@ -42,5 +47,27 @@ class ZktAttendanceLog extends Model
             5 => 'Overtime Out',
             default => 'Unknown',
         };
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function toPresentationArray(): array
+    {
+        $this->loadMissing('employee:id,staff_id,name');
+
+        return [
+            'id' => $this->id,
+            'device_user_id' => $this->device_user_id,
+            'emp_no' => $this->employee?->staff_id ?? $this->device_user_id,
+            'employee' => $this->employee ? [
+                'id' => $this->employee->id,
+                'name' => $this->employee->name,
+                'staff_id' => $this->employee->staff_id,
+            ] : null,
+            'device_uid' => $this->device_uid,
+            'punch_state_label' => $this->punchStateLabel(),
+            'punched_at' => $this->punched_at?->toIso8601String(),
+        ];
     }
 }

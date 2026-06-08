@@ -14,28 +14,29 @@ class ZktAttendanceLogController extends Controller
     {
         $logs = ZktAttendanceLog::query()
             ->with('device:id,name')
+            ->with('employee:id,staff_id,name')
             ->when($request->filled('device_id'), fn ($query) => $query->where('zkt_device_id', $request->integer('device_id')))
             ->when($request->filled('search'), function ($query) use ($request) {
                 $search = $request->string('search')->toString();
 
                 $query->where(function ($inner) use ($search) {
                     $inner->where('device_user_id', 'like', "%{$search}%")
-                        ->orWhereHas('device', fn ($deviceQuery) => $deviceQuery->where('name', 'like', "%{$search}%"));
+                        ->orWhereHas('device', fn ($deviceQuery) => $deviceQuery->where('name', 'like', "%{$search}%"))
+                        ->orWhereHas('employee', function ($employeeQuery) use ($search) {
+                            $employeeQuery->where('staff_id', 'like', "%{$search}%")
+                                ->orWhere('name', 'like', "%{$search}%");
+                        });
                 });
             })
             ->latest('punched_at')
             ->paginate(25)
             ->withQueryString()
             ->through(fn (ZktAttendanceLog $log) => [
-                'id' => $log->id,
+                ...$log->toPresentationArray(),
                 'device' => [
                     'id' => $log->device->id,
                     'name' => $log->device->name,
                 ],
-                'device_user_id' => $log->device_user_id,
-                'device_uid' => $log->device_uid,
-                'punch_state_label' => $log->punchStateLabel(),
-                'punched_at' => $log->punched_at?->toIso8601String(),
             ]);
 
         return Inertia::render('ZktAttendanceLogs/Index', [

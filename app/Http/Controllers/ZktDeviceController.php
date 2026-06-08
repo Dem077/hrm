@@ -14,8 +14,10 @@ use App\Services\Zkt\ZktDeviceSyncService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Inertia\Inertia;
 use Inertia\Response;
+use Throwable;
 
 class ZktDeviceController extends Controller
 {
@@ -50,7 +52,7 @@ class ZktDeviceController extends Controller
     {
         $zktDevice->load([
             'syncLogs' => fn ($query) => $query->latest('started_at')->limit(20),
-            'attendanceLogs' => fn ($query) => $query->latest('punched_at')->limit(50),
+            'attendanceLogs' => fn ($query) => $query->with('employee:id,staff_id,name')->latest('punched_at')->limit(50),
         ]);
 
         return Inertia::render('ZktDevices/Show', [
@@ -136,6 +138,55 @@ class ZktDeviceController extends Controller
         );
     }
 
+    public function readTime(ZktDevice $zktDevice, ZktDeviceClient $client): RedirectResponse
+    {
+        try {
+            $result = $client->readDeviceTime($zktDevice);
+
+            $deviceTime = $result['device_time']
+                ? Carbon::parse($result['device_time'])->format('d/m/Y H:i')
+                : '—';
+            $serverTime = Carbon::parse($result['server_time'])->format('d/m/Y H:i');
+
+            $message = "Device: {$deviceTime} · Server: {$serverTime}";
+
+            return back()->with('success', $message);
+        } catch (Throwable $exception) {
+            if ($zktDevice->exists) {
+                $zktDevice->update([
+                    'connection_status' => ZktConnectionStatus::Offline,
+                    'last_sync_error' => $exception->getMessage(),
+                ]);
+            }
+
+            return back()->with('error', $exception->getMessage());
+        }
+    }
+
+    public function syncTime(ZktDevice $zktDevice, ZktDeviceClient $client): RedirectResponse
+    {
+        try {
+            $result = $client->syncDeviceTime($zktDevice);
+
+            $displayTime = $result['device_time_after']
+                ? Carbon::parse($result['device_time_after'])->format('d/m/Y H:i')
+                : now()->format('d/m/Y H:i');
+
+            $message = 'Device clock updated to '.$displayTime.'.';
+
+            return back()->with('success', $message);
+        } catch (Throwable $exception) {
+            if ($zktDevice->exists) {
+                $zktDevice->update([
+                    'connection_status' => ZktConnectionStatus::Offline,
+                    'last_sync_error' => $exception->getMessage(),
+                ]);
+            }
+
+            return back()->with('error', $exception->getMessage());
+        }
+    }
+
     public function syncAll(Request $request): RedirectResponse
     {
         $devices = ZktDevice::query()->where('is_active', true)->get();
@@ -193,13 +244,9 @@ class ZktDeviceController extends Controller
                 'started_at' => $log->started_at?->toIso8601String(),
                 'completed_at' => $log->completed_at?->toIso8601String(),
             ]);
-            $data['attendance_logs'] = $device->attendanceLogs->map(fn ($log) => [
-                'id' => $log->id,
-                'device_user_id' => $log->device_user_id,
-                'device_uid' => $log->device_uid,
-                'punch_state_label' => $log->punchStateLabel(),
-                'punched_at' => $log->punched_at?->toIso8601String(),
-            ]);
+            $data['attendance_logs'] = $device->attendanceLogs->map(
+                fn ($log) => $log->toPresentationArray(),
+            );
         }
 
         return $data;

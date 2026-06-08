@@ -21,6 +21,14 @@ function syncDevice(id: number) {
     router.post(`/zkt-devices/${id}/sync`, {}, { preserveScroll: true });
 }
 
+function readDeviceTime(id: number) {
+    router.post(`/zkt-devices/${id}/read-time`, {}, { preserveScroll: true });
+}
+
+function syncDeviceTime(id: number) {
+    router.post(`/zkt-devices/${id}/sync-time`, {}, { preserveScroll: true });
+}
+
 function testDevice(id: number) {
     router.post(`/zkt-devices/${id}/test`, {}, { preserveScroll: true });
 }
@@ -123,6 +131,27 @@ function iconTone(color?: string): string {
                     >
                         <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                        </svg>
+                    </button>
+                    <button
+                        type="button"
+                        title="Read device clock"
+                        class="rounded-lg p-1.5 text-slate-500 transition hover:bg-surface-muted hover:text-slate-900 dark:hover:text-white"
+                        @click="readDeviceTime(device.id!)"
+                    >
+                        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                        </svg>
+                    </button>
+                    <button
+                        type="button"
+                        title="Sync device clock"
+                        class="rounded-lg p-1.5 text-slate-500 transition hover:bg-surface-muted hover:text-slate-900 dark:hover:text-white"
+                        @click="syncDeviceTime(device.id!)"
+                    >
+                        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                         </svg>
                     </button>
                     <button

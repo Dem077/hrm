@@ -101,6 +101,90 @@ class ZktDeviceClient
     }
 
     /**
+     * @return array{device_time: string|null, server_time: string}
+     */
+    public function readDeviceTime(ZktDevice $device): array
+    {
+        $zk = $this->makeConnection($device);
+
+        if (! $zk->connect()) {
+            throw new ZktDeviceException('Unable to connect to the device.');
+        }
+
+        try {
+            $deviceTime = $zk->getTime();
+
+            if ($deviceTime === false) {
+                throw new ZktDeviceException('Unable to read the device clock.');
+            }
+
+            $device->update([
+                'connection_status' => ZktConnectionStatus::Online,
+                'last_connected_at' => now(),
+                'last_sync_error' => null,
+            ]);
+
+            return [
+                'device_time' => is_string($deviceTime) ? $deviceTime : null,
+                'server_time' => now()->format('Y-m-d H:i:s'),
+            ];
+        } finally {
+            $zk->disconnect();
+        }
+    }
+
+    /**
+     * @return array{
+     *     device_time_before: string|null,
+     *     device_time_after: string|null,
+     *     server_time: string
+     * }
+     */
+    public function syncDeviceTime(ZktDevice $device): array
+    {
+        $zk = $this->makeConnection($device);
+
+        if (! $zk->connect()) {
+            throw new ZktDeviceException('Unable to connect to the device.');
+        }
+
+        try {
+            $deviceTimeBefore = $zk->getTime();
+
+            if ($deviceTimeBefore === false) {
+                throw new ZktDeviceException('Unable to read the device clock before syncing.');
+            }
+
+            $serverTime = now()->format('Y-m-d H:i:s');
+            $result = $zk->setTime($serverTime);
+
+            if ($result === false) {
+                throw new ZktDeviceException('Device rejected the time sync command.');
+            }
+
+            $deviceTimeAfter = $zk->getTime();
+
+            if ($deviceTimeAfter === false) {
+                throw new ZktDeviceException('Time was sent but could not be verified on the device.');
+            }
+
+            $device->update([
+                'connection_status' => ZktConnectionStatus::Online,
+                'last_connected_at' => now(),
+                'last_sync_error' => null,
+            ]);
+
+            return [
+                'device_time_before' => is_string($deviceTimeBefore) ? $deviceTimeBefore : null,
+                'device_time_after' => is_string($deviceTimeAfter) ? $deviceTimeAfter : null,
+                'server_time' => $serverTime,
+            ];
+        } finally {
+            $zk->disconnect();
+        }
+    }
+
+    /**
      * @return array<int, array<string, mixed>>
      */
     public function fetchAttendance(ZktDevice $device): array

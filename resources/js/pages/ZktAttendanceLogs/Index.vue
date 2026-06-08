@@ -51,7 +51,7 @@ function applyFilters() {
                         {{ device.name }}
                     </option>
                 </UiSelect>
-                <UiInput v-model="filters.search" label="Search" placeholder="User ID or device name" />
+                <UiInput v-model="filters.search" label="Search" placeholder="Emp no, name, or device" />
                 <div class="flex items-end">
                     <UiButton type="submit" variant="primary">Apply filters</UiButton>
                 </div>
@@ -65,7 +65,8 @@ function applyFilters() {
                     <thead class="border-b border-slate-100 bg-slate-50/80 text-left text-slate-500 dark:border-slate-800 dark:bg-surface-elevated dark:text-slate-400">
                         <tr>
                             <th class="px-5 py-3.5 font-medium">Device</th>
-                            <th class="px-5 py-3.5 font-medium">User ID</th>
+                            <th class="px-5 py-3.5 font-medium">Emp No</th>
+                            <th class="px-5 py-3.5 font-medium">Employee</th>
                             <th class="px-5 py-3.5 font-medium">State</th>
                             <th class="px-5 py-3.5 font-medium">Punched at</th>
                         </tr>
@@ -77,12 +78,22 @@ function applyFilters() {
                                     {{ log.device.name }}
                                 </Link>
                             </td>
-                            <td class="px-5 py-4 font-medium text-slate-800 dark:text-slate-200">{{ log.device_user_id }}</td>
+                            <td class="px-5 py-4 font-mono text-xs text-slate-700 dark:text-slate-300">{{ log.emp_no }}</td>
+                            <td class="px-5 py-4">
+                                <Link
+                                    v-if="log.employee"
+                                    :href="`/employees/${log.employee.id}`"
+                                    class="font-medium text-brand-700 hover:text-brand-600 hover:underline dark:text-brand-400 dark:hover:text-brand-300"
+                                >
+                                    {{ log.employee.name }}
+                                </Link>
+                                <span v-else class="text-slate-500">Unlinked</span>
+                            </td>
                             <td class="px-5 py-4 text-slate-700 dark:text-slate-300">{{ log.punch_state_label }}</td>
                             <td class="px-5 py-4 text-slate-600 dark:text-slate-400">{{ formatDateTime(log.punched_at) }}</td>
                         </tr>
                         <tr v-if="logs.data.length === 0">
-                            <td colspan="4" class="px-5 py-12 text-center text-slate-500">No punch logs found.</td>
+                            <td colspan="5" class="px-5 py-12 text-center text-slate-500">No punch logs found.</td>
                         </tr>
                     </tbody>
                 </table>

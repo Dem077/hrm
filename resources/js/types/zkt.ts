@@ -44,6 +44,12 @@ export type SyncLog = {
 export type AttendanceLogSummary = {
     id: number;
     device_user_id: string;
+    emp_no: string;
+    employee: {
+        id: number;
+        name: string;
+        staff_id: string;
+    } | null;
     device_uid: number;
     punch_state_label: string;
     punched_at: string | null;
@@ -72,6 +78,12 @@ export type AttendanceLog = {
         name: string;
     };
     device_user_id: string;
+    emp_no: string;
+    employee: {
+        id: number;
+        name: string;
+        staff_id: string;
+    } | null;
     device_uid: number;
     punch_state_label: string;
     punched_at: string | null;
