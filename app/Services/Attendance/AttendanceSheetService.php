@@ -13,9 +13,7 @@ use Illuminate\Support\Collection;
 
 class AttendanceSheetService
 {
-    public const MAX_DAYS_WITHOUT_ABSENTS = 31;
-
-    public const MAX_DAYS_WITH_ABSENTS = 7;
+    public const MAX_DAYS = 31;
 
     /**
      * @return array{rows: array<int, array<string, mixed>>, total: int}
@@ -25,7 +23,6 @@ class AttendanceSheetService
         CarbonInterface $to,
         ?int $departmentId = null,
         ?int $employeeId = null,
-        bool $includeAbsent = false,
     ): array {
         $timezone = config('app.timezone', 'UTC');
 
@@ -36,7 +33,7 @@ class AttendanceSheetService
             [$from, $to] = [$to, $from];
         }
 
-        $maxDays = $includeAbsent ? self::MAX_DAYS_WITH_ABSENTS : self::MAX_DAYS_WITHOUT_ABSENTS;
+        $maxDays = self::MAX_DAYS;
 
         if ($from->diffInDays($to) > $maxDays) {
             $to = $from->copy()->addDays($maxDays);
@@ -71,11 +68,6 @@ class AttendanceSheetService
             foreach ($employees as $employee) {
                 $dayPunches = collect($punchIndex[$employee->staff_id][$dateKey] ?? []);
                 $weekendHoliday = $this->resolveWeekendHoliday($employee, $date);
-                $isHolidayDay = $holiday !== null || $weekendHoliday !== null;
-
-                if (! $includeAbsent && ! $isHolidayDay && $dayPunches->isEmpty()) {
-                    continue;
-                }
 
                 $rows[] = $this->buildRow(
                     $employee,

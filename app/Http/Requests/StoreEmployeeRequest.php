@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use App\Enums\Gender;
+use App\Support\PermissionRegistry;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -18,7 +19,10 @@ class StoreEmployeeRequest extends FormRequest
      */
     public function rules(): array
     {
-        return $this->employeeRules();
+        return [
+            ...$this->employeeRules(),
+            ...$this->roleRules(),
+        ];
     }
 
     protected function prepareForValidation(): void
@@ -49,6 +53,32 @@ class StoreEmployeeRequest extends FormRequest
             'password' => ['nullable', 'string', 'min:8'],
             'is_active' => ['boolean'],
             'works_saturday' => ['boolean'],
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    protected function roleRules(): array
+    {
+        if (! $this->user()?->can('users.assign-roles')) {
+            return [];
+        }
+
+        return [
+            'role_names' => ['nullable', 'array'],
+            'role_names.*' => [
+                'string',
+                Rule::exists('roles', 'name'),
+                function (string $attribute, mixed $value, \Closure $fail): void {
+                    if (
+                        $value === PermissionRegistry::superAdminRole()
+                        && ! $this->user()?->hasRole(PermissionRegistry::superAdminRole())
+                    ) {
+                        $fail('You cannot assign the Super Admin role.');
+                    }
+                },
+            ],
         ];
     }
 }

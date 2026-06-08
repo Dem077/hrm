@@ -4,6 +4,7 @@ import { computed, watch } from 'vue';
 
 import FlashMessage from '@/components/FlashMessage.vue';
 import ThemeToggle from '@/components/ThemeToggle.vue';
+import { usePermissions } from '@/composables/usePermissions';
 import { useSidebar } from '@/composables/useSidebar';
 import type { Auth } from '@/types/auth';
 
@@ -13,60 +14,138 @@ defineProps<{
 }>();
 
 const page = usePage<{ auth: Auth }>();
-const { collapsed, mobileOpen, toggleCollapsed, openMobile, closeMobile } = useSidebar();
+const {
+    collapsed,
+    mobileOpen,
+    toggleCollapsed,
+    toggleNavGroupExpanded,
+    showNavGroupItems,
+    setNavGroupExpanded,
+    openMobile,
+    closeMobile,
+} = useSidebar();
+const { can, primaryRole } = usePermissions();
 
 const user = computed(() => page.props.auth.user);
 
-const navItems = [
+type NavItem = {
+    label: string;
+    href: string;
+    permission: string;
+    icon: string;
+    match: (url: string) => boolean;
+};
+
+type NavGroup = {
+    key: string;
+    label: string;
+    items: NavItem[];
+};
+
+const primaryNavItems: NavItem[] = [
     {
         label: 'Dashboard',
         href: '/',
+        permission: 'dashboard.view',
         icon: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6',
         match: (url: string) => url === '/' || url.startsWith('/dashboard'),
     },
     {
+        label: 'Attendance Sheet',
+        href: '/attendance-sheet',
+        permission: 'attendance-sheet.view',
+        icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01',
+        match: (url: string) => url.startsWith('/attendance-sheet'),
+    },
+];
+
+const humanResourcesNavItems: NavItem[] = [
+    {
         label: 'Employees',
         href: '/employees',
+        permission: 'employees.view',
         icon: 'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z',
         match: (url: string) => url.startsWith('/employees'),
     },
     {
         label: 'Departments',
         href: '/departments',
+        permission: 'departments.view',
         icon: 'M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4',
         match: (url: string) => url.startsWith('/departments'),
+    },
+];
+
+const configurationNavItems: NavItem[] = [
+    {
+        label: 'Global Settings',
+        href: '/attendance-settings',
+        permission: 'attendance-settings.view',
+        icon: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z',
+        match: (url: string) => url.startsWith('/attendance-settings'),
+    },
+    {
+        label: 'Roles & Access',
+        href: '/roles',
+        permission: 'roles.view',
+        icon: 'M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z',
+        match: (url: string) => url.startsWith('/roles'),
     },
     {
         label: 'ZKT Devices',
         href: '/zkt-devices',
+        permission: 'zkt-devices.view',
         icon: 'M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2z',
         match: (url: string) => url.startsWith('/zkt-devices'),
     },
     {
         label: 'Punch Logs',
         href: '/zkt-attendance-logs',
+        permission: 'zkt-attendance-logs.view',
         icon: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z',
         match: (url: string) => url.startsWith('/zkt-attendance-logs'),
     },
-    {
-        label: 'Attendance Sheet',
-        href: '/attendance-sheet',
-        icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01',
-        match: (url: string) => url.startsWith('/attendance-sheet'),
-    },
-    {
-        label: 'Global Settings',
-        href: '/attendance-settings',
-        icon: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z',
-        match: (url: string) => url.startsWith('/attendance-settings'),
-    },
 ];
+
+const visiblePrimaryNavItems = computed(() => primaryNavItems.filter((item) => can(item.permission)));
+
+const navGroups = computed<NavGroup[]>(() =>
+    [
+        {
+            key: 'hr',
+            label: 'Human Resources',
+            items: humanResourcesNavItems.filter((item) => can(item.permission)),
+        },
+        {
+            key: 'config',
+            label: 'Configurations',
+            items: configurationNavItems.filter((item) => can(item.permission)),
+        },
+    ].filter((group) => group.items.length > 0),
+);
+
+function isActive(match: (url: string) => boolean): boolean {
+    return match(page.url);
+}
+
+function isGroupActive(items: NavItem[]): boolean {
+    return items.some((item) => isActive(item.match));
+}
 
 const sidebarWidthClass = computed(() => (collapsed.value ? 'lg:w-[4.5rem]' : 'lg:w-[280px]'));
 const mainOffsetClass = computed(() => (collapsed.value ? 'lg:pl-[4.5rem]' : 'lg:pl-[280px]'));
 
-function isActive(match: (url: string) => boolean): boolean {
-    return match(page.url);
+function navLinkClass(item: NavItem, nested = false): string[] {
+    return [
+        collapsed.value
+            ? 'gap-3 px-3 py-2.5 lg:justify-center lg:gap-0 lg:px-0 lg:py-3'
+            : nested
+              ? 'gap-2.5 py-2 pl-3 pr-3'
+              : 'gap-3 px-3 py-2.5',
+        isActive(item.match)
+            ? 'bg-brand-600/15 text-brand-600 ring-1 ring-brand-500/20 dark:text-brand-400'
+            : 'text-sidebar-muted hover:bg-sidebar-active hover:text-slate-900 dark:hover:text-slate-100',
+    ];
 }
 
 function userInitials(name?: string): string {
@@ -85,6 +164,18 @@ function userInitials(name?: string): string {
 watch(mobileOpen, (open) => {
     document.body.style.overflow = open ? 'hidden' : '';
 });
+
+watch(
+    () => page.url,
+    () => {
+        navGroups.value.forEach((group) => {
+            if (isGroupActive(group.items)) {
+                setNavGroupExpanded(group.key, true);
+            }
+        });
+    },
+    { immediate: true },
+);
 </script>
 
 <template>
@@ -148,17 +239,12 @@ watch(mobileOpen, (open) => {
                 :class="collapsed ? 'px-3 lg:px-2' : 'px-3'"
             >
                 <Link
-                    v-for="item in navItems"
+                    v-for="item in visiblePrimaryNavItems"
                     :key="item.href"
                     :href="item.href"
                     :title="collapsed ? item.label : undefined"
                     class="flex items-center rounded-xl text-sm font-medium transition"
-                    :class="[
-                        collapsed ? 'gap-3 px-3 py-2.5 lg:justify-center lg:gap-0 lg:px-0 lg:py-3' : 'gap-3 px-3 py-2.5',
-                        isActive(item.match)
-                            ? 'bg-brand-600/15 text-brand-600 ring-1 ring-brand-500/20 dark:text-brand-400'
-                            : 'text-sidebar-muted hover:bg-sidebar-active hover:text-slate-900 dark:hover:text-slate-100',
-                    ]"
+                    :class="navLinkClass(item)"
                     @click="closeMobile"
                 >
                     <svg class="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
@@ -166,6 +252,55 @@ watch(mobileOpen, (open) => {
                     </svg>
                     <span :class="collapsed ? 'truncate lg:hidden' : 'truncate'">{{ item.label }}</span>
                 </Link>
+
+                <div v-for="group in navGroups" :key="group.key" class="pt-3">
+                    <button
+                        type="button"
+                        class="mb-2 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left transition hover:bg-sidebar-active hover:text-slate-900 dark:hover:text-slate-100"
+                        :class="collapsed ? 'lg:hidden' : ''"
+                        @click="toggleNavGroupExpanded(group.key)"
+                    >
+                        <span
+                            class="text-[11px] font-semibold uppercase tracking-[0.12em]"
+                            :class="isGroupActive(group.items) ? 'text-brand-600 dark:text-brand-400' : 'text-sidebar-muted'"
+                        >
+                            {{ group.label }}
+                        </span>
+                        <span class="ml-auto flex h-5 w-5 items-center justify-center text-sidebar-muted">
+                            <svg
+                                class="h-4 w-4 transition-transform duration-200"
+                                :class="showNavGroupItems(group.key) ? 'rotate-180' : ''"
+                                fill="none"
+                                viewBox="0 0 24 24"
+                                stroke="currentColor"
+                                stroke-width="2"
+                            >
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+                            </svg>
+                        </span>
+                    </button>
+
+                    <div
+                        v-show="showNavGroupItems(group.key)"
+                        class="space-y-1"
+                        :class="collapsed ? '' : 'rounded-xl border border-sidebar-border/70 bg-sidebar-active/30 p-1.5 dark:bg-surface-elevated/20'"
+                    >
+                        <Link
+                            v-for="item in group.items"
+                            :key="item.href"
+                            :href="item.href"
+                            :title="collapsed ? item.label : undefined"
+                            class="flex items-center rounded-lg text-sm font-medium transition"
+                            :class="navLinkClass(item, true)"
+                            @click="closeMobile"
+                        >
+                            <svg class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
+                                <path stroke-linecap="round" stroke-linejoin="round" :d="item.icon" />
+                            </svg>
+                            <span :class="collapsed ? 'truncate lg:hidden' : 'truncate'">{{ item.label }}</span>
+                        </Link>
+                    </div>
+                </div>
             </nav>
 
             <!-- Footer -->
@@ -234,7 +369,7 @@ watch(mobileOpen, (open) => {
                         <div class="hidden items-center gap-3 lg:flex">
                             <div class="text-right">
                                 <p class="text-sm font-medium text-slate-900 dark:text-slate-100">{{ user?.name }}</p>
-                                <p class="text-xs text-slate-500">Administrator</p>
+                                <p class="text-xs text-slate-500">{{ primaryRole }}</p>
                             </div>
                             <div class="flex h-9 w-9 items-center justify-center rounded-full bg-brand-600/15 text-xs font-semibold text-brand-700 dark:bg-brand-600/20 dark:text-brand-400">
                                 {{ userInitials(user?.name) }}

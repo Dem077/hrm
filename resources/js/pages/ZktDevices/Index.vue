@@ -5,6 +5,7 @@ import EmptyState from '@/components/ui/EmptyState.vue';
 import PageHeader from '@/components/ui/PageHeader.vue';
 import UiBadge from '@/components/ui/UiBadge.vue';
 import UiButton from '@/components/ui/UiButton.vue';
+import { usePermissions } from '@/composables/usePermissions';
 import AppLayout from '@/layouts/AppLayout.vue';
 import { formatDateTime } from '@/lib/format';
 import type { ZktDevice } from '@/types/zkt';
@@ -12,6 +13,8 @@ import type { ZktDevice } from '@/types/zkt';
 defineProps<{
     devices: ZktDevice[];
 }>();
+
+const { can } = usePermissions();
 
 function syncAll() {
     router.post('/zkt-devices/sync-all');
@@ -54,8 +57,8 @@ function iconTone(color?: string): string {
             description="Manage biometric punch machines, test connectivity, and sync attendance."
         >
             <template #actions>
-                <UiButton variant="secondary" @click="syncAll">Sync all active</UiButton>
-                <UiButton href="/zkt-devices/create" variant="primary">Add device</UiButton>
+                <UiButton v-if="can('zkt-devices.sync-all')" variant="secondary" @click="syncAll">Sync all active</UiButton>
+                <UiButton v-if="can('zkt-devices.create')" href="/zkt-devices/create" variant="primary">Add device</UiButton>
             </template>
         </PageHeader>
 
@@ -69,7 +72,7 @@ function iconTone(color?: string): string {
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 4v16m8-8H4" />
                 </svg>
             </template>
-            <template #action>
+            <template v-if="can('zkt-devices.create')" #action>
                 <UiButton href="/zkt-devices/create" variant="primary">Add device</UiButton>
             </template>
         </EmptyState>
@@ -124,6 +127,7 @@ function iconTone(color?: string): string {
 
                 <div class="mt-3 flex items-center gap-1 border-t border-slate-100 pt-2.5 dark:border-slate-800">
                     <button
+                        v-if="can('zkt-devices.test')"
                         type="button"
                         title="Test connection"
                         class="rounded-lg p-1.5 text-slate-500 transition hover:bg-surface-muted hover:text-slate-900 dark:hover:text-white"
@@ -134,6 +138,7 @@ function iconTone(color?: string): string {
                         </svg>
                     </button>
                     <button
+                        v-if="can('zkt-devices.read-time')"
                         type="button"
                         title="Read device clock"
                         class="rounded-lg p-1.5 text-slate-500 transition hover:bg-surface-muted hover:text-slate-900 dark:hover:text-white"
@@ -145,6 +150,7 @@ function iconTone(color?: string): string {
                         </svg>
                     </button>
                     <button
+                        v-if="can('zkt-devices.sync-time')"
                         type="button"
                         title="Sync device clock"
                         class="rounded-lg p-1.5 text-slate-500 transition hover:bg-surface-muted hover:text-slate-900 dark:hover:text-white"
@@ -155,6 +161,7 @@ function iconTone(color?: string): string {
                         </svg>
                     </button>
                     <button
+                        v-if="can('zkt-devices.sync')"
                         type="button"
                         title="Sync attendance"
                         class="rounded-lg p-1.5 text-slate-500 transition hover:bg-surface-muted hover:text-slate-900 dark:hover:text-white"
@@ -165,6 +172,7 @@ function iconTone(color?: string): string {
                         </svg>
                     </button>
                     <Link
+                        v-if="can('zkt-devices.update')"
                         :href="`/zkt-devices/${device.id}/edit`"
                         title="Edit device"
                         class="rounded-lg p-1.5 text-slate-500 transition hover:bg-surface-muted hover:text-slate-900 dark:hover:text-white"

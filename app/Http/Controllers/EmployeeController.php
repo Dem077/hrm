@@ -9,10 +9,12 @@ use App\Models\Department;
 use App\Models\Employee;
 use App\Models\User;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
+use Spatie\Permission\Models\Role;
 
 class EmployeeController extends Controller
 {
@@ -37,12 +39,12 @@ class EmployeeController extends Controller
 
     public function store(StoreEmployeeRequest $request): RedirectResponse
     {
-        $data = $request->safe()->except('password');
+        $data = $request->safe()->except('password', 'role_names');
         $password = $request->filled('password')
             ? $request->string('password')->value()
             : Str::password(12);
 
-        DB::transaction(function () use ($data, $password): void {
+        DB::transaction(function () use ($request, $data, $password): void {
             $user = User::query()->create([
                 'name' => $data['name'],
                 'email' => $data['email'],
@@ -53,6 +55,8 @@ class EmployeeController extends Controller
                 ...$data,
                 'user_id' => $user->id,
             ]);
+
+            $this->syncUserRoles($request, $user);
         });
 
         $message = $request->filled('password')
@@ -83,14 +87,14 @@ class EmployeeController extends Controller
 
     public function update(UpdateEmployeeRequest $request, Employee $employee): RedirectResponse
     {
-        $data = $request->safe()->except('password');
+        $data = $request->safe()->except('password', 'role_names');
         $password = $request->filled('password')
             ? $request->string('password')->value()
             : null;
 
         $message = null;
 
-        DB::transaction(function () use ($employee, $data, $password, &$message): void {
+        DB::transaction(function () use ($request, $employee, $data, $password, &$message): void {
             $employee->update($data);
 
             if ($employee->user) {
@@ -99,6 +103,8 @@ class EmployeeController extends Controller
                     'email' => $data['email'],
                     ...($password ? ['password' => $password] : []),
                 ]);
+
+                $this->syncUserRoles($request, $employee->user);
 
                 return;
             }
@@ -112,6 +118,7 @@ class EmployeeController extends Controller
             ]);
 
             $employee->update(['user_id' => $user->id]);
+            $this->syncUserRoles($request, $user);
 
             if (! $password) {
                 $message = "Employee updated. Login account created. Temporary password: {$generatedPassword}";
@@ -166,6 +173,7 @@ class EmployeeController extends Controller
             'manager_id' => null,
             'is_active' => true,
             'works_saturday' => false,
+            'role_names' => [],
         ];
     }
 
@@ -193,7 +201,43 @@ class EmployeeController extends Controller
                     'label' => "{$manager->name} ({$manager->staff_id})",
                 ]),
             'genders' => Gender::options(),
+            'roles' => $this->assignableRoles($employee),
+            'canAssignRoles' => $this->canAssignRoles(),
         ];
+    }
+
+    protected function canAssignRoles(): bool
+    {
+        return (bool) request()->user()?->can('users.assign-roles');
+    }
+
+    /**
+     * @return list<array{id: int, name: string}>
+     */
+    protected function assignableRoles(?Employee $employee = null): array
+    {
+        if (! $this->canAssignRoles()) {
+            return [];
+        }
+
+        return Role::query()
+            ->orderBy('name')
+            ->get(['id', 'name'])
+            ->map(fn (Role $role) => [
+                'id' => $role->id,
+                'name' => $role->name,
+            ])
+            ->values()
+            ->all();
+    }
+
+    protected function syncUserRoles(Request $request, User $user): void
+    {
+        if (! $request->user()?->can('users.assign-roles')) {
+            return;
+        }
+
+        $user->syncRoles($request->input('role_names', []));
     }
 
     /**
@@ -202,6 +246,7 @@ class EmployeeController extends Controller
     protected function formatEmployee(Employee $employee, bool $includeRelations = false): array
     {
         $employee->loadMissing(['department:id,name', 'manager:id,name,staff_id', 'user:id,name,email']);
+        $employee->user?->loadMissing('roles:id,name');
 
         $data = [
             'id' => $employee->id,
@@ -233,6 +278,7 @@ class EmployeeController extends Controller
             ] : null,
             'is_active' => $employee->is_active,
             'works_saturday' => $employee->works_saturday,
+            'role_names' => $employee->user?->getRoleNames()->values()->all() ?? [],
         ];
 
         if ($includeRelations) {

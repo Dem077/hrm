@@ -1,28 +1,35 @@
 <script setup lang="ts">
 import { Head, router, useForm } from '@inertiajs/vue3';
-import { reactive, ref } from 'vue';
+import { reactive, ref, computed } from 'vue';
 
 import PageHeader from '@/components/ui/PageHeader.vue';
 import UiButton from '@/components/ui/UiButton.vue';
 import UiCard from '@/components/ui/UiCard.vue';
 import UiInput from '@/components/ui/UiInput.vue';
+import { usePermissions } from '@/composables/usePermissions';
 import AppLayout from '@/layouts/AppLayout.vue';
 import { formatDate } from '@/lib/format';
-import type { AttendanceDutyPolicy, PublicHoliday } from '@/types/attendance';
+import type { AttendanceDutyPolicy, PayrollPeriodSettings, PublicHoliday } from '@/types/attendance';
 
 const props = defineProps<{
     policies: AttendanceDutyPolicy[];
     holidays: PublicHoliday[];
     year: number;
+    payrollPeriod: PayrollPeriodSettings;
     emptyPolicy: AttendanceDutyPolicy;
     emptyHoliday: Omit<PublicHoliday, 'id'>;
 }>();
+
+const { can } = usePermissions();
 
 const yearFilter = reactive({ year: props.year });
 const editingPolicyId = ref<number | null>(null);
 
 const policyForm = useForm({ ...props.emptyPolicy });
 const holidayForm = useForm({ ...props.emptyHoliday });
+const payrollForm = useForm({
+    payroll_period_start_day: props.payrollPeriod.payroll_period_start_day,
+});
 
 function applyYear() {
     router.get('/attendance-settings', yearFilter, {
@@ -92,6 +99,30 @@ function deleteHoliday(id: number, name: string) {
         router.delete(`/attendance-settings/holidays/${id}`, { preserveScroll: true });
     }
 }
+
+function submitPayrollPeriod() {
+    payrollForm.put('/attendance-settings/payroll-period', {
+        preserveScroll: true,
+    });
+}
+
+const payrollEndDayLabel = computed(() => {
+    const startDay = payrollForm.payroll_period_start_day;
+
+    if (startDay <= 1) {
+        return 'the last day of the following month';
+    }
+
+    return `the ${startDay - 1}${ordinalSuffix(startDay - 1)} of the following month`;
+});
+
+function ordinalSuffix(day: number): string {
+    if (day >= 11 && day <= 13) {
+        return 'th';
+    }
+
+    return ['th', 'st', 'nd', 'rd', 'th', 'th', 'th', 'th', 'th', 'th'][day % 10];
+}
 </script>
 
 <template>
@@ -104,6 +135,38 @@ function deleteHoliday(id: number, name: string) {
         />
 
         <div class="space-y-6">
+            <UiCard
+                title="Payroll period"
+                description="Defines the monthly payroll cycle used as the default date range on the attendance sheet."
+            >
+                <form
+                    v-if="can('attendance-settings.payroll-period.update')"
+                    class="grid gap-4 md:grid-cols-[12rem_1fr_auto] md:items-end"
+                    @submit.prevent="submitPayrollPeriod"
+                >
+                    <UiInput
+                        v-model="payrollForm.payroll_period_start_day"
+                        label="Period starts on day"
+                        type="number"
+                        min="1"
+                        max="28"
+                        required
+                        :error="payrollForm.errors.payroll_period_start_day"
+                    />
+                    <p class="text-sm text-slate-600 dark:text-slate-400">
+                        Example with day {{ payrollForm.payroll_period_start_day }}:
+                        each period runs from the {{ payrollForm.payroll_period_start_day }}{{ ordinalSuffix(Number(payrollForm.payroll_period_start_day)) }}
+                        through {{ payrollEndDayLabel }}.
+                        Current period: {{ payrollPeriod.current.label }}.
+                    </p>
+                    <UiButton type="submit" variant="primary" :disabled="payrollForm.processing">Save</UiButton>
+                </form>
+                <p v-else class="text-sm text-slate-600 dark:text-slate-400">
+                    Period starts on day {{ payrollPeriod.payroll_period_start_day }}.
+                    Current period: {{ payrollPeriod.current.label }}.
+                </p>
+            </UiCard>
+
             <UiCard title="Duty policies" description="Regular duty times apply Sun–Thu. Saturday duty times apply only to employees marked as working Saturday. The latest policy on or before each date is used.">
                 <div class="overflow-x-auto">
                     <table class="min-w-full text-sm">
@@ -129,9 +192,9 @@ function deleteHoliday(id: number, name: string) {
                                 <td class="px-3 py-3">{{ policy.saturday_duty_end_time }}</td>
                                 <td class="px-3 py-3">{{ policy.saturday_grace_minutes }} min</td>
                                 <td class="px-3 py-3">
-                                    <div class="flex gap-2">
-                                        <UiButton size="sm" variant="ghost" @click="editPolicy(policy)">Edit</UiButton>
-                                        <UiButton size="sm" variant="danger" @click="deletePolicy(policy.id!)">Delete</UiButton>
+                                    <div v-if="can('attendance-settings.duty-policies.update') || can('attendance-settings.duty-policies.delete')" class="flex gap-2">
+                                        <UiButton v-if="can('attendance-settings.duty-policies.update')" size="sm" variant="ghost" @click="editPolicy(policy)">Edit</UiButton>
+                                        <UiButton v-if="can('attendance-settings.duty-policies.delete')" size="sm" variant="danger" @click="deletePolicy(policy.id!)">Delete</UiButton>
                                     </div>
                                 </td>
                             </tr>
@@ -139,7 +202,11 @@ function deleteHoliday(id: number, name: string) {
                     </table>
                 </div>
 
-                <form class="mt-6 space-y-4 border-t border-slate-100 pt-6 dark:border-slate-800" @submit.prevent="submitPolicy">
+                <form
+                    v-if="can('attendance-settings.duty-policies.create') || can('attendance-settings.duty-policies.update')"
+                    class="mt-6 space-y-4 border-t border-slate-100 pt-6 dark:border-slate-800"
+                    @submit.prevent="submitPolicy"
+                >
                     <p class="text-sm font-medium text-slate-700 dark:text-slate-300">Weekday duty (Sun–Thu)</p>
                     <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                         <UiInput v-model="policyForm.effective_from" label="Effective from" type="date" required :error="policyForm.errors.effective_from" />
@@ -186,7 +253,14 @@ function deleteHoliday(id: number, name: string) {
                                 <td class="px-3 py-3 font-medium text-slate-900 dark:text-slate-100">{{ holiday.name }}</td>
                                 <td class="px-3 py-3 text-slate-600 dark:text-slate-400">{{ holiday.notes ?? '—' }}</td>
                                 <td class="px-3 py-3">
-                                    <UiButton size="sm" variant="danger" @click="deleteHoliday(holiday.id!, holiday.name)">Delete</UiButton>
+                                    <UiButton
+                                        v-if="can('attendance-settings.holidays.delete')"
+                                        size="sm"
+                                        variant="danger"
+                                        @click="deleteHoliday(holiday.id!, holiday.name)"
+                                    >
+                                        Delete
+                                    </UiButton>
                                 </td>
                             </tr>
                             <tr v-if="holidays.length === 0">
@@ -196,7 +270,11 @@ function deleteHoliday(id: number, name: string) {
                     </table>
                 </div>
 
-                <form class="mt-6 grid gap-4 border-t border-slate-100 pt-6 dark:border-slate-800 md:grid-cols-2 xl:grid-cols-4" @submit.prevent="submitHoliday">
+                <form
+                    v-if="can('attendance-settings.holidays.create')"
+                    class="mt-6 grid gap-4 border-t border-slate-100 pt-6 dark:border-slate-800 md:grid-cols-2 xl:grid-cols-4"
+                    @submit.prevent="submitHoliday"
+                >
                     <UiInput v-model="holidayForm.name" label="Name" required :error="holidayForm.errors.name" />
                     <UiInput v-model="holidayForm.date" label="Date" type="date" required :error="holidayForm.errors.date" />
                     <UiInput v-model="holidayForm.notes" label="Notes" :error="holidayForm.errors.notes" />

@@ -1,3 +1,21 @@
+export type PayrollPeriodOption = {
+    offset?: number;
+    is_current?: boolean;
+    from: string;
+    to: string;
+    label: string;
+};
+
+export type PayrollPeriodSettings = {
+    payroll_period_start_day: number;
+    payroll_period_end_day: number | null;
+    start_day: number;
+    end_day: number | null;
+    recent: PayrollPeriodOption[];
+    current: PayrollPeriodOption;
+    previous: PayrollPeriodOption;
+};
+
 export type AttendanceDutyPolicy = {
     id?: number | null;
     effective_from: string;

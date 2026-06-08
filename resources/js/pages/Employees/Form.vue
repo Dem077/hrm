@@ -15,6 +15,8 @@ const props = defineProps<{
     departments: SelectOption[];
     managers: SelectOption[];
     genders: GenderOption[];
+    roles: Array<{ id: number; name: string }>;
+    canAssignRoles: boolean;
 }>();
 
 const isEditing = computed(() => props.employee.id !== null);
@@ -32,7 +34,19 @@ const form = useForm({
     password: '',
     is_active: props.employee.is_active,
     works_saturday: props.employee.works_saturday ?? false,
+    role_names: [...(props.employee.role_names ?? [])],
 });
+
+function toggleRole(roleName: string) {
+    const index = form.role_names.indexOf(roleName);
+
+    if (index >= 0) {
+        form.role_names.splice(index, 1);
+        return;
+    }
+
+    form.role_names.push(roleName);
+}
 
 function submit() {
     if (isEditing.value) {
@@ -114,6 +128,29 @@ function submit() {
                         </option>
                     </UiSelect>
                 </div>
+            </UiCard>
+
+            <UiCard
+                v-if="canAssignRoles"
+                title="Access roles"
+                description="Choose which roles this login account should have. Sidebar and actions follow these permissions."
+            >
+                <div class="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                    <label
+                        v-for="role in roles"
+                        :key="role.id"
+                        class="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-200 px-4 py-3 text-sm transition hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-surface-elevated"
+                    >
+                        <input
+                            type="checkbox"
+                            class="rounded border-slate-300 text-brand-600 dark:border-slate-600 dark:bg-surface"
+                            :checked="form.role_names.includes(role.name)"
+                            @change="toggleRole(role.name)"
+                        />
+                        <span class="font-medium text-slate-800 dark:text-slate-200">{{ role.name }}</span>
+                    </label>
+                </div>
+                <p v-if="form.errors.role_names" class="mt-3 text-sm text-red-600 dark:text-red-400">{{ form.errors.role_names }}</p>
             </UiCard>
 
             <div class="flex justify-end">

@@ -5,6 +5,7 @@ import PageHeader from '@/components/ui/PageHeader.vue';
 import UiBadge from '@/components/ui/UiBadge.vue';
 import UiButton from '@/components/ui/UiButton.vue';
 import UiCard from '@/components/ui/UiCard.vue';
+import { usePermissions } from '@/composables/usePermissions';
 import AppLayout from '@/layouts/AppLayout.vue';
 import { formatDateTime } from '@/lib/format';
 import type { ZktDevice } from '@/types/zkt';
@@ -12,6 +13,8 @@ import type { ZktDevice } from '@/types/zkt';
 defineProps<{
     device: ZktDevice;
 }>();
+
+const { can } = usePermissions();
 
 function testDevice(id: number) {
     router.post(`/zkt-devices/${id}/test`, {}, { preserveScroll: true });
@@ -60,30 +63,30 @@ function deleteDevice(id: number) {
                 <div class="space-y-2">
                     <p class="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Connection</p>
                     <div class="flex flex-wrap gap-2">
-                        <UiButton size="sm" variant="secondary" @click="testDevice(device.id!)">Test</UiButton>
+                        <UiButton v-if="can('zkt-devices.test')" size="sm" variant="secondary" @click="testDevice(device.id!)">Test</UiButton>
                     </div>
                 </div>
 
                 <div class="space-y-2">
                     <p class="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Clock</p>
                     <div class="flex flex-wrap gap-2">
-                        <UiButton size="sm" variant="secondary" @click="readDeviceTime(device.id!)">Read time</UiButton>
-                        <UiButton size="sm" variant="secondary" @click="syncDeviceTime(device.id!)">Sync time</UiButton>
+                        <UiButton v-if="can('zkt-devices.read-time')" size="sm" variant="secondary" @click="readDeviceTime(device.id!)">Read time</UiButton>
+                        <UiButton v-if="can('zkt-devices.sync-time')" size="sm" variant="secondary" @click="syncDeviceTime(device.id!)">Sync time</UiButton>
                     </div>
                 </div>
 
                 <div class="space-y-2">
                     <p class="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Attendance</p>
                     <div class="flex flex-wrap gap-2">
-                        <UiButton size="sm" variant="primary" @click="syncDevice(device.id!)">Sync punches</UiButton>
+                        <UiButton v-if="can('zkt-devices.sync')" size="sm" variant="primary" @click="syncDevice(device.id!)">Sync punches</UiButton>
                     </div>
                 </div>
 
                 <div class="space-y-2 sm:col-span-2 xl:col-span-1">
                     <p class="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Manage</p>
                     <div class="flex flex-wrap gap-2">
-                        <UiButton size="sm" :href="`/zkt-devices/${device.id}/edit`" variant="ghost">Edit</UiButton>
-                        <UiButton size="sm" variant="danger" @click="deleteDevice(device.id!)">Delete</UiButton>
+                        <UiButton v-if="can('zkt-devices.update')" size="sm" :href="`/zkt-devices/${device.id}/edit`" variant="ghost">Edit</UiButton>
+                        <UiButton v-if="can('zkt-devices.delete')" size="sm" variant="danger" @click="deleteDevice(device.id!)">Delete</UiButton>
                     </div>
                 </div>
             </div>

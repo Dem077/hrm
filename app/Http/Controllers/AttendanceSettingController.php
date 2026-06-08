@@ -5,20 +5,31 @@ namespace App\Http\Controllers;
 use App\Http\Requests\StoreAttendanceDutyPolicyRequest;
 use App\Http\Requests\StorePublicHolidayRequest;
 use App\Http\Requests\UpdateAttendanceDutyPolicyRequest;
+use App\Http\Requests\UpdatePayrollPeriodRequest;
 use App\Http\Requests\UpdatePublicHolidayRequest;
 use App\Models\AttendanceDutyPolicy;
+use App\Models\AttendanceGeneralSetting;
 use App\Models\PublicHoliday;
+use App\Services\Attendance\PayrollPeriodService;
 use Illuminate\Http\RedirectResponse;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class AttendanceSettingController extends Controller
 {
-    public function index(): Response
+    public function index(PayrollPeriodService $payrollPeriodService): Response
     {
         $year = (int) request()->integer('year', now()->year);
+        $settings = AttendanceGeneralSetting::current();
 
         return Inertia::render('AttendanceSettings/Index', [
+            'payrollPeriod' => [
+                'payroll_period_start_day' => $settings->payroll_period_start_day,
+                'payroll_period_end_day' => $settings->payroll_period_start_day > 1
+                    ? $settings->payroll_period_start_day - 1
+                    : null,
+                ...$payrollPeriodService->presentation(),
+            ],
             'policies' => AttendanceDutyPolicy::ordered()
                 ->map(fn (AttendanceDutyPolicy $policy) => $policy->toPresentationArray())
                 ->values()
@@ -44,6 +55,13 @@ class AttendanceSettingController extends Controller
                 'notes' => '',
             ],
         ]);
+    }
+
+    public function updatePayrollPeriod(UpdatePayrollPeriodRequest $request): RedirectResponse
+    {
+        AttendanceGeneralSetting::current()->update($request->validated());
+
+        return back()->with('success', 'Payroll period updated successfully.');
     }
 
     public function storePolicy(StoreAttendanceDutyPolicyRequest $request): RedirectResponse

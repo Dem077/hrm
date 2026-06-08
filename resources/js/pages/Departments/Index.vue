@@ -4,12 +4,15 @@ import { Head, Link } from '@inertiajs/vue3';
 import EmptyState from '@/components/ui/EmptyState.vue';
 import PageHeader from '@/components/ui/PageHeader.vue';
 import UiButton from '@/components/ui/UiButton.vue';
+import { usePermissions } from '@/composables/usePermissions';
 import AppLayout from '@/layouts/AppLayout.vue';
 import type { Department } from '@/types/hrm';
 
 defineProps<{
     departments: Department[];
 }>();
+
+const { can } = usePermissions();
 </script>
 
 <template>
@@ -21,7 +24,7 @@ defineProps<{
             description="Flat team list with a department head for approvals."
         >
             <template #actions>
-                <UiButton href="/departments/create" variant="primary">Add department</UiButton>
+                <UiButton v-if="can('departments.create')" href="/departments/create" variant="primary">Add department</UiButton>
             </template>
         </PageHeader>
 
@@ -35,7 +38,7 @@ defineProps<{
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 4v16m8-8H4" />
                 </svg>
             </template>
-            <template #action>
+            <template v-if="can('departments.create')" #action>
                 <UiButton href="/departments/create" variant="primary">Add department</UiButton>
             </template>
         </EmptyState>
@@ -81,7 +84,7 @@ defineProps<{
 
                 <div class="mt-3 flex gap-2 border-t border-slate-100 pt-3 dark:border-slate-800">
                     <UiButton size="sm" :href="`/departments/${department.id}`" variant="ghost">View</UiButton>
-                    <UiButton size="sm" :href="`/departments/${department.id}/edit`" variant="secondary">Edit</UiButton>
+                    <UiButton v-if="can('departments.update')" size="sm" :href="`/departments/${department.id}/edit`" variant="secondary">Edit</UiButton>
                 </div>
             </article>
         </div>

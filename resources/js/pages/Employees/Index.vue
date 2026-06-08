@@ -4,6 +4,7 @@ import { Head, Link } from '@inertiajs/vue3';
 import EmptyState from '@/components/ui/EmptyState.vue';
 import PageHeader from '@/components/ui/PageHeader.vue';
 import UiButton from '@/components/ui/UiButton.vue';
+import { usePermissions } from '@/composables/usePermissions';
 import AppLayout from '@/layouts/AppLayout.vue';
 import { formatDate } from '@/lib/format';
 import type { Employee } from '@/types/hrm';
@@ -11,6 +12,8 @@ import type { Employee } from '@/types/hrm';
 defineProps<{
     employees: Employee[];
 }>();
+
+const { can } = usePermissions();
 </script>
 
 <template>
@@ -22,7 +25,7 @@ defineProps<{
             description="Manage staff records, department assignments, and reporting lines for approvals."
         >
             <template #actions>
-                <UiButton href="/employees/create" variant="primary">Add employee</UiButton>
+                <UiButton v-if="can('employees.create')" href="/employees/create" variant="primary">Add employee</UiButton>
             </template>
         </PageHeader>
 
@@ -36,7 +39,7 @@ defineProps<{
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 4v16m8-8H4" />
                 </svg>
             </template>
-            <template #action>
+            <template v-if="can('employees.create')" #action>
                 <UiButton href="/employees/create" variant="primary">Add employee</UiButton>
             </template>
         </EmptyState>
@@ -89,7 +92,7 @@ defineProps<{
 
                 <div class="mt-3 flex gap-2 border-t border-slate-100 pt-3 dark:border-slate-800">
                     <UiButton size="sm" :href="`/employees/${employee.id}`" variant="ghost">View</UiButton>
-                    <UiButton size="sm" :href="`/employees/${employee.id}/edit`" variant="secondary">Edit</UiButton>
+                    <UiButton v-if="can('employees.update')" size="sm" :href="`/employees/${employee.id}/edit`" variant="secondary">Edit</UiButton>
                 </div>
             </article>
         </div>
