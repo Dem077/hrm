@@ -165,6 +165,7 @@ class EmployeeController extends Controller
             'department_id' => null,
             'manager_id' => null,
             'is_active' => true,
+            'works_saturday' => false,
         ];
     }
 
@@ -231,6 +232,7 @@ class EmployeeController extends Controller
                 'staff_id' => $employee->manager->staff_id,
             ] : null,
             'is_active' => $employee->is_active,
+            'works_saturday' => $employee->works_saturday,
         ];
 
         if ($includeRelations) {

@@ -25,6 +25,7 @@ class StoreEmployeeRequest extends FormRequest
     {
         $this->merge([
             'is_active' => $this->boolean('is_active', true),
+            'works_saturday' => $this->boolean('works_saturday', false),
             'department_id' => $this->input('department_id') ?: null,
             'manager_id' => $this->input('manager_id') ?: null,
         ]);
@@ -47,6 +48,7 @@ class StoreEmployeeRequest extends FormRequest
             'manager_id' => ['nullable', 'exists:employees,id'],
             'password' => ['nullable', 'string', 'min:8'],
             'is_active' => ['boolean'],
+            'works_saturday' => ['boolean'],
         ];
     }
 }

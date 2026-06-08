@@ -18,6 +18,7 @@ export type Employee = {
     manager_id: number | null;
     manager?: { id: number; name: string; staff_id: string } | null;
     is_active: boolean;
+    works_saturday: boolean;
     direct_reports?: Array<{ id: number; name: string; staff_id: string }>;
 };
 

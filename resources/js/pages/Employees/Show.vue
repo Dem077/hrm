@@ -49,9 +49,13 @@ function deleteEmployee(id: number) {
                         <dt class="text-slate-500">Mobile</dt>
                         <dd class="font-medium text-slate-900 dark:text-slate-100">{{ employee.mobile_number ?? '—' }}</dd>
                     </div>
-                    <div class="flex justify-between gap-4">
+                    <div class="flex justify-between gap-4 border-b border-slate-100 pb-3 dark:border-slate-800">
                         <dt class="text-slate-500">Joined</dt>
                         <dd class="font-medium text-slate-900 dark:text-slate-100">{{ formatDate(employee.joined_date) }}</dd>
+                    </div>
+                    <div class="flex justify-between gap-4">
+                        <dt class="text-slate-500">Saturday work</dt>
+                        <dd class="font-medium text-slate-900 dark:text-slate-100">{{ employee.works_saturday ? 'Yes' : 'No' }}</dd>
                     </div>
                 </dl>
             </UiCard>

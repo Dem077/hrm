@@ -31,6 +31,7 @@ const form = useForm({
     manager_id: props.employee.manager_id ?? '',
     password: '',
     is_active: props.employee.is_active,
+    works_saturday: props.employee.works_saturday ?? false,
 });
 
 function submit() {
@@ -73,6 +74,10 @@ function submit() {
                     <label class="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-surface-elevated dark:text-slate-300">
                         <input v-model="form.is_active" type="checkbox" class="rounded border-slate-300 bg-white text-brand-600 dark:border-slate-600 dark:bg-surface dark:text-brand-500" />
                         Employee is active
+                    </label>
+                    <label class="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-surface-elevated dark:text-slate-300 md:col-span-2">
+                        <input v-model="form.works_saturday" type="checkbox" class="rounded border-slate-300 bg-white text-brand-600 dark:border-slate-600 dark:bg-surface dark:text-brand-500" />
+                        Works on Saturday (uses Saturday duty policy from global settings)
                     </label>
                 </div>
             </UiCard>

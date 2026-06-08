@@ -1,5 +1,7 @@
 <?php
 
+use App\Http\Controllers\AttendanceSettingController;
+use App\Http\Controllers\AttendanceSheetController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DepartmentController;
@@ -38,6 +40,18 @@ Route::middleware('auth')->group(function () {
 
     Route::resource('employees', EmployeeController::class);
     Route::resource('departments', DepartmentController::class);
+
+    Route::get('attendance-sheet', [AttendanceSheetController::class, 'index'])->name('attendance-sheet.index');
+    Route::get('attendance-settings', [AttendanceSettingController::class, 'index'])->name('attendance-settings.index');
+    Route::post('attendance-settings/duty-policies', [AttendanceSettingController::class, 'storePolicy'])->name('attendance-settings.duty-policies.store');
+    Route::put('attendance-settings/duty-policies/{attendance_duty_policy}', [AttendanceSettingController::class, 'updatePolicy'])->name('attendance-settings.duty-policies.update');
+    Route::delete('attendance-settings/duty-policies/{attendance_duty_policy}', [AttendanceSettingController::class, 'destroyPolicy'])->name('attendance-settings.duty-policies.destroy');
+    Route::post('attendance-settings/holidays', [AttendanceSettingController::class, 'storeHoliday'])->name('attendance-settings.holidays.store');
+    Route::put('attendance-settings/holidays/{public_holiday}', [AttendanceSettingController::class, 'updateHoliday'])->name('attendance-settings.holidays.update');
+    Route::delete('attendance-settings/holidays/{public_holiday}', [AttendanceSettingController::class, 'destroyHoliday'])->name('attendance-settings.holidays.destroy');
+    Route::redirect('attendance-settings/edit', '/attendance-settings');
+    Route::redirect('public-holidays', '/attendance-settings');
+    Route::redirect('public-holidays/create', '/attendance-settings');
 
     Route::get('zkt-attendance-logs', [ZktAttendanceLogController::class, 'index'])
         ->name('zkt-attendance-logs.index');

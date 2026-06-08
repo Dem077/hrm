@@ -20,6 +20,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'user_id',
     'manager_id',
     'is_active',
+    'works_saturday',
 ])]
 class Employee extends Model
 {
@@ -29,6 +30,7 @@ class Employee extends Model
             'joined_date' => 'date',
             'gender' => Gender::class,
             'is_active' => 'boolean',
+            'works_saturday' => 'boolean',
         ];
     }
 
