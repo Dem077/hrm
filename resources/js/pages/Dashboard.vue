@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { Head } from '@inertiajs/vue3';
 
+import StatCard from '@/components/ui/StatCard.vue';
+import UiButton from '@/components/ui/UiButton.vue';
+import UiCard from '@/components/ui/UiCard.vue';
 import AppLayout from '@/layouts/AppLayout.vue';
 
 defineProps<{
@@ -16,24 +19,25 @@ defineProps<{
 <template>
     <Head title="Dashboard" />
 
-    <AppLayout title="Dashboard">
-        <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <div class="rounded-xl border border-stone-200 bg-white p-5 shadow-sm">
-                <p class="text-sm text-stone-500">Total Devices</p>
-                <p class="mt-2 text-3xl font-semibold">{{ stats.devices }}</p>
-            </div>
-            <div class="rounded-xl border border-stone-200 bg-white p-5 shadow-sm">
-                <p class="text-sm text-stone-500">Active Devices</p>
-                <p class="mt-2 text-3xl font-semibold">{{ stats.activeDevices }}</p>
-            </div>
-            <div class="rounded-xl border border-stone-200 bg-white p-5 shadow-sm">
-                <p class="text-sm text-stone-500">Online Devices</p>
-                <p class="mt-2 text-3xl font-semibold">{{ stats.onlineDevices }}</p>
-            </div>
-            <div class="rounded-xl border border-stone-200 bg-white p-5 shadow-sm">
-                <p class="text-sm text-stone-500">Punches Today</p>
-                <p class="mt-2 text-3xl font-semibold">{{ stats.punchesToday }}</p>
-            </div>
+    <AppLayout
+        title="Dashboard"
+        description="Overview of your biometric devices and today's attendance activity."
+    >
+        <div class="grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
+            <StatCard label="Total Devices" :value="stats.devices" hint="Registered ZKT machines" accent="slate" />
+            <StatCard label="Active Devices" :value="stats.activeDevices" hint="Enabled for sync" accent="sky" />
+            <StatCard label="Online Devices" :value="stats.onlineDevices" hint="Last connection successful" accent="emerald" />
+            <StatCard label="Punches Today" :value="stats.punchesToday" hint="Synced attendance records" accent="amber" />
+        </div>
+
+        <div class="mt-8">
+            <UiCard title="Quick actions" description="Common tasks to keep attendance data up to date.">
+                <div class="flex flex-wrap gap-3">
+                    <UiButton href="/zkt-devices/create" variant="primary">Add device</UiButton>
+                    <UiButton href="/zkt-devices" variant="secondary">Manage devices</UiButton>
+                    <UiButton href="/zkt-attendance-logs" variant="secondary">View punch logs</UiButton>
+                </div>
+            </UiCard>
         </div>
     </AppLayout>
 </template>

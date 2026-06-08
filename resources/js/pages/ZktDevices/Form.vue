@@ -1,9 +1,16 @@
 <script setup lang="ts">
-import { Head, Link, useForm } from '@inertiajs/vue3';
+import { Head, useForm } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 
-import StatusBadge from '@/components/StatusBadge.vue';
+import PageHeader from '@/components/ui/PageHeader.vue';
+import UiAlert from '@/components/ui/UiAlert.vue';
+import UiBadge from '@/components/ui/UiBadge.vue';
+import UiButton from '@/components/ui/UiButton.vue';
+import UiCard from '@/components/ui/UiCard.vue';
+import UiInput from '@/components/ui/UiInput.vue';
+import UiSelect from '@/components/ui/UiSelect.vue';
 import AppLayout from '@/layouts/AppLayout.vue';
+import { formatDateTime } from '@/lib/format';
 import type { ProtocolOption, ZktDevice } from '@/types/zkt';
 
 const props = defineProps<{
@@ -128,146 +135,85 @@ function submit() {
 <template>
     <Head :title="isEditing ? 'Edit Device' : 'Add Device'" />
 
-    <AppLayout :title="isEditing ? 'Edit Device' : 'Add Device'">
-        <div class="mb-6 flex flex-wrap items-center justify-between gap-3">
-            <p class="text-sm text-stone-500">
-                Enter the device network details, test the connection, then save.
-            </p>
-            <div class="flex gap-2">
-                <button
-                    type="button"
-                    class="rounded-lg border border-stone-300 px-4 py-2 text-sm font-medium hover:bg-stone-100 disabled:opacity-50"
-                    :disabled="probing || !form.ip_address"
-                    @click="probeDevice"
-                >
-                    {{ probing ? 'Testing...' : 'Test & Fetch Device Info' }}
-                </button>
-                <Link
-                    href="/zkt-devices"
-                    class="rounded-lg border border-stone-300 px-4 py-2 text-sm font-medium hover:bg-stone-100"
-                >
-                    Cancel
-                </Link>
-            </div>
-        </div>
+    <AppLayout>
+        <PageHeader
+            :title="isEditing ? 'Edit device' : 'Add device'"
+            description="Enter network details, test the connection, then save the machine profile."
+        >
+            <template #actions>
+                <UiButton variant="secondary" :disabled="probing || !form.ip_address" @click="probeDevice">
+                    {{ probing ? 'Testing...' : 'Test & fetch info' }}
+                </UiButton>
+                <UiButton href="/zkt-devices" variant="ghost">Cancel</UiButton>
+            </template>
+        </PageHeader>
 
-        <div
-            v-if="probeMessage"
-            class="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800"
-        >
-            {{ probeMessage }}
-        </div>
-        <div
-            v-if="probeError"
-            class="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800"
-        >
-            {{ probeError }}
+        <div class="mb-6 space-y-3">
+            <UiAlert v-if="probeMessage" tone="success" :message="probeMessage" />
+            <UiAlert v-if="probeError" tone="error" :message="probeError" />
         </div>
 
         <form class="space-y-6" @submit.prevent="submit">
-            <section class="rounded-xl border border-stone-200 bg-white p-6 shadow-sm">
-                <h2 class="mb-4 text-lg font-medium">Device Details</h2>
-                <div class="grid gap-4 md:grid-cols-2">
-                    <div>
-                        <label class="mb-1 block text-sm font-medium">Name</label>
-                        <input v-model="form.name" class="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm outline-none ring-amber-500 focus:ring-2" required />
-                        <p v-if="form.errors.name" class="mt-1 text-sm text-red-600">{{ form.errors.name }}</p>
-                    </div>
-                    <div>
-                        <label class="mb-1 block text-sm font-medium">Location</label>
-                        <input v-model="form.location" class="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm outline-none ring-amber-500 focus:ring-2" />
-                    </div>
-                    <div>
-                        <label class="mb-1 block text-sm font-medium">IP Address</label>
-                        <input v-model="form.ip_address" class="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm outline-none ring-amber-500 focus:ring-2" required />
-                        <p v-if="form.errors.ip_address" class="mt-1 text-sm text-red-600">{{ form.errors.ip_address }}</p>
-                    </div>
-                    <div>
-                        <label class="mb-1 block text-sm font-medium">Port</label>
-                        <input v-model.number="form.port" type="number" class="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm outline-none ring-amber-500 focus:ring-2" required />
-                    </div>
-                    <div>
-                        <label class="mb-1 block text-sm font-medium">Protocol</label>
-                        <select v-model="form.protocol" class="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm outline-none ring-amber-500 focus:ring-2">
-                            <option v-for="option in protocols" :key="option.value" :value="option.value">
-                                {{ option.label }}
-                            </option>
-                        </select>
-                    </div>
-                    <div>
-                        <label class="mb-1 block text-sm font-medium">Communication Password</label>
-                        <input v-model.number="form.comm_password" type="number" class="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm outline-none ring-amber-500 focus:ring-2" />
-                    </div>
+            <UiCard title="Device details" description="Connection settings used to reach the ZKT machine.">
+                <div class="grid gap-5 md:grid-cols-2">
+                    <UiInput v-model="form.name" label="Name" required :error="form.errors.name" />
+                    <UiInput v-model="form.location" label="Location" />
+                    <UiInput v-model="form.ip_address" label="IP address" required :error="form.errors.ip_address" />
+                    <UiInput v-model="form.port" label="Port" type="number" required />
+                    <UiSelect v-model="form.protocol" label="Protocol">
+                        <option v-for="option in protocols" :key="option.value" :value="option.value">
+                            {{ option.label }}
+                        </option>
+                    </UiSelect>
+                    <UiInput v-model="form.comm_password" label="Communication password" type="number" />
                 </div>
-            </section>
+            </UiCard>
 
-            <section class="rounded-xl border border-stone-200 bg-white p-6 shadow-sm">
-                <h2 class="mb-4 text-lg font-medium">Sync Settings</h2>
-                <div class="grid gap-4 md:grid-cols-2">
-                    <label class="flex items-center gap-2 text-sm">
-                        <input v-model="form.is_active" type="checkbox" class="rounded border-stone-300" />
-                        Active
+            <UiCard title="Sync settings">
+                <div class="grid gap-5 md:grid-cols-2">
+                    <label class="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-surface-elevated dark:text-slate-300">
+                        <input v-model="form.is_active" type="checkbox" class="rounded border-slate-300 bg-white text-brand-600 focus:ring-brand-500/30 dark:border-slate-600 dark:bg-surface dark:text-brand-500" />
+                        Device is active
                     </label>
-                    <label class="flex items-center gap-2 text-sm">
-                        <input v-model="form.auto_sync" type="checkbox" class="rounded border-stone-300" />
-                        Auto Sync
+                    <label class="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-surface-elevated dark:text-slate-300">
+                        <input v-model="form.auto_sync" type="checkbox" class="rounded border-slate-300 bg-white text-brand-600 focus:ring-brand-500/30 dark:border-slate-600 dark:bg-surface dark:text-brand-500" />
+                        Enable automatic sync
                     </label>
-                    <div>
-                        <label class="mb-1 block text-sm font-medium">Sync Interval (minutes)</label>
-                        <input v-model.number="form.sync_interval_minutes" type="number" class="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm outline-none ring-amber-500 focus:ring-2" />
-                    </div>
+                    <UiInput v-model="form.sync_interval_minutes" label="Sync interval (minutes)" type="number" />
                 </div>
-            </section>
+            </UiCard>
 
-            <section class="rounded-xl border border-stone-200 bg-white p-6 shadow-sm">
-                <h2 class="mb-4 text-lg font-medium">Device Metadata</h2>
-                <div class="mb-4">
-                    <StatusBadge
-                        :status="form.connection_status"
-                        :label="connectionStatusLabel"
-                        :color="connectionStatusColor"
+            <UiCard title="Device metadata" description="Populated automatically after a successful connection test.">
+                <div class="mb-5">
+                    <UiBadge :label="connectionStatusLabel" :color="connectionStatusColor" />
+                </div>
+                <div class="grid gap-5 md:grid-cols-2">
+                    <UiInput v-model="form.serial_number" label="Serial number" readonly />
+                    <UiInput v-model="form.model_name" label="Model" readonly />
+                    <UiInput v-model="form.firmware_version" label="Firmware" readonly />
+                    <UiInput
+                        :model-value="form.last_connected_at ? formatDateTime(form.last_connected_at) : ''"
+                        label="Last connected"
+                        readonly
                     />
                 </div>
-                <div class="grid gap-4 md:grid-cols-2">
-                    <div>
-                        <label class="mb-1 block text-sm font-medium">Serial Number</label>
-                        <input v-model="form.serial_number" class="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm outline-none ring-amber-500 focus:ring-2" readonly />
-                    </div>
-                    <div>
-                        <label class="mb-1 block text-sm font-medium">Model</label>
-                        <input v-model="form.model_name" class="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm outline-none ring-amber-500 focus:ring-2" readonly />
-                    </div>
-                    <div>
-                        <label class="mb-1 block text-sm font-medium">Firmware</label>
-                        <input v-model="form.firmware_version" class="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm outline-none ring-amber-500 focus:ring-2" readonly />
-                    </div>
-                    <div>
-                        <label class="mb-1 block text-sm font-medium">Last Connected</label>
-                        <input
-                            :value="form.last_connected_at ? new Date(form.last_connected_at).toLocaleString() : ''"
-                            class="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm outline-none ring-amber-500 focus:ring-2"
-                            readonly
-                        />
-                    </div>
-                </div>
-            </section>
+            </UiCard>
 
-            <section class="rounded-xl border border-stone-200 bg-white p-6 shadow-sm">
-                <h2 class="mb-4 text-lg font-medium">Notes</h2>
-                <textarea v-model="form.notes" rows="4" class="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm outline-none ring-amber-500 focus:ring-2" />
-                <div v-if="form.last_sync_error" class="mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
-                    {{ form.last_sync_error }}
+            <UiCard title="Notes">
+                <textarea
+                    v-model="form.notes"
+                    rows="4"
+                    class="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 shadow-sm outline-none focus:border-brand-500 focus:ring-4 focus:ring-brand-500/15 dark:border-slate-700 dark:bg-surface-elevated dark:text-slate-100"
+                />
+                <div v-if="form.last_sync_error" class="mt-4">
+                    <UiAlert tone="error" :message="form.last_sync_error" />
                 </div>
-            </section>
+            </UiCard>
 
             <div class="flex justify-end">
-                <button
-                    type="submit"
-                    class="rounded-lg bg-amber-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-50"
-                    :disabled="form.processing"
-                >
-                    {{ isEditing ? 'Update Device' : 'Create Device' }}
-                </button>
+                <UiButton type="submit" variant="primary" :disabled="form.processing">
+                    {{ isEditing ? 'Update device' : 'Create device' }}
+                </UiButton>
             </div>
         </form>
     </AppLayout>

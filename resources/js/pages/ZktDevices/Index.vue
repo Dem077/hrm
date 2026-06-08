@@ -1,21 +1,17 @@
 <script setup lang="ts">
 import { Head, Link, router } from '@inertiajs/vue3';
 
-import StatusBadge from '@/components/StatusBadge.vue';
+import EmptyState from '@/components/ui/EmptyState.vue';
+import PageHeader from '@/components/ui/PageHeader.vue';
+import UiBadge from '@/components/ui/UiBadge.vue';
+import UiButton from '@/components/ui/UiButton.vue';
 import AppLayout from '@/layouts/AppLayout.vue';
+import { formatDateTime } from '@/lib/format';
 import type { ZktDevice } from '@/types/zkt';
 
 defineProps<{
     devices: ZktDevice[];
 }>();
-
-function formatDate(value: string | null): string {
-    if (!value) {
-        return 'Never';
-    }
-
-    return new Date(value).toLocaleString();
-}
 
 function syncAll() {
     router.post('/zkt-devices/sync-all');
@@ -28,95 +24,137 @@ function syncDevice(id: number) {
 function testDevice(id: number) {
     router.post(`/zkt-devices/${id}/test`, {}, { preserveScroll: true });
 }
+
+function iconTone(color?: string): string {
+    const tones: Record<string, string> = {
+        success: 'bg-emerald-500/15 text-emerald-600 ring-emerald-500/20 dark:text-emerald-400',
+        danger: 'bg-red-500/15 text-red-600 ring-red-500/20 dark:text-red-400',
+        warning: 'bg-amber-500/15 text-amber-600 ring-amber-500/20 dark:text-amber-400',
+        gray: 'bg-slate-500/15 text-slate-600 ring-slate-500/20 dark:text-slate-400',
+    };
+
+    return tones[color ?? 'gray'] ?? tones.gray;
+}
 </script>
 
 <template>
     <Head title="ZKT Devices" />
 
-    <AppLayout title="ZKT Devices">
-        <div class="mb-6 flex flex-wrap items-center justify-between gap-3">
-            <p class="text-sm text-stone-500">Manage biometric punch machines and sync attendance.</p>
-            <div class="flex gap-2">
-                <button
-                    type="button"
-                    class="rounded-lg border border-stone-300 px-4 py-2 text-sm font-medium hover:bg-stone-100"
-                    @click="syncAll"
-                >
-                    Sync All Active
-                </button>
-                <Link
-                    href="/zkt-devices/create"
-                    class="rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700"
-                >
-                    Add Device
-                </Link>
-            </div>
-        </div>
+    <AppLayout>
+        <PageHeader
+            title="ZKT Devices"
+            description="Manage biometric punch machines, test connectivity, and sync attendance."
+        >
+            <template #actions>
+                <UiButton variant="secondary" @click="syncAll">Sync all active</UiButton>
+                <UiButton href="/zkt-devices/create" variant="primary">Add device</UiButton>
+            </template>
+        </PageHeader>
 
-        <div class="overflow-hidden rounded-xl border border-stone-200 bg-white shadow-sm">
-            <table class="min-w-full divide-y divide-stone-200 text-sm">
-                <thead class="bg-stone-50 text-left text-stone-500">
-                    <tr>
-                        <th class="px-4 py-3 font-medium">Name</th>
-                        <th class="px-4 py-3 font-medium">Address</th>
-                        <th class="px-4 py-3 font-medium">Status</th>
-                        <th class="px-4 py-3 font-medium">Last Sync</th>
-                        <th class="px-4 py-3 font-medium">Actions</th>
-                    </tr>
-                </thead>
-                <tbody class="divide-y divide-stone-100">
-                    <tr v-for="device in devices" :key="device.id ?? device.name">
-                        <td class="px-4 py-3">
-                            <Link :href="`/zkt-devices/${device.id}`" class="font-medium text-amber-700 hover:underline">
-                                {{ device.name }}
-                            </Link>
-                            <p v-if="device.location" class="text-xs text-stone-500">{{ device.location }}</p>
-                        </td>
-                        <td class="px-4 py-3">
-                            {{ device.ip_address }}:{{ device.port }}
-                            <p class="text-xs uppercase text-stone-500">{{ device.protocol }}</p>
-                        </td>
-                        <td class="px-4 py-3">
-                            <StatusBadge
-                                :status="device.connection_status"
-                                :label="device.connection_status_label ?? device.connection_status"
-                                :color="device.connection_status_color"
+        <EmptyState
+            v-if="devices.length === 0"
+            title="No devices yet"
+            description="Add your first ZKT machine to start syncing attendance punches."
+        >
+            <template #icon>
+                <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 4v16m8-8H4" />
+                </svg>
+            </template>
+            <template #action>
+                <UiButton href="/zkt-devices/create" variant="primary">Add device</UiButton>
+            </template>
+        </EmptyState>
+
+        <div v-else class="grid grid-cols-1 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+            <article
+                v-for="device in devices"
+                :key="device.id ?? device.name"
+                class="group flex flex-col rounded-xl border border-slate-200 bg-surface p-3 shadow-sm transition hover:border-brand-500/30 hover:shadow-md dark:border-slate-800 dark:hover:border-brand-500/20"
+            >
+                <div class="flex items-start gap-2.5">
+                    <div
+                        class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ring-1 ring-inset"
+                        :class="iconTone(device.connection_status_color)"
+                    >
+                        <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6">
+                            <path
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                                d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2z"
                             />
-                        </td>
-                        <td class="px-4 py-3">{{ formatDate(device.last_synced_at) }}</td>
-                        <td class="px-4 py-3">
-                            <div class="flex flex-wrap gap-2">
-                                <button
-                                    type="button"
-                                    class="rounded-md border border-stone-300 px-2.5 py-1 text-xs hover:bg-stone-50"
-                                    @click="testDevice(device.id!)"
-                                >
-                                    Test
-                                </button>
-                                <button
-                                    type="button"
-                                    class="rounded-md border border-amber-300 px-2.5 py-1 text-xs text-amber-800 hover:bg-amber-50"
-                                    @click="syncDevice(device.id!)"
-                                >
-                                    Sync
-                                </button>
-                                <Link
-                                    :href="`/zkt-devices/${device.id}/edit`"
-                                    class="rounded-md border border-stone-300 px-2.5 py-1 text-xs hover:bg-stone-50"
-                                >
-                                    Edit
-                                </Link>
-                            </div>
-                        </td>
-                    </tr>
-                    <tr v-if="devices.length === 0">
-                        <td colspan="5" class="px-4 py-10 text-center text-stone-500">
-                            No devices yet.
-                            <Link href="/zkt-devices/create" class="text-amber-700 hover:underline">Add your first device</Link>.
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
+                        </svg>
+                    </div>
+
+                    <div class="min-w-0 flex-1">
+                        <Link
+                            :href="`/zkt-devices/${device.id}`"
+                            class="block truncate text-sm font-semibold leading-tight text-slate-900 hover:text-brand-600 dark:text-white dark:hover:text-brand-400"
+                        >
+                            {{ device.name }}
+                        </Link>
+                        <p class="mt-0.5 truncate text-xs text-slate-500">
+                            {{ device.location ?? 'No location' }}
+                        </p>
+                    </div>
+                </div>
+
+                <div class="mt-2.5 space-y-1.5 text-xs">
+                    <p class="truncate font-mono text-slate-700 dark:text-slate-300">
+                        {{ device.ip_address }}:{{ device.port }}
+                    </p>
+                    <div class="flex items-center justify-between gap-2">
+                        <UiBadge
+                            :label="device.connection_status_label ?? device.connection_status"
+                            :color="device.connection_status_color"
+                        />
+                        <span class="truncate text-slate-500" :title="formatDateTime(device.last_synced_at)">
+                            {{ formatDateTime(device.last_synced_at) }}
+                        </span>
+                    </div>
+                </div>
+
+                <div class="mt-3 flex items-center gap-1 border-t border-slate-100 pt-2.5 dark:border-slate-800">
+                    <button
+                        type="button"
+                        title="Test connection"
+                        class="rounded-lg p-1.5 text-slate-500 transition hover:bg-surface-muted hover:text-slate-900 dark:hover:text-white"
+                        @click="testDevice(device.id!)"
+                    >
+                        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                        </svg>
+                    </button>
+                    <button
+                        type="button"
+                        title="Sync attendance"
+                        class="rounded-lg p-1.5 text-slate-500 transition hover:bg-surface-muted hover:text-slate-900 dark:hover:text-white"
+                        @click="syncDevice(device.id!)"
+                    >
+                        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                    </button>
+                    <Link
+                        :href="`/zkt-devices/${device.id}/edit`"
+                        title="Edit device"
+                        class="rounded-lg p-1.5 text-slate-500 transition hover:bg-surface-muted hover:text-slate-900 dark:hover:text-white"
+                    >
+                        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                        </svg>
+                    </Link>
+                    <Link
+                        :href="`/zkt-devices/${device.id}`"
+                        title="View details"
+                        class="ml-auto rounded-lg p-1.5 text-slate-500 transition hover:bg-surface-muted hover:text-brand-600 dark:hover:text-brand-400"
+                    >
+                        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M9 5l7 7-7 7" />
+                        </svg>
+                    </Link>
+                </div>
+            </article>
         </div>
     </AppLayout>
 </template>

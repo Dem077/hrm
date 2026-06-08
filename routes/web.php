@@ -6,6 +6,16 @@ use App\Http\Controllers\ZktAttendanceLogController;
 use App\Http\Controllers\ZktDeviceController;
 use Illuminate\Support\Facades\Route;
 
+/*
+|--------------------------------------------------------------------------
+| Web Routes
+|--------------------------------------------------------------------------
+|
+| Authentication is login-only. User registration is intentionally disabled;
+| administrators create accounts via `php artisan make:user` or tinker.
+|
+*/
+
 Route::middleware('guest')->group(function () {
     Route::get('login', [LoginController::class, 'create'])->name('login');
     Route::post('login', [LoginController::class, 'store'])->name('login.store');

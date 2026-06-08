@@ -2,7 +2,13 @@
 import { Head, Link, router } from '@inertiajs/vue3';
 import { reactive } from 'vue';
 
+import PageHeader from '@/components/ui/PageHeader.vue';
+import UiButton from '@/components/ui/UiButton.vue';
+import UiCard from '@/components/ui/UiCard.vue';
+import UiInput from '@/components/ui/UiInput.vue';
+import UiSelect from '@/components/ui/UiSelect.vue';
 import AppLayout from '@/layouts/AppLayout.vue';
+import { formatDateTime } from '@/lib/format';
 import type { AttendanceLog, Paginated } from '@/types/zkt';
 
 const props = defineProps<{
@@ -25,77 +31,74 @@ function applyFilters() {
         replace: true,
     });
 }
-
-function formatDate(value: string | null): string {
-    if (!value) {
-        return '—';
-    }
-
-    return new Date(value).toLocaleString();
-}
 </script>
 
 <template>
     <Head title="Punch Logs" />
 
-    <AppLayout title="Punch Logs">
-        <form class="mb-6 grid gap-3 rounded-xl border border-stone-200 bg-white p-4 shadow-sm md:grid-cols-3" @submit.prevent="applyFilters">
-            <div>
-                <label class="mb-1 block text-sm font-medium">Device</label>
-                <select v-model="filters.device_id" class="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm outline-none ring-amber-500 focus:ring-2">
+    <AppLayout>
+        <PageHeader
+            title="Punch logs"
+            description="Review synced attendance punches across all connected devices."
+        />
+
+        <div class="mb-6">
+            <UiCard padding="sm">
+            <form class="grid gap-4 md:grid-cols-[1fr_1fr_auto]" @submit.prevent="applyFilters">
+                <UiSelect v-model="filters.device_id" label="Device">
                     <option value="">All devices</option>
                     <option v-for="device in devices" :key="device.id" :value="device.id">
                         {{ device.name }}
                     </option>
-                </select>
-            </div>
-            <div>
-                <label class="mb-1 block text-sm font-medium">Search</label>
-                <input v-model="filters.search" class="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm outline-none ring-amber-500 focus:ring-2" placeholder="User ID or device name" />
-            </div>
-            <div class="flex items-end">
-                <button type="submit" class="rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700">
-                    Filter
-                </button>
-            </div>
-        </form>
-
-        <div class="overflow-hidden rounded-xl border border-stone-200 bg-white shadow-sm">
-            <table class="min-w-full divide-y divide-stone-200 text-sm">
-                <thead class="bg-stone-50 text-left text-stone-500">
-                    <tr>
-                        <th class="px-4 py-3 font-medium">Device</th>
-                        <th class="px-4 py-3 font-medium">User ID</th>
-                        <th class="px-4 py-3 font-medium">State</th>
-                        <th class="px-4 py-3 font-medium">Punched At</th>
-                    </tr>
-                </thead>
-                <tbody class="divide-y divide-stone-100">
-                    <tr v-for="log in logs.data" :key="log.id">
-                        <td class="px-4 py-3">
-                            <Link :href="`/zkt-devices/${log.device.id}`" class="text-amber-700 hover:underline">
-                                {{ log.device.name }}
-                            </Link>
-                        </td>
-                        <td class="px-4 py-3">{{ log.device_user_id }}</td>
-                        <td class="px-4 py-3">{{ log.punch_state_label }}</td>
-                        <td class="px-4 py-3">{{ formatDate(log.punched_at) }}</td>
-                    </tr>
-                    <tr v-if="logs.data.length === 0">
-                        <td colspan="4" class="px-4 py-10 text-center text-stone-500">No punch logs found.</td>
-                    </tr>
-                </tbody>
-            </table>
+                </UiSelect>
+                <UiInput v-model="filters.search" label="Search" placeholder="User ID or device name" />
+                <div class="flex items-end">
+                    <UiButton type="submit" variant="primary">Apply filters</UiButton>
+                </div>
+            </form>
+            </UiCard>
         </div>
 
-        <div v-if="logs.links.length > 3" class="mt-4 flex flex-wrap gap-2">
+        <UiCard padding="none">
+            <div class="overflow-x-auto">
+                <table class="min-w-full text-sm">
+                    <thead class="border-b border-slate-100 bg-slate-50/80 text-left text-slate-500 dark:border-slate-800 dark:bg-surface-elevated dark:text-slate-400">
+                        <tr>
+                            <th class="px-5 py-3.5 font-medium">Device</th>
+                            <th class="px-5 py-3.5 font-medium">User ID</th>
+                            <th class="px-5 py-3.5 font-medium">State</th>
+                            <th class="px-5 py-3.5 font-medium">Punched at</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+                        <tr v-for="log in logs.data" :key="log.id" class="hover:bg-slate-50/60 dark:hover:bg-surface-elevated/60">
+                            <td class="px-5 py-4">
+                                <Link :href="`/zkt-devices/${log.device.id}`" class="font-medium text-brand-700 hover:text-brand-600 hover:underline dark:text-brand-400 dark:hover:text-brand-300">
+                                    {{ log.device.name }}
+                                </Link>
+                            </td>
+                            <td class="px-5 py-4 font-medium text-slate-800 dark:text-slate-200">{{ log.device_user_id }}</td>
+                            <td class="px-5 py-4 text-slate-700 dark:text-slate-300">{{ log.punch_state_label }}</td>
+                            <td class="px-5 py-4 text-slate-600 dark:text-slate-400">{{ formatDateTime(log.punched_at) }}</td>
+                        </tr>
+                        <tr v-if="logs.data.length === 0">
+                            <td colspan="4" class="px-5 py-12 text-center text-slate-500">No punch logs found.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </UiCard>
+
+        <div v-if="logs.links.length > 3" class="mt-5 flex flex-wrap gap-2">
             <Link
                 v-for="link in logs.links"
                 :key="`${link.label}-${link.url}`"
                 :href="link.url ?? '#'"
-                class="rounded-md border px-3 py-1.5 text-sm"
+                class="rounded-lg border px-3 py-1.5 text-sm transition"
                 :class="[
-                    link.active ? 'border-amber-300 bg-amber-50 text-amber-800' : 'border-stone-300 text-stone-600',
+                    link.active
+                        ? 'border-brand-300 bg-brand-50 text-brand-800 dark:border-brand-600/40 dark:bg-brand-600/15 dark:text-brand-400'
+                        : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-surface-elevated dark:text-slate-400 dark:hover:bg-surface-muted dark:hover:text-slate-200',
                     !link.url ? 'pointer-events-none opacity-50' : '',
                 ]"
                 v-html="link.label"
