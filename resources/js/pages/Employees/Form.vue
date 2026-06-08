@@ -34,6 +34,13 @@ const form = useForm({
     password: '',
     is_active: props.employee.is_active,
     works_saturday: props.employee.works_saturday ?? false,
+    uses_custom_duty_times: props.employee.uses_custom_duty_times ?? false,
+    custom_duty_start_time: props.employee.custom_duty_start_time ?? '09:00',
+    custom_duty_end_time: props.employee.custom_duty_end_time ?? '18:00',
+    custom_grace_minutes: props.employee.custom_grace_minutes ?? 15,
+    custom_saturday_duty_start_time: props.employee.custom_saturday_duty_start_time ?? '09:00',
+    custom_saturday_duty_end_time: props.employee.custom_saturday_duty_end_time ?? '14:00',
+    custom_saturday_grace_minutes: props.employee.custom_saturday_grace_minutes ?? 15,
     role_names: [...(props.employee.role_names ?? [])],
 });
 
@@ -127,6 +134,71 @@ function submit() {
                             {{ manager.label }}
                         </option>
                     </UiSelect>
+                </div>
+            </UiCard>
+
+            <UiCard
+                title="Custom duty times"
+                description="Bypass the global duty policy for this employee and use their own duty start, end, and grace minutes on the attendance sheet."
+            >
+                <label class="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-surface-elevated dark:text-slate-300">
+                    <input
+                        v-model="form.uses_custom_duty_times"
+                        type="checkbox"
+                        class="rounded border-slate-300 bg-white text-brand-600 dark:border-slate-600 dark:bg-surface dark:text-brand-500"
+                    />
+                    Use custom duty times instead of global policy
+                </label>
+
+                <div v-if="form.uses_custom_duty_times" class="mt-5 grid gap-5 md:grid-cols-2">
+                    <UiInput
+                        v-model="form.custom_duty_start_time"
+                        label="Duty start"
+                        type="time"
+                        required
+                        :error="form.errors.custom_duty_start_time"
+                    />
+                    <UiInput
+                        v-model="form.custom_duty_end_time"
+                        label="Duty end"
+                        type="time"
+                        required
+                        :error="form.errors.custom_duty_end_time"
+                    />
+                    <UiInput
+                        v-model="form.custom_grace_minutes"
+                        label="Grace minutes"
+                        type="number"
+                        min="0"
+                        max="180"
+                        :error="form.errors.custom_grace_minutes"
+                    />
+
+                    <template v-if="form.works_saturday">
+                        <UiInput
+                            v-model="form.custom_saturday_duty_start_time"
+                            label="Saturday start"
+                            type="time"
+                            hint="Optional — falls back to weekday duty start when empty."
+                            :error="form.errors.custom_saturday_duty_start_time"
+                        />
+                        <UiInput
+                            v-model="form.custom_saturday_duty_end_time"
+                            label="Saturday end"
+                            type="time"
+                            hint="Optional — falls back to weekday duty end when empty."
+                            :error="form.errors.custom_saturday_duty_end_time"
+                        />
+                        <UiInput
+                            v-model="form.custom_saturday_grace_minutes"
+                            label="Saturday grace minutes"
+                            type="number"
+                            min="0"
+                            max="180"
+                            hint="Optional — falls back to weekday grace when empty."
+                            :error="form.errors.custom_saturday_grace_minutes"
+                        />
+                    </template>
                 </div>
             </UiCard>
 

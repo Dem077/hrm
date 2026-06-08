@@ -1,31 +1,65 @@
 const appTimezone = import.meta.env.VITE_APP_TIMEZONE || 'UTC';
 
+const isoDatePattern = /^(\d{4})-(\d{2})-(\d{2})$/;
+
 function parseDate(value: string): Date | null {
     const date = new Date(value.includes('T') ? value : `${value}T00:00:00`);
 
     return Number.isNaN(date.getTime()) ? null : date;
 }
 
-export function formatDateTime(value: string | null | undefined, timeZone: string = appTimezone): string {
-    if (!value) {
-        return '—';
-    }
-
-    const date = parseDate(value);
-
-    if (!date) {
-        return '—';
-    }
-
-    return new Intl.DateTimeFormat('en-GB', {
+function dateParts(date: Date, timeZone: string): { day: string; month: string; year: string } {
+    const parts = new Intl.DateTimeFormat('en-GB', {
         day: '2-digit',
         month: '2-digit',
         year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: false,
         timeZone,
-    }).format(date);
+    }).formatToParts(date);
+
+    const value = (type: Intl.DateTimeFormatPartTypes) =>
+        parts.find((part) => part.type === type)?.value ?? '';
+
+    return {
+        day: value('day'),
+        month: value('month'),
+        year: value('year'),
+    };
+}
+
+function formatDateValue(date: Date, timeZone: string): string {
+    const { day, month, year } = dateParts(date, timeZone);
+
+    return `${day}/${month}/${year}`;
+}
+
+export function formatIsoDateOnly(value: string): string | null {
+    const match = value.match(isoDatePattern);
+
+    if (!match) {
+        return null;
+    }
+
+    return `${match[3]}/${match[2]}/${match[1]}`;
+}
+
+export function displayToIso(value: string): string | null {
+    const match = value.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+
+    if (!match) {
+        return null;
+    }
+
+    const day = Number(match[1]);
+    const month = Number(match[2]);
+    const year = Number(match[3]);
+    const iso = `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    const parsed = parseDate(iso);
+
+    if (!parsed || parsed.getFullYear() !== year || parsed.getMonth() + 1 !== month || parsed.getDate() !== day) {
+        return null;
+    }
+
+    return iso;
 }
 
 export function formatDate(value: string | null | undefined, timeZone: string = appTimezone): string {
@@ -33,16 +67,48 @@ export function formatDate(value: string | null | undefined, timeZone: string = 
         return '—';
     }
 
+    if (!value.includes('T')) {
+        const isoFormatted = formatIsoDateOnly(value);
+
+        if (isoFormatted) {
+            return isoFormatted;
+        }
+    }
+
     const date = parseDate(value);
 
     if (!date) {
         return '—';
     }
 
-    return new Intl.DateTimeFormat('en-GB', {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric',
+    return formatDateValue(date, timeZone);
+}
+
+export function formatDateTime(value: string | null | undefined, timeZone: string = appTimezone): string {
+    if (!value) {
+        return '—';
+    }
+
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+        return '—';
+    }
+
+    const time = new Intl.DateTimeFormat('en-GB', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
         timeZone,
     }).format(date);
+
+    return `${formatDateValue(date, timeZone)} ${time}`;
+}
+
+export function formatDateRange(
+    from: string | null | undefined,
+    to: string | null | undefined,
+    timeZone: string = appTimezone,
+): string {
+    return `${formatDate(from, timeZone)} – ${formatDate(to, timeZone)}`;
 }

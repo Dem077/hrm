@@ -18,7 +18,11 @@ export type PayrollPeriodSettings = {
 
 export type AttendanceDutyPolicy = {
     id?: number | null;
+    name?: string | null;
+    is_temporary?: boolean;
     effective_from: string;
+    effective_until?: string | null;
+    period_label?: string | null;
     duty_start_time: string;
     duty_end_time: string;
     grace_minutes: number;
@@ -43,6 +47,7 @@ export type AttendanceSheetRow = {
     status_label: string;
     status_color: string;
     holiday_name: string | null;
+    leave_type_name: string | null;
     duty_start_time: string;
     duty_end_time: string;
     duty_policy?: AttendanceDutyPolicy;

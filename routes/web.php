@@ -6,6 +6,8 @@ use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DepartmentController;
 use App\Http\Controllers\EmployeeController;
+use App\Http\Controllers\LeaveRequestController;
+use App\Http\Controllers\LeaveTypeController;
 use App\Http\Controllers\RoleController;
 use App\Http\Controllers\ZktAttendanceLogController;
 use App\Http\Controllers\ZktDeviceController;
@@ -90,6 +92,48 @@ Route::middleware('auth')->group(function () {
     Route::get('attendance-sheet', [AttendanceSheetController::class, 'index'])
         ->middleware('permission:attendance-sheet.view')
         ->name('attendance-sheet.index');
+
+    Route::middleware('permission:leave-requests.view|leave-requests.approve|leave-requests.approve-hr')->group(function () {
+        Route::get('leave-requests', [LeaveRequestController::class, 'index'])->name('leave-requests.index');
+        Route::get('leave-requests/record', [LeaveRequestController::class, 'createForStaff'])
+            ->middleware('permission:leave-requests.record-for-others')
+            ->name('leave-requests.record.create');
+        Route::post('leave-requests/record', [LeaveRequestController::class, 'storeForStaff'])
+            ->middleware('permission:leave-requests.record-for-others')
+            ->name('leave-requests.record.store');
+        Route::post('leave-requests/check-punches', [LeaveRequestController::class, 'checkPunches'])
+            ->middleware('permission:leave-requests.create|leave-requests.record-for-others')
+            ->name('leave-requests.check-punches');
+        Route::get('leave-requests/create', [LeaveRequestController::class, 'create'])
+            ->middleware('permission:leave-requests.create')
+            ->name('leave-requests.create');
+        Route::post('leave-requests', [LeaveRequestController::class, 'store'])
+            ->middleware('permission:leave-requests.create')
+            ->name('leave-requests.store');
+        Route::get('leave-requests/{leave_request}', [LeaveRequestController::class, 'show'])->name('leave-requests.show');
+        Route::post('leave-requests/{leave_request}/approve', [LeaveRequestController::class, 'approve'])
+            ->middleware('permission:leave-requests.approve|leave-requests.approve-hr')
+            ->name('leave-requests.approve');
+        Route::post('leave-requests/{leave_request}/reject', [LeaveRequestController::class, 'reject'])
+            ->middleware('permission:leave-requests.approve|leave-requests.approve-hr')
+            ->name('leave-requests.reject');
+        Route::post('leave-requests/{leave_request}/cancel', [LeaveRequestController::class, 'cancel'])
+            ->middleware('permission:leave-requests.cancel')
+            ->name('leave-requests.cancel');
+    });
+
+    Route::middleware('permission:leave-types.view')->group(function () {
+        Route::get('leave-types', [LeaveTypeController::class, 'index'])->name('leave-types.index');
+        Route::post('leave-types', [LeaveTypeController::class, 'store'])
+            ->middleware('permission:leave-types.create')
+            ->name('leave-types.store');
+        Route::put('leave-types/{leave_type}', [LeaveTypeController::class, 'update'])
+            ->middleware('permission:leave-types.update')
+            ->name('leave-types.update');
+        Route::delete('leave-types/{leave_type}', [LeaveTypeController::class, 'destroy'])
+            ->middleware('permission:leave-types.delete')
+            ->name('leave-types.destroy');
+    });
 
     Route::middleware('permission:attendance-settings.view')->group(function () {
         Route::get('attendance-settings', [AttendanceSettingController::class, 'index'])->name('attendance-settings.index');

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\AttendanceMachineBrand;
 use App\Enums\ZktConnectionProtocol;
 use App\Enums\ZktConnectionStatus;
 use App\Http\Requests\ProbeZktDeviceRequest;
@@ -11,10 +12,10 @@ use App\Jobs\SyncZktDeviceJob;
 use App\Models\ZktDevice;
 use App\Services\Zkt\ZktDeviceClient;
 use App\Services\Zkt\ZktDeviceSyncService;
+use App\Support\DateFormatter;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Carbon;
 use Inertia\Inertia;
 use Inertia\Response;
 use Throwable;
@@ -36,6 +37,7 @@ class ZktDeviceController extends Controller
         return Inertia::render('ZktDevices/Form', [
             'device' => $this->emptyDevice(),
             'protocols' => $this->protocolOptions(),
+            'brands' => AttendanceMachineBrand::options(),
         ]);
     }
 
@@ -45,7 +47,7 @@ class ZktDeviceController extends Controller
 
         return redirect()
             ->route('zkt-devices.index')
-            ->with('success', 'ZKT device created successfully.');
+            ->with('success', 'Attendance machine created successfully.');
     }
 
     public function show(ZktDevice $zktDevice): Response
@@ -65,6 +67,7 @@ class ZktDeviceController extends Controller
         return Inertia::render('ZktDevices/Form', [
             'device' => $this->formatDevice($zktDevice),
             'protocols' => $this->protocolOptions(),
+            'brands' => AttendanceMachineBrand::options(),
         ]);
     }
 
@@ -74,7 +77,7 @@ class ZktDeviceController extends Controller
 
         return redirect()
             ->route('zkt-devices.show', $zktDevice)
-            ->with('success', 'ZKT device updated successfully.');
+            ->with('success', 'Attendance machine updated successfully.');
     }
 
     public function destroy(ZktDevice $zktDevice): RedirectResponse
@@ -83,7 +86,7 @@ class ZktDeviceController extends Controller
 
         return redirect()
             ->route('zkt-devices.index')
-            ->with('success', 'ZKT device deleted successfully.');
+            ->with('success', 'Attendance machine deleted successfully.');
     }
 
     public function probe(ProbeZktDeviceRequest $request, ZktDeviceClient $client): JsonResponse
@@ -120,6 +123,10 @@ class ZktDeviceController extends Controller
 
     public function test(ZktDevice $zktDevice, ZktDeviceClient $client): RedirectResponse
     {
+        if ($redirect = $this->ensureDeviceIsActive($zktDevice)) {
+            return $redirect;
+        }
+
         $result = $client->testConnection($zktDevice);
 
         return back()->with(
@@ -130,6 +137,10 @@ class ZktDeviceController extends Controller
 
     public function sync(ZktDevice $zktDevice, ZktDeviceSyncService $syncService): RedirectResponse
     {
+        if ($redirect = $this->ensureDeviceIsActive($zktDevice)) {
+            return $redirect;
+        }
+
         $syncLog = $syncService->sync($zktDevice);
 
         return back()->with(
@@ -140,13 +151,17 @@ class ZktDeviceController extends Controller
 
     public function readTime(ZktDevice $zktDevice, ZktDeviceClient $client): RedirectResponse
     {
+        if ($redirect = $this->ensureDeviceIsActive($zktDevice)) {
+            return $redirect;
+        }
+
         try {
             $result = $client->readDeviceTime($zktDevice);
 
             $deviceTime = $result['device_time']
-                ? Carbon::parse($result['device_time'])->format('d/m/Y H:i')
+                ? DateFormatter::formatDateTime($result['device_time'])
                 : '—';
-            $serverTime = Carbon::parse($result['server_time'])->format('d/m/Y H:i');
+            $serverTime = DateFormatter::formatDateTime($result['server_time']);
 
             $message = "Device: {$deviceTime} · Server: {$serverTime}";
 
@@ -165,12 +180,16 @@ class ZktDeviceController extends Controller
 
     public function syncTime(ZktDevice $zktDevice, ZktDeviceClient $client): RedirectResponse
     {
+        if ($redirect = $this->ensureDeviceIsActive($zktDevice)) {
+            return $redirect;
+        }
+
         try {
             $result = $client->syncDeviceTime($zktDevice);
 
             $displayTime = $result['device_time_after']
-                ? Carbon::parse($result['device_time_after'])->format('d/m/Y H:i')
-                : now()->format('d/m/Y H:i');
+                ? DateFormatter::formatDateTime($result['device_time_after'])
+                : DateFormatter::formatDateTime(now());
 
             $message = 'Device clock updated to '.$displayTime.'.';
 
@@ -206,6 +225,8 @@ class ZktDeviceController extends Controller
         $data = [
             'id' => $device->id,
             'name' => $device->name,
+            'brand' => $device->brand->value,
+            'brand_label' => $device->brand->label(),
             'location' => $device->location,
             'ip_address' => $device->ip_address,
             'port' => $device->port,
@@ -218,9 +239,7 @@ class ZktDeviceController extends Controller
             'is_active' => $device->is_active,
             'auto_sync' => $device->auto_sync,
             'sync_interval_minutes' => $device->sync_interval_minutes,
-            'connection_status' => $device->connection_status->value,
-            'connection_status_label' => $device->connection_status->label(),
-            'connection_status_color' => $device->connection_status->color(),
+            ...$device->connectionStatusPresentation(),
             'last_connected_at' => $device->last_connected_at?->toIso8601String(),
             'last_synced_at' => $device->last_synced_at?->toIso8601String(),
             'last_sync_error' => $device->last_sync_error,
@@ -260,6 +279,7 @@ class ZktDeviceController extends Controller
         return [
             'id' => null,
             'name' => '',
+            'brand' => AttendanceMachineBrand::Zkt->value,
             'location' => '',
             'ip_address' => '',
             'port' => (int) config('zkt.default_port', 4370),
@@ -282,6 +302,15 @@ class ZktDeviceController extends Controller
             'tcpmux_subdomain' => null,
             'tcpmux_port' => null,
         ];
+    }
+
+    protected function ensureDeviceIsActive(ZktDevice $device): ?RedirectResponse
+    {
+        if ($device->is_active) {
+            return null;
+        }
+
+        return back()->with('error', 'This machine is inactive.');
     }
 
     /**

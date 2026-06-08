@@ -110,7 +110,15 @@ class AttendanceSheetController extends Controller
             'employees' => $canViewAll
                 ? Employee::query()
                     ->where('is_active', true)
-                    ->when($departmentId, fn ($query) => $query->where('department_id', $departmentId))
+                    ->when($departmentId, function ($query) use ($departmentId, $employeeId) {
+                        $query->where(function ($inner) use ($departmentId, $employeeId) {
+                            $inner->where('department_id', $departmentId);
+
+                            if ($employeeId) {
+                                $inner->orWhere('id', $employeeId);
+                            }
+                        });
+                    })
                     ->orderBy('name')
                     ->get(['id', 'name', 'staff_id'])
                     ->map(fn (Employee $employee) => [

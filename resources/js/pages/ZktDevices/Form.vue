@@ -11,11 +11,12 @@ import UiInput from '@/components/ui/UiInput.vue';
 import UiSelect from '@/components/ui/UiSelect.vue';
 import AppLayout from '@/layouts/AppLayout.vue';
 import { formatDateTime } from '@/lib/format';
-import type { ProtocolOption, ZktDevice } from '@/types/zkt';
+import type { BrandOption, ProtocolOption, ZktDevice } from '@/types/zkt';
 
 const props = defineProps<{
     device: ZktDevice;
     protocols: ProtocolOption[];
+    brands: BrandOption[];
 }>();
 
 const isEditing = computed(() => props.device.id !== null);
@@ -25,6 +26,7 @@ const probing = ref(false);
 
 const form = useForm({
     name: props.device.name,
+    brand: props.device.brand,
     location: props.device.location ?? '',
     ip_address: props.device.ip_address,
     port: props.device.port,
@@ -133,11 +135,11 @@ function submit() {
 </script>
 
 <template>
-    <Head :title="isEditing ? 'Edit Device' : 'Add Device'" />
+    <Head :title="isEditing ? 'Edit Machine' : 'Add Machine'" />
 
     <AppLayout>
         <PageHeader
-            :title="isEditing ? 'Edit device' : 'Add device'"
+            :title="isEditing ? 'Edit machine' : 'Add machine'"
             description="Enter network details, test the connection, then save the machine profile."
         >
             <template #actions>
@@ -154,9 +156,14 @@ function submit() {
         </div>
 
         <form class="space-y-6" @submit.prevent="submit">
-            <UiCard title="Device details" description="Connection settings used to reach the ZKT machine.">
+            <UiCard title="Machine details" description="Brand and connection settings used to reach the attendance machine.">
                 <div class="grid gap-5 md:grid-cols-2">
                     <UiInput v-model="form.name" label="Name" required :error="form.errors.name" />
+                    <UiSelect v-model="form.brand" label="Brand" required :error="form.errors.brand">
+                        <option v-for="option in brands" :key="option.value" :value="option.value">
+                            {{ option.label }}
+                        </option>
+                    </UiSelect>
                     <UiInput v-model="form.location" label="Location" />
                     <UiInput v-model="form.ip_address" label="IP address" required :error="form.errors.ip_address" />
                     <UiInput v-model="form.port" label="Port" type="number" required />
@@ -183,7 +190,7 @@ function submit() {
                 </div>
             </UiCard>
 
-            <UiCard title="Device metadata" description="Populated automatically after a successful connection test.">
+            <UiCard title="Machine metadata" description="Populated automatically after a successful connection test.">
                 <div class="mb-5">
                     <UiBadge :label="connectionStatusLabel" :color="connectionStatusColor" />
                 </div>
@@ -212,7 +219,7 @@ function submit() {
 
             <div class="flex justify-end">
                 <UiButton type="submit" variant="primary" :disabled="form.processing">
-                    {{ isEditing ? 'Update device' : 'Create device' }}
+                    {{ isEditing ? 'Update machine' : 'Create machine' }}
                 </UiButton>
             </div>
         </form>

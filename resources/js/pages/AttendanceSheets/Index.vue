@@ -6,7 +6,8 @@ import PageHeader from '@/components/ui/PageHeader.vue';
 import UiBadge from '@/components/ui/UiBadge.vue';
 import UiButton from '@/components/ui/UiButton.vue';
 import UiCard from '@/components/ui/UiCard.vue';
-import UiInput from '@/components/ui/UiInput.vue';
+import UiDateInput from '@/components/ui/UiDateInput.vue';
+import UiSearchableSelect from '@/components/ui/UiSearchableSelect.vue';
 import UiSelect from '@/components/ui/UiSelect.vue';
 import AppLayout from '@/layouts/AppLayout.vue';
 import { formatDate, formatDateTime } from '@/lib/format';
@@ -41,8 +42,35 @@ const filters = reactive({
     employee_id: props.filters.employee_id ?? '',
 });
 
-const isAllEmployees = computed(() => props.singleDayOnly || (props.canViewAll && !filters.employee_id));
+const isAllEmployees = computed(() => props.canViewAll && !filters.employee_id);
 const isCustomPayrollPeriod = computed(() => filters.payroll_period === 'custom' && !isAllEmployees.value);
+
+const selectedEmployeeLabel = computed(() => {
+    if (!filters.employee_id) {
+        return null;
+    }
+
+    return props.employees.find((employee) => String(employee.id) === String(filters.employee_id))?.label ?? null;
+});
+
+watch(
+    () => props.filters,
+    (value) => {
+        filters.payroll_period = value.payroll_period;
+        filters.from = value.from;
+        filters.to = value.to;
+        filters.department_id = value.department_id ?? '';
+        filters.employee_id = value.employee_id ?? '';
+    },
+    { deep: true },
+);
+
+const employeeOptions = computed(() =>
+    props.employees.map((employee) => ({
+        value: employee.id,
+        label: employee.label,
+    })),
+);
 
 watch(
     () => filters.department_id,
@@ -114,10 +142,20 @@ function payrollPeriodOptionLabel(period: PayrollPeriodSettings['recent'][number
 }
 
 function applyFilters() {
-    router.get('/attendance-sheet', filters, {
-        preserveState: true,
-        replace: true,
-    });
+    router.get(
+        '/attendance-sheet',
+        {
+            payroll_period: filters.payroll_period,
+            from: filters.from,
+            to: filters.to,
+            department_id: filters.department_id || undefined,
+            employee_id: filters.employee_id || undefined,
+        },
+        {
+            preserveState: true,
+            replace: true,
+        },
+    );
 }
 </script>
 
@@ -158,18 +196,16 @@ function applyFilters() {
                         </option>
                         <option value="custom">Custom range</option>
                     </UiSelect>
-                    <UiInput
+                    <UiDateInput
                         v-model="filters.from"
                         :label="isAllEmployees ? 'Date' : 'From'"
-                        type="date"
                         :disabled="!isAllEmployees && !isCustomPayrollPeriod"
                         @input="markCustomPayrollPeriod"
                     />
-                    <UiInput
+                    <UiDateInput
                         v-if="!isAllEmployees"
                         v-model="filters.to"
                         label="To"
-                        type="date"
                         :disabled="!isCustomPayrollPeriod"
                         @input="markCustomPayrollPeriod"
                     />
@@ -179,12 +215,15 @@ function applyFilters() {
                             {{ department.name }}
                         </option>
                     </UiSelect>
-                    <UiSelect v-if="canViewAll" v-model="filters.employee_id" label="Employee">
-                        <option value="">All employees</option>
-                        <option v-for="employee in employees" :key="employee.id" :value="employee.id">
-                            {{ employee.label }}
-                        </option>
-                    </UiSelect>
+                    <UiSearchableSelect
+                        v-if="canViewAll"
+                        v-model="filters.employee_id"
+                        label="Employee"
+                        empty-label="All employees"
+                        placeholder="Search by name or staff ID..."
+                        :options="employeeOptions"
+                        :selected-label="selectedEmployeeLabel"
+                    />
                     <div class="flex items-end md:col-span-2" :class="canViewAll ? 'xl:col-span-1' : 'xl:col-span-1'">
                         <UiButton type="submit" variant="primary">Apply</UiButton>
                     </div>

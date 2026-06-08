@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Enums\AttendanceMachineBrand;
 use App\Enums\ZktConnectionProtocol;
 use App\Enums\ZktConnectionStatus;
 use Illuminate\Foundation\Http\FormRequest;
@@ -39,6 +40,7 @@ class StoreZktDeviceRequest extends FormRequest
     {
         return [
             'name' => ['required', 'string', 'max:255'],
+            'brand' => ['required', Rule::enum(AttendanceMachineBrand::class)],
             'location' => ['nullable', 'string', 'max:255'],
             'ip_address' => ['required', 'string', 'max:255'],
             'port' => ['required', 'integer', 'min:1', 'max:65535'],

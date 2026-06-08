@@ -1,8 +1,15 @@
-export type ConnectionStatus = 'unknown' | 'online' | 'offline';
+export type ConnectionStatus = 'unknown' | 'online' | 'offline' | 'inactive';
+
+export type BrandOption = {
+    value: string;
+    label: string;
+};
 
 export type ZktDevice = {
     id: number | null;
     name: string;
+    brand: string;
+    brand_label?: string;
     location: string | null;
     ip_address: string;
     port: number;

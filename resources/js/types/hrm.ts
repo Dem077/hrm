@@ -19,6 +19,13 @@ export type Employee = {
     manager?: { id: number; name: string; staff_id: string } | null;
     is_active: boolean;
     works_saturday: boolean;
+    uses_custom_duty_times: boolean;
+    custom_duty_start_time: string | null;
+    custom_duty_end_time: string | null;
+    custom_grace_minutes: number | null;
+    custom_saturday_duty_start_time: string | null;
+    custom_saturday_duty_end_time: string | null;
+    custom_saturday_grace_minutes: number | null;
     role_names?: string[];
     direct_reports?: Array<{ id: number; name: string; staff_id: string }>;
 };

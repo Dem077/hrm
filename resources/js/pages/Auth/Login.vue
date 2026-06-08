@@ -34,7 +34,7 @@ function submit() {
                     Manage attendance devices with confidence.
                 </h1>
                 <p class="mt-4 max-w-md text-base leading-7 text-slate-600 dark:text-slate-400">
-                    Connect ZKT biometric machines, monitor device health, and sync punch logs into one secure workspace.
+                    Connect attendance machines, monitor machine health, and sync punch logs into one secure workspace.
                 </p>
             </div>
             <div class="relative border-t border-sidebar-border px-12 py-8 text-sm text-slate-500">

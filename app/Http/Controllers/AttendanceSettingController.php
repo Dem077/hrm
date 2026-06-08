@@ -30,7 +30,11 @@ class AttendanceSettingController extends Controller
                     : null,
                 ...$payrollPeriodService->presentation(),
             ],
-            'policies' => AttendanceDutyPolicy::ordered()
+            'policies' => AttendanceDutyPolicy::permanentOrdered()
+                ->map(fn (AttendanceDutyPolicy $policy) => $policy->toPresentationArray())
+                ->values()
+                ->all(),
+            'tempPolicies' => AttendanceDutyPolicy::temporaryOrdered()
                 ->map(fn (AttendanceDutyPolicy $policy) => $policy->toPresentationArray())
                 ->values()
                 ->all(),
@@ -41,7 +45,22 @@ class AttendanceSettingController extends Controller
                 ->map(fn (PublicHoliday $holiday) => $holiday->toPresentationArray()),
             'year' => $year,
             'emptyPolicy' => [
+                'is_temporary' => false,
+                'name' => '',
                 'effective_from' => now()->toDateString(),
+                'effective_until' => null,
+                'duty_start_time' => '09:00',
+                'duty_end_time' => '18:00',
+                'grace_minutes' => 15,
+                'saturday_duty_start_time' => '09:00',
+                'saturday_duty_end_time' => '14:00',
+                'saturday_grace_minutes' => 15,
+            ],
+            'emptyTempPolicy' => [
+                'is_temporary' => true,
+                'name' => '',
+                'effective_from' => now()->toDateString(),
+                'effective_until' => now()->addWeek()->toDateString(),
                 'duty_start_time' => '09:00',
                 'duty_end_time' => '18:00',
                 'grace_minutes' => 15,
@@ -66,47 +85,52 @@ class AttendanceSettingController extends Controller
 
     public function storePolicy(StoreAttendanceDutyPolicyRequest $request): RedirectResponse
     {
-        $data = $request->validated();
+        AttendanceDutyPolicy::query()->create($this->policyAttributes($request->validated()));
 
-        AttendanceDutyPolicy::query()->create([
-            'effective_from' => $data['effective_from'],
-            'duty_start_time' => $data['duty_start_time'].':00',
-            'duty_end_time' => $data['duty_end_time'].':00',
-            'grace_minutes' => $data['grace_minutes'],
-            'saturday_duty_start_time' => $data['saturday_duty_start_time'].':00',
-            'saturday_duty_end_time' => $data['saturday_duty_end_time'].':00',
-            'saturday_grace_minutes' => $data['saturday_grace_minutes'],
-        ]);
+        $message = $request->boolean('is_temporary')
+            ? 'Temporary duty policy saved. It overrides permanent policies for that period.'
+            : 'Duty policy saved. It applies from the effective date onward.';
 
-        return back()->with('success', 'Duty policy saved. It applies from the effective date onward.');
+        return back()->with('success', $message);
     }
 
     public function updatePolicy(UpdateAttendanceDutyPolicyRequest $request, AttendanceDutyPolicy $attendanceDutyPolicy): RedirectResponse
     {
-        $data = $request->validated();
-
-        $attendanceDutyPolicy->update([
-            'effective_from' => $data['effective_from'],
-            'duty_start_time' => $data['duty_start_time'].':00',
-            'duty_end_time' => $data['duty_end_time'].':00',
-            'grace_minutes' => $data['grace_minutes'],
-            'saturday_duty_start_time' => $data['saturday_duty_start_time'].':00',
-            'saturday_duty_end_time' => $data['saturday_duty_end_time'].':00',
-            'saturday_grace_minutes' => $data['saturday_grace_minutes'],
-        ]);
+        $attendanceDutyPolicy->update($this->policyAttributes($request->validated()));
 
         return back()->with('success', 'Duty policy updated successfully.');
     }
 
     public function destroyPolicy(AttendanceDutyPolicy $attendanceDutyPolicy): RedirectResponse
     {
-        if (AttendanceDutyPolicy::query()->count() <= 1) {
-            return back()->with('error', 'At least one duty policy must remain.');
+        if (! $attendanceDutyPolicy->isTemporary() && AttendanceDutyPolicy::query()->permanent()->count() <= 1) {
+            return back()->with('error', 'At least one permanent duty policy must remain.');
         }
 
         $attendanceDutyPolicy->delete();
 
         return back()->with('success', 'Duty policy deleted successfully.');
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>
+     */
+    protected function policyAttributes(array $data): array
+    {
+        $isTemporary = (bool) ($data['is_temporary'] ?? false);
+
+        return [
+            'effective_from' => $data['effective_from'],
+            'effective_until' => $isTemporary ? $data['effective_until'] : null,
+            'name' => $isTemporary ? ($data['name'] ?? null) : null,
+            'duty_start_time' => $data['duty_start_time'].':00',
+            'duty_end_time' => $data['duty_end_time'].':00',
+            'grace_minutes' => $data['grace_minutes'],
+            'saturday_duty_start_time' => $data['saturday_duty_start_time'].':00',
+            'saturday_duty_end_time' => $data['saturday_duty_end_time'].':00',
+            'saturday_grace_minutes' => $data['saturday_grace_minutes'],
+        ];
     }
 
     public function storeHoliday(StorePublicHolidayRequest $request): RedirectResponse

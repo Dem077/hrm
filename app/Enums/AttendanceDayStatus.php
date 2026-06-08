@@ -9,6 +9,7 @@ enum AttendanceDayStatus: string
     case Absent = 'absent';
     case Incomplete = 'incomplete';
     case Holiday = 'holiday';
+    case Leave = 'leave';
 
     public function label(): string
     {
@@ -18,6 +19,7 @@ enum AttendanceDayStatus: string
             self::Absent => 'Absent',
             self::Incomplete => 'Incomplete',
             self::Holiday => 'Holiday',
+            self::Leave => 'Leave',
         };
     }
 
@@ -29,6 +31,7 @@ enum AttendanceDayStatus: string
             self::Absent => 'danger',
             self::Incomplete => 'warning',
             self::Holiday => 'gray',
+            self::Leave => 'info',
         };
     }
 }

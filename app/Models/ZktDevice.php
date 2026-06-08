@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\AttendanceMachineBrand;
 use App\Enums\ZktConnectionProtocol;
 use App\Enums\ZktConnectionStatus;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -11,6 +12,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 #[Fillable([
     'name',
+    'brand',
     'ip_address',
     'port',
     'protocol',
@@ -35,6 +37,7 @@ class ZktDevice extends Model
 {
     protected $attributes = [
         'port' => 4370,
+        'brand' => 'zkt',
         'protocol' => 'tcp',
         'comm_password' => 0,
         'is_active' => true,
@@ -53,6 +56,7 @@ class ZktDevice extends Model
             'auto_sync' => 'boolean',
             'sync_interval_minutes' => 'integer',
             'protocol' => ZktConnectionProtocol::class,
+            'brand' => AttendanceMachineBrand::class,
             'last_connected_at' => 'datetime',
             'last_synced_at' => 'datetime',
             'tcpmux_enabled' => 'boolean',
@@ -81,6 +85,35 @@ class ZktDevice extends Model
         }
 
         return $this->last_synced_at->addMinutes($this->sync_interval_minutes)->isPast();
+    }
+
+    /**
+     * @return array{connection_status: string, connection_status_label: string, connection_status_color: string}
+     */
+    public function connectionStatusPresentation(): array
+    {
+        if (! $this->is_active) {
+            return [
+                'connection_status' => 'inactive',
+                'connection_status_label' => 'Inactive',
+                'connection_status_color' => 'gray',
+            ];
+        }
+
+        return [
+            'connection_status' => $this->connection_status->value,
+            'connection_status_label' => $this->connection_status->label(),
+            'connection_status_color' => $this->connection_status->color(),
+        ];
+    }
+
+    protected static function booted(): void
+    {
+        static::updating(function (self $device): void {
+            if ($device->isDirty('is_active') && ! $device->is_active) {
+                $device->connection_status = ZktConnectionStatus::Offline;
+            }
+        });
     }
 
     protected function connectionStatus(): Attribute

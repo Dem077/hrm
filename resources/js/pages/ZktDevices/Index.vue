@@ -49,23 +49,23 @@ function iconTone(color?: string): string {
 </script>
 
 <template>
-    <Head title="ZKT Devices" />
+    <Head title="Attendance Machines" />
 
     <AppLayout>
         <PageHeader
-            title="ZKT Devices"
+            title="Attendance Machines"
             description="Manage biometric punch machines, test connectivity, and sync attendance."
         >
             <template #actions>
                 <UiButton v-if="can('zkt-devices.sync-all')" variant="secondary" @click="syncAll">Sync all active</UiButton>
-                <UiButton v-if="can('zkt-devices.create')" href="/zkt-devices/create" variant="primary">Add device</UiButton>
+                <UiButton v-if="can('zkt-devices.create')" href="/zkt-devices/create" variant="primary">Add machine</UiButton>
             </template>
         </PageHeader>
 
         <EmptyState
             v-if="devices.length === 0"
-            title="No devices yet"
-            description="Add your first ZKT machine to start syncing attendance punches."
+            title="No machines yet"
+            description="Add your first attendance machine to start syncing punches."
         >
             <template #icon>
                 <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -73,7 +73,7 @@ function iconTone(color?: string): string {
                 </svg>
             </template>
             <template v-if="can('zkt-devices.create')" #action>
-                <UiButton href="/zkt-devices/create" variant="primary">Add device</UiButton>
+                <UiButton href="/zkt-devices/create" variant="primary">Add machine</UiButton>
             </template>
         </EmptyState>
 
@@ -105,7 +105,7 @@ function iconTone(color?: string): string {
                             {{ device.name }}
                         </Link>
                         <p class="mt-0.5 truncate text-xs text-slate-500">
-                            {{ device.location ?? 'No location' }}
+                            {{ device.brand_label ?? device.brand }} · {{ device.location ?? 'No location' }}
                         </p>
                     </div>
                 </div>
@@ -174,7 +174,7 @@ function iconTone(color?: string): string {
                     <Link
                         v-if="can('zkt-devices.update')"
                         :href="`/zkt-devices/${device.id}/edit`"
-                        title="Edit device"
+                        title="Edit machine"
                         class="rounded-lg p-1.5 text-slate-500 transition hover:bg-surface-muted hover:text-slate-900 dark:hover:text-white"
                     >
                         <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">

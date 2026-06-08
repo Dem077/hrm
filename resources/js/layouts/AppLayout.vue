@@ -57,6 +57,13 @@ const primaryNavItems: NavItem[] = [
         icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01',
         match: (url: string) => url.startsWith('/attendance-sheet'),
     },
+    {
+        label: 'Leave Management',
+        href: '/leave-requests',
+        permission: 'leave-requests.view',
+        icon: 'M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z',
+        match: (url: string) => url.startsWith('/leave-requests'),
+    },
 ];
 
 const humanResourcesNavItems: NavItem[] = [
@@ -73,6 +80,13 @@ const humanResourcesNavItems: NavItem[] = [
         permission: 'departments.view',
         icon: 'M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4',
         match: (url: string) => url.startsWith('/departments'),
+    },
+    {
+        label: 'Leave Types',
+        href: '/leave-types',
+        permission: 'leave-types.view',
+        icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2',
+        match: (url: string) => url.startsWith('/leave-types'),
     },
 ];
 
@@ -92,7 +106,7 @@ const configurationNavItems: NavItem[] = [
         match: (url: string) => url.startsWith('/roles'),
     },
     {
-        label: 'ZKT Devices',
+        label: 'Attendance Machines',
         href: '/zkt-devices',
         permission: 'zkt-devices.view',
         icon: 'M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2z',

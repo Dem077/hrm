@@ -27,12 +27,54 @@ class StoreEmployeeRequest extends FormRequest
 
     protected function prepareForValidation(): void
     {
-        $this->merge([
+        $usesCustomDutyTimes = $this->boolean('uses_custom_duty_times', false);
+
+        $merge = [
             'is_active' => $this->boolean('is_active', true),
             'works_saturday' => $this->boolean('works_saturday', false),
+            'uses_custom_duty_times' => $usesCustomDutyTimes,
             'department_id' => $this->input('department_id') ?: null,
             'manager_id' => $this->input('manager_id') ?: null,
-        ]);
+        ];
+
+        if ($usesCustomDutyTimes) {
+            foreach (['custom_duty_start_time', 'custom_duty_end_time'] as $field) {
+                if ($this->filled($field)) {
+                    $merge[$field] = $this->normalizeTimeForValidation($this->input($field)).':00';
+                }
+            }
+
+            foreach (['custom_saturday_duty_start_time', 'custom_saturday_duty_end_time'] as $field) {
+                $merge[$field] = $this->filled($field)
+                    ? $this->normalizeTimeForValidation($this->input($field)).':00'
+                    : null;
+            }
+
+            $merge['custom_grace_minutes'] = $this->filled('custom_grace_minutes')
+                ? (int) $this->input('custom_grace_minutes')
+                : null;
+            $merge['custom_saturday_grace_minutes'] = $this->filled('custom_saturday_grace_minutes')
+                ? (int) $this->input('custom_saturday_grace_minutes')
+                : null;
+        } else {
+            $merge['custom_duty_start_time'] = null;
+            $merge['custom_duty_end_time'] = null;
+            $merge['custom_grace_minutes'] = null;
+            $merge['custom_saturday_duty_start_time'] = null;
+            $merge['custom_saturday_duty_end_time'] = null;
+            $merge['custom_saturday_grace_minutes'] = null;
+        }
+
+        $this->merge($merge);
+    }
+
+    protected function normalizeTimeForValidation(?string $time): ?string
+    {
+        if (! $time) {
+            return null;
+        }
+
+        return strlen($time) === 5 ? $time : substr($time, 0, 5);
     }
 
     /**
@@ -53,6 +95,13 @@ class StoreEmployeeRequest extends FormRequest
             'password' => ['nullable', 'string', 'min:8'],
             'is_active' => ['boolean'],
             'works_saturday' => ['boolean'],
+            'uses_custom_duty_times' => ['boolean'],
+            'custom_duty_start_time' => ['nullable', 'required_if:uses_custom_duty_times,true', 'date_format:H:i:s'],
+            'custom_duty_end_time' => ['nullable', 'required_if:uses_custom_duty_times,true', 'date_format:H:i:s', 'after:custom_duty_start_time'],
+            'custom_grace_minutes' => ['nullable', 'integer', 'min:0', 'max:180'],
+            'custom_saturday_duty_start_time' => ['nullable', 'date_format:H:i:s'],
+            'custom_saturday_duty_end_time' => ['nullable', 'date_format:H:i:s', 'after:custom_saturday_duty_start_time'],
+            'custom_saturday_grace_minutes' => ['nullable', 'integer', 'min:0', 'max:180'],
         ];
     }
 

@@ -56,9 +56,20 @@ function deleteEmployee(id: number) {
                         <dt class="text-slate-500">Joined</dt>
                         <dd class="font-medium text-slate-900 dark:text-slate-100">{{ formatDate(employee.joined_date) }}</dd>
                     </div>
-                    <div class="flex justify-between gap-4">
+                    <div class="flex justify-between gap-4 border-b border-slate-100 pb-3 dark:border-slate-800">
                         <dt class="text-slate-500">Saturday work</dt>
                         <dd class="font-medium text-slate-900 dark:text-slate-100">{{ employee.works_saturday ? 'Yes' : 'No' }}</dd>
+                    </div>
+                    <div class="flex justify-between gap-4">
+                        <dt class="text-slate-500">Duty times</dt>
+                        <dd class="text-right font-medium text-slate-900 dark:text-slate-100">
+                            <template v-if="employee.uses_custom_duty_times">
+                                Custom:
+                                {{ employee.custom_duty_start_time ?? '—' }}–{{ employee.custom_duty_end_time ?? '—' }}
+                                <span v-if="employee.custom_grace_minutes !== null"> · {{ employee.custom_grace_minutes }}m grace</span>
+                            </template>
+                            <template v-else>Global policy</template>
+                        </dd>
                     </div>
                 </dl>
             </UiCard>

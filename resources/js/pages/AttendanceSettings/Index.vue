@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { Head, router, useForm } from '@inertiajs/vue3';
-import { reactive, ref, computed } from 'vue';
+import { reactive, ref } from 'vue';
 
 import PageHeader from '@/components/ui/PageHeader.vue';
 import UiButton from '@/components/ui/UiButton.vue';
 import UiCard from '@/components/ui/UiCard.vue';
 import UiInput from '@/components/ui/UiInput.vue';
+import UiModal from '@/components/ui/UiModal.vue';
 import { usePermissions } from '@/composables/usePermissions';
 import AppLayout from '@/layouts/AppLayout.vue';
 import { formatDate } from '@/lib/format';
@@ -13,10 +14,12 @@ import type { AttendanceDutyPolicy, PayrollPeriodSettings, PublicHoliday } from 
 
 const props = defineProps<{
     policies: AttendanceDutyPolicy[];
+    tempPolicies: AttendanceDutyPolicy[];
     holidays: PublicHoliday[];
     year: number;
     payrollPeriod: PayrollPeriodSettings;
     emptyPolicy: AttendanceDutyPolicy;
+    emptyTempPolicy: AttendanceDutyPolicy;
     emptyHoliday: Omit<PublicHoliday, 'id'>;
 }>();
 
@@ -24,8 +27,14 @@ const { can } = usePermissions();
 
 const yearFilter = reactive({ year: props.year });
 const editingPolicyId = ref<number | null>(null);
+const editingTempPolicyId = ref<number | null>(null);
+const payrollModalOpen = ref(false);
+const policyModalOpen = ref(false);
+const tempPolicyModalOpen = ref(false);
+const holidayModalOpen = ref(false);
 
-const policyForm = useForm({ ...props.emptyPolicy });
+const policyForm = useForm({ ...props.emptyPolicy, is_temporary: false });
+const tempPolicyForm = useForm({ ...props.emptyTempPolicy, is_temporary: true });
 const holidayForm = useForm({ ...props.emptyHoliday });
 const payrollForm = useForm({
     payroll_period_start_day: props.payrollPeriod.payroll_period_start_day,
@@ -38,15 +47,66 @@ function applyYear() {
     });
 }
 
+function openPayrollModal() {
+    payrollForm.payroll_period_start_day = props.payrollPeriod.payroll_period_start_day;
+    payrollForm.clearErrors();
+    payrollModalOpen.value = true;
+}
+
+function closePayrollModal() {
+    payrollModalOpen.value = false;
+    payrollForm.reset();
+    payrollForm.defaults({
+        payroll_period_start_day: props.payrollPeriod.payroll_period_start_day,
+    });
+}
+
+function submitPayrollPeriod() {
+    payrollForm.put('/attendance-settings/payroll-period', {
+        preserveScroll: true,
+        onSuccess: closePayrollModal,
+    });
+}
+
+function openAddPolicyModal() {
+    editingPolicyId.value = null;
+    policyForm.reset();
+    policyForm.defaults({ ...props.emptyPolicy, is_temporary: false });
+    policyForm.is_temporary = false;
+    policyForm.clearErrors();
+    policyModalOpen.value = true;
+}
+
+function editPolicy(policy: AttendanceDutyPolicy) {
+    editingPolicyId.value = policy.id ?? null;
+    policyForm.is_temporary = false;
+    policyForm.name = policy.name ?? '';
+    policyForm.effective_from = policy.effective_from;
+    policyForm.effective_until = null;
+    policyForm.duty_start_time = policy.duty_start_time;
+    policyForm.duty_end_time = policy.duty_end_time;
+    policyForm.grace_minutes = policy.grace_minutes;
+    policyForm.saturday_duty_start_time = policy.saturday_duty_start_time;
+    policyForm.saturday_duty_end_time = policy.saturday_duty_end_time;
+    policyForm.saturday_grace_minutes = policy.saturday_grace_minutes;
+    policyForm.clearErrors();
+    policyModalOpen.value = true;
+}
+
+function closePolicyModal() {
+    policyModalOpen.value = false;
+    editingPolicyId.value = null;
+    policyForm.reset();
+    policyForm.defaults({ ...props.emptyPolicy, is_temporary: false });
+}
+
 function submitPolicy() {
+    policyForm.is_temporary = false;
+
     if (editingPolicyId.value) {
         policyForm.put(`/attendance-settings/duty-policies/${editingPolicyId.value}`, {
             preserveScroll: true,
-            onSuccess: () => {
-                editingPolicyId.value = null;
-                policyForm.reset();
-                policyForm.defaults({ ...props.emptyPolicy });
-            },
+            onSuccess: closePolicyModal,
         });
 
         return;
@@ -54,43 +114,87 @@ function submitPolicy() {
 
     policyForm.post('/attendance-settings/duty-policies', {
         preserveScroll: true,
-        onSuccess: () => {
-            policyForm.reset();
-            policyForm.defaults({ ...props.emptyPolicy });
-        },
+        onSuccess: closePolicyModal,
     });
 }
 
-function editPolicy(policy: AttendanceDutyPolicy) {
-    editingPolicyId.value = policy.id ?? null;
-    policyForm.effective_from = policy.effective_from;
-    policyForm.duty_start_time = policy.duty_start_time;
-    policyForm.duty_end_time = policy.duty_end_time;
-    policyForm.grace_minutes = policy.grace_minutes;
-    policyForm.saturday_duty_start_time = policy.saturday_duty_start_time;
-    policyForm.saturday_duty_end_time = policy.saturday_duty_end_time;
-    policyForm.saturday_grace_minutes = policy.saturday_grace_minutes;
+function openAddTempPolicyModal() {
+    editingTempPolicyId.value = null;
+    tempPolicyForm.reset();
+    tempPolicyForm.defaults({ ...props.emptyTempPolicy, is_temporary: true });
+    tempPolicyForm.is_temporary = true;
+    tempPolicyForm.clearErrors();
+    tempPolicyModalOpen.value = true;
 }
 
-function cancelPolicyEdit() {
-    editingPolicyId.value = null;
-    policyForm.reset();
-    policyForm.defaults({ ...props.emptyPolicy });
+function editTempPolicy(policy: AttendanceDutyPolicy) {
+    editingTempPolicyId.value = policy.id ?? null;
+    tempPolicyForm.is_temporary = true;
+    tempPolicyForm.name = policy.name ?? '';
+    tempPolicyForm.effective_from = policy.effective_from;
+    tempPolicyForm.effective_until = policy.effective_until ?? '';
+    tempPolicyForm.duty_start_time = policy.duty_start_time;
+    tempPolicyForm.duty_end_time = policy.duty_end_time;
+    tempPolicyForm.grace_minutes = policy.grace_minutes;
+    tempPolicyForm.saturday_duty_start_time = policy.saturday_duty_start_time;
+    tempPolicyForm.saturday_duty_end_time = policy.saturday_duty_end_time;
+    tempPolicyForm.saturday_grace_minutes = policy.saturday_grace_minutes;
+    tempPolicyForm.clearErrors();
+    tempPolicyModalOpen.value = true;
 }
 
-function deletePolicy(id: number) {
-    if (confirm('Delete this duty policy?')) {
+function closeTempPolicyModal() {
+    tempPolicyModalOpen.value = false;
+    editingTempPolicyId.value = null;
+    tempPolicyForm.reset();
+    tempPolicyForm.defaults({ ...props.emptyTempPolicy, is_temporary: true });
+}
+
+function submitTempPolicy() {
+    tempPolicyForm.is_temporary = true;
+
+    if (editingTempPolicyId.value) {
+        tempPolicyForm.put(`/attendance-settings/duty-policies/${editingTempPolicyId.value}`, {
+            preserveScroll: true,
+            onSuccess: closeTempPolicyModal,
+        });
+
+        return;
+    }
+
+    tempPolicyForm.post('/attendance-settings/duty-policies', {
+        preserveScroll: true,
+        onSuccess: closeTempPolicyModal,
+    });
+}
+
+function deletePolicy(id: number, isTemporary = false) {
+    const message = isTemporary
+        ? 'Delete this temporary duty policy?'
+        : 'Delete this permanent duty policy?';
+
+    if (confirm(message)) {
         router.delete(`/attendance-settings/duty-policies/${id}`, { preserveScroll: true });
     }
+}
+
+function openHolidayModal() {
+    holidayForm.reset();
+    holidayForm.defaults({ ...props.emptyHoliday });
+    holidayForm.clearErrors();
+    holidayModalOpen.value = true;
+}
+
+function closeHolidayModal() {
+    holidayModalOpen.value = false;
+    holidayForm.reset();
+    holidayForm.defaults({ ...props.emptyHoliday });
 }
 
 function submitHoliday() {
     holidayForm.post('/attendance-settings/holidays', {
         preserveScroll: true,
-        onSuccess: () => {
-            holidayForm.reset();
-            holidayForm.defaults({ ...props.emptyHoliday });
-        },
+        onSuccess: closeHolidayModal,
     });
 }
 
@@ -100,28 +204,24 @@ function deleteHoliday(id: number, name: string) {
     }
 }
 
-function submitPayrollPeriod() {
-    payrollForm.put('/attendance-settings/payroll-period', {
-        preserveScroll: true,
-    });
-}
-
-const payrollEndDayLabel = computed(() => {
-    const startDay = payrollForm.payroll_period_start_day;
-
-    if (startDay <= 1) {
-        return 'the last day of the following month';
-    }
-
-    return `the ${startDay - 1}${ordinalSuffix(startDay - 1)} of the following month`;
-});
-
 function ordinalSuffix(day: number): string {
     if (day >= 11 && day <= 13) {
         return 'th';
     }
 
     return ['th', 'st', 'nd', 'rd', 'th', 'th', 'th', 'th', 'th', 'th'][day % 10];
+}
+
+function formatDayOrdinal(day: number): string {
+    return `${day}${ordinalSuffix(day)}`;
+}
+
+function payrollEndLabel(startDay: number, endDay: number | null): string {
+    if (startDay <= 1 || endDay === null) {
+        return 'Last day of next month';
+    }
+
+    return `${formatDayOrdinal(endDay)} of next month`;
 }
 </script>
 
@@ -139,35 +239,54 @@ function ordinalSuffix(day: number): string {
                 title="Payroll period"
                 description="Defines the monthly payroll cycle used as the default date range on the attendance sheet."
             >
-                <form
-                    v-if="can('attendance-settings.payroll-period.update')"
-                    class="grid gap-4 md:grid-cols-[12rem_1fr_auto] md:items-end"
-                    @submit.prevent="submitPayrollPeriod"
-                >
-                    <UiInput
-                        v-model="payrollForm.payroll_period_start_day"
-                        label="Period starts on day"
-                        type="number"
-                        min="1"
-                        max="28"
-                        required
-                        :error="payrollForm.errors.payroll_period_start_day"
-                    />
-                    <p class="text-sm text-slate-600 dark:text-slate-400">
-                        Example with day {{ payrollForm.payroll_period_start_day }}:
-                        each period runs from the {{ payrollForm.payroll_period_start_day }}{{ ordinalSuffix(Number(payrollForm.payroll_period_start_day)) }}
-                        through {{ payrollEndDayLabel }}.
-                        Current period: {{ payrollPeriod.current.label }}.
-                    </p>
-                    <UiButton type="submit" variant="primary" :disabled="payrollForm.processing">Save</UiButton>
-                </form>
-                <p v-else class="text-sm text-slate-600 dark:text-slate-400">
-                    Period starts on day {{ payrollPeriod.payroll_period_start_day }}.
-                    Current period: {{ payrollPeriod.current.label }}.
-                </p>
+                <template #actions>
+                    <UiButton
+                        v-if="can('attendance-settings.payroll-period.update')"
+                        size="sm"
+                        variant="secondary"
+                        @click="openPayrollModal"
+                    >
+                        Edit
+                    </UiButton>
+                </template>
+
+                <dl class="grid gap-3 sm:grid-cols-3">
+                    <div class="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3 dark:border-slate-800 dark:bg-surface-elevated">
+                        <dt class="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Starts</dt>
+                        <dd class="mt-1 text-sm font-semibold text-slate-900 dark:text-slate-100">
+                            {{ formatDayOrdinal(payrollPeriod.start_day) }} of month
+                        </dd>
+                    </div>
+                    <div class="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3 dark:border-slate-800 dark:bg-surface-elevated">
+                        <dt class="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Ends</dt>
+                        <dd class="mt-1 text-sm font-semibold text-slate-900 dark:text-slate-100">
+                            {{ payrollEndLabel(payrollPeriod.start_day, payrollPeriod.end_day) }}
+                        </dd>
+                    </div>
+                    <div class="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3 dark:border-slate-800 dark:bg-surface-elevated">
+                        <dt class="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Current period</dt>
+                        <dd class="mt-1 text-sm font-semibold text-slate-900 dark:text-slate-100">
+                            {{ payrollPeriod.current.label }}
+                        </dd>
+                    </div>
+                </dl>
             </UiCard>
 
-            <UiCard title="Duty policies" description="Regular duty times apply Sun–Thu. Saturday duty times apply only to employees marked as working Saturday. The latest policy on or before each date is used.">
+            <UiCard
+                title="Permanent duty policies"
+                description="Regular duty times apply Sun–Thu. Saturday duty times apply only to employees marked as working Saturday. The latest permanent policy on or before each date is used unless a temporary override is active."
+            >
+                <template #actions>
+                    <UiButton
+                        v-if="can('attendance-settings.duty-policies.create')"
+                        size="sm"
+                        variant="primary"
+                        @click="openAddPolicyModal"
+                    >
+                        Add policy
+                    </UiButton>
+                </template>
+
                 <div class="overflow-x-auto">
                     <table class="min-w-full text-sm">
                         <thead class="border-b border-slate-100 text-left text-slate-500 dark:border-slate-800 dark:text-slate-400">
@@ -194,44 +313,82 @@ function ordinalSuffix(day: number): string {
                                 <td class="px-3 py-3">
                                     <div v-if="can('attendance-settings.duty-policies.update') || can('attendance-settings.duty-policies.delete')" class="flex gap-2">
                                         <UiButton v-if="can('attendance-settings.duty-policies.update')" size="sm" variant="ghost" @click="editPolicy(policy)">Edit</UiButton>
-                                        <UiButton v-if="can('attendance-settings.duty-policies.delete')" size="sm" variant="danger" @click="deletePolicy(policy.id!)">Delete</UiButton>
+                                        <UiButton v-if="can('attendance-settings.duty-policies.delete')" size="sm" variant="danger" @click="deletePolicy(policy.id!, false)">Delete</UiButton>
                                     </div>
                                 </td>
                             </tr>
                         </tbody>
                     </table>
                 </div>
+            </UiCard>
 
-                <form
-                    v-if="can('attendance-settings.duty-policies.create') || can('attendance-settings.duty-policies.update')"
-                    class="mt-6 space-y-4 border-t border-slate-100 pt-6 dark:border-slate-800"
-                    @submit.prevent="submitPolicy"
-                >
-                    <p class="text-sm font-medium text-slate-700 dark:text-slate-300">Weekday duty (Sun–Thu)</p>
-                    <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                        <UiInput v-model="policyForm.effective_from" label="Effective from" type="date" required :error="policyForm.errors.effective_from" />
-                        <UiInput v-model="policyForm.duty_start_time" label="Duty start" type="time" required :error="policyForm.errors.duty_start_time" />
-                        <UiInput v-model="policyForm.duty_end_time" label="Duty end" type="time" required :error="policyForm.errors.duty_end_time" />
-                        <UiInput v-model="policyForm.grace_minutes" label="Grace (minutes)" type="number" min="0" max="180" required :error="policyForm.errors.grace_minutes" />
-                    </div>
+            <UiCard
+                title="Temporary duty overrides"
+                description="Use these for limited periods such as Ramadan or special office hours. They override any permanent policy for all employees without custom duty times."
+            >
+                <template #actions>
+                    <UiButton
+                        v-if="can('attendance-settings.duty-policies.create')"
+                        size="sm"
+                        variant="primary"
+                        @click="openAddTempPolicyModal"
+                    >
+                        Add override
+                    </UiButton>
+                </template>
 
-                    <p class="text-sm font-medium text-slate-700 dark:text-slate-300">Saturday duty (employees who work Saturday)</p>
-                    <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                        <UiInput v-model="policyForm.saturday_duty_start_time" label="Saturday start" type="time" required :error="policyForm.errors.saturday_duty_start_time" />
-                        <UiInput v-model="policyForm.saturday_duty_end_time" label="Saturday end" type="time" required :error="policyForm.errors.saturday_duty_end_time" />
-                        <UiInput v-model="policyForm.saturday_grace_minutes" label="Saturday grace (minutes)" type="number" min="0" max="180" required :error="policyForm.errors.saturday_grace_minutes" />
-                    </div>
-
-                    <div class="flex gap-2">
-                        <UiButton type="submit" variant="primary" :disabled="policyForm.processing">
-                            {{ editingPolicyId ? 'Update policy' : 'Add policy' }}
-                        </UiButton>
-                        <UiButton v-if="editingPolicyId" type="button" variant="ghost" @click="cancelPolicyEdit">Cancel</UiButton>
-                    </div>
-                </form>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full text-sm">
+                        <thead class="border-b border-slate-100 text-left text-slate-500 dark:border-slate-800 dark:text-slate-400">
+                            <tr>
+                                <th class="px-3 py-3 font-medium">Period</th>
+                                <th class="px-3 py-3 font-medium">Name</th>
+                                <th class="px-3 py-3 font-medium">Weekday start</th>
+                                <th class="px-3 py-3 font-medium">Weekday end</th>
+                                <th class="px-3 py-3 font-medium">Grace</th>
+                                <th class="px-3 py-3 font-medium">Sat start</th>
+                                <th class="px-3 py-3 font-medium">Sat end</th>
+                                <th class="px-3 py-3 font-medium">Sat grace</th>
+                                <th class="px-3 py-3 font-medium">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+                            <tr v-for="policy in tempPolicies" :key="policy.id!">
+                                <td class="px-3 py-3 text-slate-700 dark:text-slate-300">{{ policy.period_label }}</td>
+                                <td class="px-3 py-3 font-medium text-slate-900 dark:text-slate-100">{{ policy.name || '—' }}</td>
+                                <td class="px-3 py-3">{{ policy.duty_start_time }}</td>
+                                <td class="px-3 py-3">{{ policy.duty_end_time }}</td>
+                                <td class="px-3 py-3">{{ policy.grace_minutes }} min</td>
+                                <td class="px-3 py-3">{{ policy.saturday_duty_start_time }}</td>
+                                <td class="px-3 py-3">{{ policy.saturday_duty_end_time }}</td>
+                                <td class="px-3 py-3">{{ policy.saturday_grace_minutes }} min</td>
+                                <td class="px-3 py-3">
+                                    <div v-if="can('attendance-settings.duty-policies.update') || can('attendance-settings.duty-policies.delete')" class="flex gap-2">
+                                        <UiButton v-if="can('attendance-settings.duty-policies.update')" size="sm" variant="ghost" @click="editTempPolicy(policy)">Edit</UiButton>
+                                        <UiButton v-if="can('attendance-settings.duty-policies.delete')" size="sm" variant="danger" @click="deletePolicy(policy.id!, true)">Delete</UiButton>
+                                    </div>
+                                </td>
+                            </tr>
+                            <tr v-if="tempPolicies.length === 0">
+                                <td colspan="9" class="px-3 py-8 text-center text-slate-500">No temporary duty overrides configured.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
             </UiCard>
 
             <UiCard title="Public holidays" description="Extra holidays on specific dates. Every Friday and Saturday are already treated as holidays unless an employee works Saturday.">
+                <template #actions>
+                    <UiButton
+                        v-if="can('attendance-settings.holidays.create')"
+                        size="sm"
+                        variant="primary"
+                        @click="openHolidayModal"
+                    >
+                        Add holiday
+                    </UiButton>
+                </template>
+
                 <form class="mb-6 flex flex-wrap items-end gap-4" @submit.prevent="applyYear">
                     <UiInput v-model="yearFilter.year" label="Year" type="number" min="2000" max="2100" class="w-40" />
                     <UiButton type="submit" variant="secondary">Show year</UiButton>
@@ -269,20 +426,143 @@ function ordinalSuffix(day: number): string {
                         </tbody>
                     </table>
                 </div>
-
-                <form
-                    v-if="can('attendance-settings.holidays.create')"
-                    class="mt-6 grid gap-4 border-t border-slate-100 pt-6 dark:border-slate-800 md:grid-cols-2 xl:grid-cols-4"
-                    @submit.prevent="submitHoliday"
-                >
-                    <UiInput v-model="holidayForm.name" label="Name" required :error="holidayForm.errors.name" />
-                    <UiInput v-model="holidayForm.date" label="Date" type="date" required :error="holidayForm.errors.date" />
-                    <UiInput v-model="holidayForm.notes" label="Notes" :error="holidayForm.errors.notes" />
-                    <div class="flex items-end">
-                        <UiButton type="submit" variant="primary" :disabled="holidayForm.processing">Add holiday</UiButton>
-                    </div>
-                </form>
             </UiCard>
         </div>
+
+        <UiModal
+            :open="payrollModalOpen"
+            title="Edit payroll period"
+            description="Defines the monthly payroll cycle used as the default date range on the attendance sheet."
+            max-width="md"
+            @close="closePayrollModal"
+        >
+            <form id="payroll-period-form" class="space-y-4" @submit.prevent="submitPayrollPeriod">
+                <UiInput
+                    v-model="payrollForm.payroll_period_start_day"
+                    label="Start day of month"
+                    type="number"
+                    min="1"
+                    max="28"
+                    required
+                    :error="payrollForm.errors.payroll_period_start_day"
+                />
+                <div class="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm dark:border-slate-800 dark:bg-surface-elevated">
+                    <p class="text-slate-500 dark:text-slate-400">Preview</p>
+                    <p class="mt-1 font-medium text-slate-900 dark:text-slate-100">
+                        {{ formatDayOrdinal(Number(payrollForm.payroll_period_start_day)) }} of month
+                        →
+                        {{
+                            payrollEndLabel(
+                                Number(payrollForm.payroll_period_start_day),
+                                Number(payrollForm.payroll_period_start_day) > 1
+                                    ? Number(payrollForm.payroll_period_start_day) - 1
+                                    : null,
+                            )
+                        }}
+                    </p>
+                </div>
+            </form>
+
+            <template #footer>
+                <UiButton type="button" variant="ghost" @click="closePayrollModal">Cancel</UiButton>
+                <UiButton type="submit" form="payroll-period-form" variant="primary" :disabled="payrollForm.processing">Save</UiButton>
+            </template>
+        </UiModal>
+
+        <UiModal
+            :open="policyModalOpen"
+            :title="editingPolicyId ? 'Edit permanent duty policy' : 'Add permanent duty policy'"
+            description="Applies from the effective date onward until a newer permanent policy starts."
+            max-width="xl"
+            @close="closePolicyModal"
+        >
+            <form id="duty-policy-form" class="space-y-5" @submit.prevent="submitPolicy">
+                <div>
+                    <p class="mb-4 text-sm font-medium text-slate-700 dark:text-slate-300">Weekday duty (Sun–Thu)</p>
+                    <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                        <UiInput v-model="policyForm.effective_from" label="Effective from" type="date" required :error="policyForm.errors.effective_from" />
+                        <UiInput v-model="policyForm.duty_start_time" label="Duty start" type="time" required :error="policyForm.errors.duty_start_time" />
+                        <UiInput v-model="policyForm.duty_end_time" label="Duty end" type="time" required :error="policyForm.errors.duty_end_time" />
+                        <UiInput v-model="policyForm.grace_minutes" label="Grace (minutes)" type="number" min="0" max="180" required :error="policyForm.errors.grace_minutes" />
+                    </div>
+                </div>
+
+                <div>
+                    <p class="mb-4 text-sm font-medium text-slate-700 dark:text-slate-300">Saturday duty (employees who work Saturday)</p>
+                    <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                        <UiInput v-model="policyForm.saturday_duty_start_time" label="Saturday start" type="time" required :error="policyForm.errors.saturday_duty_start_time" />
+                        <UiInput v-model="policyForm.saturday_duty_end_time" label="Saturday end" type="time" required :error="policyForm.errors.saturday_duty_end_time" />
+                        <UiInput v-model="policyForm.saturday_grace_minutes" label="Saturday grace (minutes)" type="number" min="0" max="180" required :error="policyForm.errors.saturday_grace_minutes" />
+                    </div>
+                </div>
+            </form>
+
+            <template #footer>
+                <UiButton type="button" variant="ghost" @click="closePolicyModal">Cancel</UiButton>
+                <UiButton type="submit" form="duty-policy-form" variant="primary" :disabled="policyForm.processing">
+                    {{ editingPolicyId ? 'Update policy' : 'Add policy' }}
+                </UiButton>
+            </template>
+        </UiModal>
+
+        <UiModal
+            :open="tempPolicyModalOpen"
+            :title="editingTempPolicyId ? 'Edit temporary duty override' : 'Add temporary duty override'"
+            description="Overrides permanent duty policies for the selected date range only."
+            max-width="xl"
+            @close="closeTempPolicyModal"
+        >
+            <form id="temp-duty-policy-form" class="space-y-5" @submit.prevent="submitTempPolicy">
+                <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                    <UiInput v-model="tempPolicyForm.name" label="Name" hint="Optional label, e.g. Ramadan hours." :error="tempPolicyForm.errors.name" />
+                    <UiInput v-model="tempPolicyForm.effective_from" label="Period starts" type="date" required :error="tempPolicyForm.errors.effective_from" />
+                    <UiInput v-model="tempPolicyForm.effective_until" label="Period ends" type="date" required :error="tempPolicyForm.errors.effective_until" />
+                </div>
+
+                <div>
+                    <p class="mb-4 text-sm font-medium text-slate-700 dark:text-slate-300">Weekday duty (Sun–Thu)</p>
+                    <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                        <UiInput v-model="tempPolicyForm.duty_start_time" label="Duty start" type="time" required :error="tempPolicyForm.errors.duty_start_time" />
+                        <UiInput v-model="tempPolicyForm.duty_end_time" label="Duty end" type="time" required :error="tempPolicyForm.errors.duty_end_time" />
+                        <UiInput v-model="tempPolicyForm.grace_minutes" label="Grace (minutes)" type="number" min="0" max="180" required :error="tempPolicyForm.errors.grace_minutes" />
+                    </div>
+                </div>
+
+                <div>
+                    <p class="mb-4 text-sm font-medium text-slate-700 dark:text-slate-300">Saturday duty (employees who work Saturday)</p>
+                    <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                        <UiInput v-model="tempPolicyForm.saturday_duty_start_time" label="Saturday start" type="time" required :error="tempPolicyForm.errors.saturday_duty_start_time" />
+                        <UiInput v-model="tempPolicyForm.saturday_duty_end_time" label="Saturday end" type="time" required :error="tempPolicyForm.errors.saturday_duty_end_time" />
+                        <UiInput v-model="tempPolicyForm.saturday_grace_minutes" label="Saturday grace (minutes)" type="number" min="0" max="180" required :error="tempPolicyForm.errors.saturday_grace_minutes" />
+                    </div>
+                </div>
+            </form>
+
+            <template #footer>
+                <UiButton type="button" variant="ghost" @click="closeTempPolicyModal">Cancel</UiButton>
+                <UiButton type="submit" form="temp-duty-policy-form" variant="primary" :disabled="tempPolicyForm.processing">
+                    {{ editingTempPolicyId ? 'Update override' : 'Add override' }}
+                </UiButton>
+            </template>
+        </UiModal>
+
+        <UiModal
+            :open="holidayModalOpen"
+            title="Add public holiday"
+            description="Extra holidays on specific dates. Every Friday and Saturday are already treated as holidays unless an employee works Saturday."
+            max-width="md"
+            @close="closeHolidayModal"
+        >
+            <form id="holiday-form" class="grid gap-4" @submit.prevent="submitHoliday">
+                <UiInput v-model="holidayForm.name" label="Name" required :error="holidayForm.errors.name" />
+                <UiInput v-model="holidayForm.date" label="Date" type="date" required :error="holidayForm.errors.date" />
+                <UiInput v-model="holidayForm.notes" label="Notes" :error="holidayForm.errors.notes" />
+            </form>
+
+            <template #footer>
+                <UiButton type="button" variant="ghost" @click="closeHolidayModal">Cancel</UiButton>
+                <UiButton type="submit" form="holiday-form" variant="primary" :disabled="holidayForm.processing">Add holiday</UiButton>
+            </template>
+        </UiModal>
     </AppLayout>
 </template>

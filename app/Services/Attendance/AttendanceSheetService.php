@@ -3,8 +3,10 @@
 namespace App\Services\Attendance;
 
 use App\Enums\AttendanceDayStatus;
+use App\Enums\LeaveRequestStatus;
 use App\Models\AttendanceDutyPolicy;
 use App\Models\Employee;
+use App\Models\LeaveRequest;
 use App\Models\PublicHoliday;
 use App\Models\ZktAttendanceLog;
 use Carbon\CarbonInterface;
@@ -39,7 +41,7 @@ class AttendanceSheetService
             $to = $from->copy()->addDays($maxDays);
         }
 
-        $policies = AttendanceDutyPolicy::ordered();
+        $policies = AttendanceDutyPolicy::allOrdered();
 
         $holidays = PublicHoliday::query()
             ->whereBetween('date', [$from->toDateString(), $to->toDateString()])
@@ -52,11 +54,25 @@ class AttendanceSheetService
             ->when($departmentId, fn ($query) => $query->where('department_id', $departmentId))
             ->when($employeeId, fn ($query) => $query->where('id', $employeeId))
             ->orderBy('name')
-            ->get(['id', 'staff_id', 'name', 'department_id', 'works_saturday']);
+            ->get([
+                'id',
+                'staff_id',
+                'name',
+                'department_id',
+                'works_saturday',
+                'uses_custom_duty_times',
+                'custom_duty_start_time',
+                'custom_duty_end_time',
+                'custom_grace_minutes',
+                'custom_saturday_duty_start_time',
+                'custom_saturday_duty_end_time',
+                'custom_saturday_grace_minutes',
+            ]);
 
         $staffIds = $employees->pluck('staff_id')->filter()->values();
 
         $punchIndex = $this->indexPunches($staffIds, $from, $to, $timezone);
+        $leaveIndex = $this->indexApprovedLeave($employees, $from, $to, $timezone);
 
         $rows = [];
 
@@ -68,6 +84,7 @@ class AttendanceSheetService
             foreach ($employees as $employee) {
                 $dayPunches = collect($punchIndex[$employee->staff_id][$dateKey] ?? []);
                 $weekendHoliday = $this->resolveWeekendHoliday($employee, $date);
+                $approvedLeaveType = $leaveIndex[$employee->id][$dateKey] ?? null;
 
                 $rows[] = $this->buildRow(
                     $employee,
@@ -77,6 +94,7 @@ class AttendanceSheetService
                     $holiday,
                     $weekendHoliday,
                     $timezone,
+                    $approvedLeaveType,
                 );
             }
         }
@@ -135,6 +153,53 @@ class AttendanceSheetService
     }
 
     /**
+     * @param  Collection<int, Employee>  $employees
+     * @return array<int, array<string, non-empty-string>>
+     */
+    protected function indexApprovedLeave(
+        Collection $employees,
+        CarbonInterface $from,
+        CarbonInterface $to,
+        string $timezone,
+    ): array {
+        $employeeIds = $employees->pluck('id');
+
+        if ($employeeIds->isEmpty()) {
+            return [];
+        }
+
+        $index = [];
+
+        LeaveRequest::query()
+            ->with('leaveType:id,name')
+            ->where('status', LeaveRequestStatus::Approved)
+            ->whereIn('employee_id', $employeeIds)
+            ->where('start_date', '<=', $to->toDateString())
+            ->where('end_date', '>=', $from->toDateString())
+            ->get()
+            ->each(function (LeaveRequest $leave) use (&$index, $from, $to, $timezone): void {
+                $start = $leave->start_date->copy()->timezone($timezone)->startOfDay();
+                $end = $leave->end_date->copy()->timezone($timezone)->startOfDay();
+
+                if ($start->lt($from)) {
+                    $start = $from->copy();
+                }
+
+                if ($end->gt($to)) {
+                    $end = $to->copy();
+                }
+
+                $leaveTypeName = $leave->leaveType?->name ?? 'Leave';
+
+                for ($date = $start->copy(); $date->lte($end); $date = $date->addDay()) {
+                    $index[$leave->employee_id][$date->toDateString()] = $leaveTypeName;
+                }
+            });
+
+        return $index;
+    }
+
+    /**
      * @param  Collection<int, ZktAttendanceLog>  $dayPunches
      * @return array<string, mixed>
      */
@@ -146,8 +211,9 @@ class AttendanceSheetService
         ?PublicHoliday $holiday,
         ?string $weekendHoliday,
         string $timezone,
+        ?string $approvedLeaveType = null,
     ): array {
-        $dutyTimes = $policy->resolveDutyTimes($date, $employee);
+        $dutyTimes = $employee->resolveDutyTimes($date, $policy);
 
         if ($holiday) {
             return $this->baseRow($employee, $date, $dutyTimes, [
@@ -176,6 +242,20 @@ class AttendanceSheetService
         [$checkIn, $checkOut] = $this->resolvePunchPair($dayPunches, $date, $dutyTimes, $timezone);
 
         if (! $checkIn && ! $checkOut) {
+            if ($approvedLeaveType) {
+                return $this->baseRow($employee, $date, $dutyTimes, [
+                    'check_in' => null,
+                    'check_out' => null,
+                    'working_minutes' => null,
+                    'working_hours_label' => '—',
+                    'late_minutes' => null,
+                    'status' => AttendanceDayStatus::Leave,
+                    'status_label' => $approvedLeaveType,
+                    'holiday_name' => null,
+                    'leave_type_name' => $approvedLeaveType,
+                ]);
+            }
+
             return $this->baseRow($employee, $date, $dutyTimes, [
                 'check_in' => null,
                 'check_out' => null,
@@ -246,9 +326,10 @@ class AttendanceSheetService
             'working_hours_label' => $values['working_hours_label'],
             'late_minutes' => $values['late_minutes'],
             'status' => $status->value,
-            'status_label' => $status->label(),
-            'status_color' => $status->color(),
+            'status_label' => $values['status_label'] ?? $status->label(),
+            'status_color' => $values['status_color'] ?? $status->color(),
             'holiday_name' => $values['holiday_name'],
+            'leave_type_name' => $values['leave_type_name'] ?? null,
             'duty_start_time' => $isHoliday ? '—' : substr($dutyTimes['start'], 0, 5),
             'duty_end_time' => $isHoliday ? '—' : substr($dutyTimes['end'], 0, 5),
         ];

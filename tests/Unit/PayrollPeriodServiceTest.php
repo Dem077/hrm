@@ -41,4 +41,5 @@ it('returns the last six payroll periods', function () {
     expect($recent[1]['from'])->toBe('2026-04-25');
     expect($recent[2]['from'])->toBe('2026-03-25');
     expect($recent[5]['from'])->toBe('2025-12-25');
+    expect($recent[0]['label'])->toBe('25/05/2026 – 24/06/2026');
 });

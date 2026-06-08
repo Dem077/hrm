@@ -173,6 +173,13 @@ class EmployeeController extends Controller
             'manager_id' => null,
             'is_active' => true,
             'works_saturday' => false,
+            'uses_custom_duty_times' => false,
+            'custom_duty_start_time' => null,
+            'custom_duty_end_time' => null,
+            'custom_grace_minutes' => null,
+            'custom_saturday_duty_start_time' => null,
+            'custom_saturday_duty_end_time' => null,
+            'custom_saturday_grace_minutes' => null,
             'role_names' => [],
         ];
     }
@@ -278,6 +285,13 @@ class EmployeeController extends Controller
             ] : null,
             'is_active' => $employee->is_active,
             'works_saturday' => $employee->works_saturday,
+            'uses_custom_duty_times' => $employee->uses_custom_duty_times,
+            'custom_duty_start_time' => $employee->formatCustomTimeForInput($employee->custom_duty_start_time),
+            'custom_duty_end_time' => $employee->formatCustomTimeForInput($employee->custom_duty_end_time),
+            'custom_grace_minutes' => $employee->custom_grace_minutes,
+            'custom_saturday_duty_start_time' => $employee->formatCustomTimeForInput($employee->custom_saturday_duty_start_time),
+            'custom_saturday_duty_end_time' => $employee->formatCustomTimeForInput($employee->custom_saturday_duty_end_time),
+            'custom_saturday_grace_minutes' => $employee->custom_saturday_grace_minutes,
             'role_names' => $employee->user?->getRoleNames()->values()->all() ?? [],
         ];
 

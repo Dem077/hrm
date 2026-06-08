@@ -85,10 +85,7 @@ class ZktDeviceClient
         }
 
         if ($result['connected']) {
-            $device->update([
-                'connection_status' => ZktConnectionStatus::Online,
-                'last_connected_at' => now(),
-                'last_sync_error' => null,
+            $this->markOnline($device, [
                 'serial_number' => $result['device_info']['serial_number'] ?: $device->serial_number,
                 'model_name' => $result['device_info']['model_name'] ?: $device->model_name,
                 'firmware_version' => $result['device_info']['firmware_version'] ?: $device->firmware_version,
@@ -118,11 +115,7 @@ class ZktDeviceClient
                 throw new ZktDeviceException('Unable to read the device clock.');
             }
 
-            $device->update([
-                'connection_status' => ZktConnectionStatus::Online,
-                'last_connected_at' => now(),
-                'last_sync_error' => null,
-            ]);
+            $this->markOnline($device);
 
             return [
                 'device_time' => is_string($deviceTime) ? $deviceTime : null,
@@ -168,11 +161,7 @@ class ZktDeviceClient
                 throw new ZktDeviceException('Time was sent but could not be verified on the device.');
             }
 
-            $device->update([
-                'connection_status' => ZktConnectionStatus::Online,
-                'last_connected_at' => now(),
-                'last_sync_error' => null,
-            ]);
+            $this->markOnline($device);
 
             return [
                 'device_time_before' => is_string($deviceTimeBefore) ? $deviceTimeBefore : null,
@@ -204,15 +193,25 @@ class ZktDeviceClient
                 throw new ZktDeviceException('Device returned corrupted attendance data.');
             }
 
-            $device->update([
-                'connection_status' => ZktConnectionStatus::Online,
-                'last_connected_at' => now(),
-            ]);
+            $this->markOnline($device);
 
             return $records;
         } finally {
             $zk->disconnect();
         }
+    }
+
+    protected function markOnline(ZktDevice $device, array $attributes = []): void
+    {
+        if (! $device->is_active) {
+            return;
+        }
+
+        $device->update(array_merge([
+            'connection_status' => ZktConnectionStatus::Online,
+            'last_connected_at' => now(),
+            'last_sync_error' => null,
+        ], $attributes));
     }
 
     protected function markOffline(ZktDevice $device, string $message): void

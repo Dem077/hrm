@@ -3,6 +3,7 @@
 namespace App\Services\Attendance;
 
 use App\Models\AttendanceGeneralSetting;
+use App\Support\DateFormatter;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Carbon;
 
@@ -137,7 +138,7 @@ class PayrollPeriodService
 
     protected function formatLabel(Carbon $from, Carbon $to): string
     {
-        return sprintf('%s – %s', $from->format('M j, Y'), $to->format('M j, Y'));
+        return DateFormatter::formatDateRange($from, $to);
     }
 
     /**

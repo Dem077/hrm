@@ -33,7 +33,7 @@ function syncDeviceTime(id: number) {
 }
 
 function deleteDevice(id: number) {
-    if (confirm('Delete this device and all related punch logs?')) {
+    if (confirm('Delete this machine and all related punch logs?')) {
         router.delete(`/zkt-devices/${id}`);
     }
 }
@@ -45,7 +45,7 @@ function deleteDevice(id: number) {
     <AppLayout>
         <PageHeader
             :title="device.name"
-            :description="`${device.ip_address}:${device.port} · ${device.protocol_label ?? device.protocol}`"
+            :description="`${device.brand_label ?? device.brand} · ${device.ip_address}:${device.port} · ${device.protocol_label ?? device.protocol}`"
         >
             <template #actions>
                 <UiBadge
@@ -93,8 +93,12 @@ function deleteDevice(id: number) {
         </section>
 
         <div class="grid gap-6 lg:grid-cols-2">
-            <UiCard title="Device info">
+            <UiCard title="Machine details">
                 <dl class="space-y-4 text-sm">
+                    <div class="flex items-center justify-between gap-4 border-b border-slate-100 pb-3 dark:border-slate-800">
+                        <dt class="text-slate-500">Brand</dt>
+                        <dd class="font-medium text-slate-900 dark:text-slate-100">{{ device.brand_label ?? device.brand }}</dd>
+                    </div>
                     <div class="flex items-center justify-between gap-4 border-b border-slate-100 pb-3 dark:border-slate-800">
                         <dt class="text-slate-500">Serial</dt>
                         <dd class="font-medium text-slate-900 dark:text-slate-100">{{ device.serial_number ?? '—' }}</dd>

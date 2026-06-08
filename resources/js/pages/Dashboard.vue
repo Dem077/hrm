@@ -24,17 +24,17 @@ defineProps<{
         description="Overview of your biometric devices and today's attendance activity."
     >
         <div class="grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
-            <StatCard label="Total Devices" :value="stats.devices" hint="Registered ZKT machines" accent="slate" />
-            <StatCard label="Active Devices" :value="stats.activeDevices" hint="Enabled for sync" accent="sky" />
-            <StatCard label="Online Devices" :value="stats.onlineDevices" hint="Last connection successful" accent="emerald" />
+            <StatCard label="Total Machines" :value="stats.devices" hint="Registered attendance machines" accent="slate" />
+            <StatCard label="Active Machines" :value="stats.activeDevices" hint="Enabled for sync" accent="sky" />
+            <StatCard label="Online Machines" :value="stats.onlineDevices" hint="Last connection successful" accent="emerald" />
             <StatCard label="Punches Today" :value="stats.punchesToday" hint="Synced attendance records" accent="amber" />
         </div>
 
         <div class="mt-8">
             <UiCard title="Quick actions" description="Common tasks to keep attendance data up to date.">
                 <div class="flex flex-wrap gap-3">
-                    <UiButton href="/zkt-devices/create" variant="primary">Add device</UiButton>
-                    <UiButton href="/zkt-devices" variant="secondary">Manage devices</UiButton>
+                    <UiButton href="/zkt-devices/create" variant="primary">Add machine</UiButton>
+                    <UiButton href="/zkt-devices" variant="secondary">Manage machines</UiButton>
                     <UiButton href="/zkt-attendance-logs" variant="secondary">View punch logs</UiButton>
                 </div>
             </UiCard>
