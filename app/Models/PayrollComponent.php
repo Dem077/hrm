@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\PayrollComponentCalculationMethod;
 use App\Enums\PayrollComponentType;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
@@ -11,6 +12,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
     'name',
     'code',
     'type',
+    'calculation_method',
     'is_mandatory',
     'sort_order',
     'is_active',
@@ -23,6 +25,7 @@ class PayrollComponent extends Model
     {
         return [
             'type' => PayrollComponentType::class,
+            'calculation_method' => PayrollComponentCalculationMethod::class,
             'is_mandatory' => 'boolean',
             'sort_order' => 'integer',
             'is_active' => 'boolean',
@@ -44,6 +47,24 @@ class PayrollComponent extends Model
     /**
      * @return array<string, mixed>
      */
+    public function toPayrollItem(float $amount = 0): array
+    {
+        return [
+            'payroll_component_id' => $this->id,
+            'name' => $this->name,
+            'type' => $this->type->value,
+            'type_label' => $this->type->label(),
+            'calculation_method' => $this->calculation_method->value,
+            'calculation_method_label' => $this->calculation_method->label(),
+            'amount_label' => $this->calculation_method->amountLabel(),
+            'is_mandatory' => $this->is_mandatory,
+            'amount' => $amount,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
     public function toPresentationArray(): array
     {
         return [
@@ -52,6 +73,9 @@ class PayrollComponent extends Model
             'code' => $this->code,
             'type' => $this->type->value,
             'type_label' => $this->type->label(),
+            'calculation_method' => $this->calculation_method->value,
+            'calculation_method_label' => $this->calculation_method->label(),
+            'amount_label' => $this->calculation_method->amountLabel(),
             'is_mandatory' => $this->is_mandatory,
             'is_system_mandatory' => $this->isSystemMandatory(),
             'sort_order' => $this->sort_order,

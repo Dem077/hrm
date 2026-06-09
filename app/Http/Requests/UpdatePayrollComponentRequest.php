@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Enums\PayrollComponentCalculationMethod;
 use App\Enums\PayrollComponentType;
 use App\Models\PayrollComponent;
 use Illuminate\Foundation\Http\FormRequest;
@@ -36,6 +37,7 @@ class UpdatePayrollComponentRequest extends FormRequest
             'name' => ['required', 'string', 'max:255'],
             'code' => ['nullable', 'string', 'max:50', Rule::unique('payroll_components', 'code')->ignore($component->id)],
             'type' => ['required', Rule::enum(PayrollComponentType::class)],
+            'calculation_method' => ['required', Rule::enum(PayrollComponentCalculationMethod::class)],
             'is_mandatory' => ['boolean'],
             'sort_order' => ['integer', 'min:0', 'max:9999'],
             'is_active' => ['boolean'],

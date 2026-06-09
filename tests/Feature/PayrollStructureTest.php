@@ -70,6 +70,7 @@ it('attaches a new mandatory component to existing designations', function () {
     $response = $this->actingAs($this->user)->post('/payroll-structure/components', [
         'name' => 'House Rent Allowance',
         'type' => 'addition',
+        'calculation_method' => 'fixed',
         'is_mandatory' => true,
         'sort_order' => 10,
         'is_active' => true,
@@ -92,6 +93,49 @@ it('prevents deleting basic salary', function () {
     $response->assertRedirect();
     $response->assertSessionHas('error');
     expect(PayrollComponent::query()->where('code', 'basic_salary')->exists())->toBeTrue();
+});
+
+it('supports daily rate components excluded from fixed net', function () {
+    $basicSalary = PayrollComponent::query()->where('code', 'basic_salary')->firstOrFail();
+
+    $this->actingAs($this->user)->post('/payroll-structure/components', [
+        'name' => 'Attendance Pay',
+        'code' => 'attendance_pay',
+        'type' => 'addition',
+        'calculation_method' => 'daily',
+        'is_mandatory' => false,
+        'sort_order' => 5,
+        'is_active' => true,
+    ]);
+
+    $attendancePay = PayrollComponent::query()->where('code', 'attendance_pay')->firstOrFail();
+
+    $response = $this->actingAs($this->user)->post('/payroll-structure/designations', [
+        'name' => 'Field Staff',
+        'is_active' => true,
+        'items' => [
+            [
+                'payroll_component_id' => $basicSalary->id,
+                'amount' => 50000,
+            ],
+            [
+                'payroll_component_id' => $attendancePay->id,
+                'amount' => 250,
+            ],
+        ],
+    ]);
+
+    $response->assertRedirect();
+    $response->assertSessionHas('success');
+
+    $this->actingAs($this->user)
+        ->get('/payroll-structure')
+        ->assertInertia(fn ($page) => $page
+            ->where('designations.0.totals.additions', 50000)
+            ->where('designations.0.totals.net', 50000)
+            ->where('designations.0.totals.has_daily', true)
+            ->where('designations.0.items.1.calculation_method', 'daily')
+            ->where('designations.0.items.1.amount', 250));
 });
 
 it('prevents editing basic salary', function () {

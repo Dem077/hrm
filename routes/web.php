@@ -9,6 +9,8 @@ use App\Http\Controllers\EmployeeController;
 use App\Http\Controllers\LeaveBalanceController;
 use App\Http\Controllers\LeaveRequestController;
 use App\Http\Controllers\LeaveTypeController;
+use App\Http\Controllers\DesignationController;
+use App\Http\Controllers\PayrollComponentController;
 use App\Http\Controllers\PayrollStructureController;
 use App\Http\Controllers\RoleController;
 use App\Http\Controllers\ZktAttendanceLogController;
@@ -148,22 +150,22 @@ Route::middleware('auth')->group(function () {
 
     Route::middleware('permission:payroll-structure.view')->group(function () {
         Route::get('payroll-structure', [PayrollStructureController::class, 'index'])->name('payroll-structure.index');
-        Route::post('payroll-structure/components', [PayrollStructureController::class, 'storeComponent'])
+        Route::post('payroll-structure/components', [PayrollComponentController::class, 'store'])
             ->middleware('permission:payroll-structure.update')
             ->name('payroll-structure.components.store');
-        Route::put('payroll-structure/components/{payroll_component}', [PayrollStructureController::class, 'updateComponent'])
+        Route::put('payroll-structure/components/{payroll_component}', [PayrollComponentController::class, 'update'])
             ->middleware('permission:payroll-structure.update')
             ->name('payroll-structure.components.update');
-        Route::delete('payroll-structure/components/{payroll_component}', [PayrollStructureController::class, 'destroyComponent'])
+        Route::delete('payroll-structure/components/{payroll_component}', [PayrollComponentController::class, 'destroy'])
             ->middleware('permission:payroll-structure.update')
             ->name('payroll-structure.components.destroy');
-        Route::post('payroll-structure/designations', [PayrollStructureController::class, 'storeDesignation'])
+        Route::post('payroll-structure/designations', [DesignationController::class, 'store'])
             ->middleware('permission:payroll-structure.update')
             ->name('payroll-structure.designations.store');
-        Route::put('payroll-structure/designations/{designation}', [PayrollStructureController::class, 'updateDesignation'])
+        Route::put('payroll-structure/designations/{designation}', [DesignationController::class, 'update'])
             ->middleware('permission:payroll-structure.update')
             ->name('payroll-structure.designations.update');
-        Route::delete('payroll-structure/designations/{designation}', [PayrollStructureController::class, 'destroyDesignation'])
+        Route::delete('payroll-structure/designations/{designation}', [DesignationController::class, 'destroy'])
             ->middleware('permission:payroll-structure.update')
             ->name('payroll-structure.designations.destroy');
     });
