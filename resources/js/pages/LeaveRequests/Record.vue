@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { Head, useForm } from '@inertiajs/vue3';
-import { computed } from 'vue';
+import { computed, ref, watch } from 'vue';
 
 import LeavePunchConflictDialog from '@/components/leave/LeavePunchConflictDialog.vue';
+import LeaveBalanceHint from '@/components/leave/LeaveBalanceHint.vue';
 import PageHeader from '@/components/ui/PageHeader.vue';
 import UiAlert from '@/components/ui/UiAlert.vue';
 import UiButton from '@/components/ui/UiButton.vue';
@@ -48,6 +49,66 @@ const form = useForm({
 const selectedLeaveType = computed(() =>
     props.leaveTypes.find((type) => String(type.id) === String(form.leave_type_id)),
 );
+
+const leaveBalance = ref<Pick<
+    LeaveTypeOption,
+    'annual_limit' | 'used_days' | 'remaining_days' | 'period_start' | 'period_end'
+> | null>(null);
+
+watch(
+    () => [form.employee_id, form.leave_type_id, form.start_date],
+    async () => {
+        if (!form.employee_id || !form.leave_type_id) {
+            leaveBalance.value = null;
+
+            return;
+        }
+
+        const params = new URLSearchParams({
+            employee_id: String(form.employee_id),
+            leave_type_id: String(form.leave_type_id),
+        });
+
+        if (form.start_date) {
+            params.set('start_date', String(form.start_date));
+        }
+
+        const response = await fetch(`/leave-requests/annual-balance?${params.toString()}`, {
+            credentials: 'same-origin',
+            headers: {
+                Accept: 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+        });
+
+        if (!response.ok) {
+            leaveBalance.value = null;
+
+            return;
+        }
+
+        leaveBalance.value = (await response.json()) as Pick<
+            LeaveTypeOption,
+            'annual_limit' | 'used_days' | 'remaining_days' | 'period_start' | 'period_end'
+        >;
+    },
+    { immediate: true },
+);
+
+const selectedLeaveTypeWithBalance = computed((): LeaveTypeOption | null => {
+    if (!selectedLeaveType.value) {
+        return null;
+    }
+
+    return {
+        ...selectedLeaveType.value,
+        used_days: leaveBalance.value?.used_days ?? null,
+        remaining_days: leaveBalance.value?.remaining_days ?? null,
+        period_start: leaveBalance.value?.period_start ?? null,
+        period_end: leaveBalance.value?.period_end ?? null,
+        annual_limit: leaveBalance.value?.annual_limit ?? selectedLeaveType.value.annual_limit,
+    };
+});
 
 const { dialogOpen, dialogMessage, checkError, checking, requestConfirmation, closeDialog } = useLeavePunchConfirmation();
 
@@ -117,6 +178,7 @@ function confirmPunchOverlap() {
                             {{ leaveType.name }}
                         </option>
                     </UiSelect>
+                    <LeaveBalanceHint :leave-type="selectedLeaveTypeWithBalance" />
                     <UiInput v-model="form.start_date" label="Start date" type="date" required :error="form.errors.start_date" />
                     <UiInput v-model="form.end_date" label="End date" type="date" required :error="form.errors.end_date" />
                 </div>

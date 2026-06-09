@@ -7,6 +7,7 @@ type Variant = 'primary' | 'secondary' | 'ghost' | 'danger';
 withDefaults(
     defineProps<{
         href?: string;
+        external?: boolean;
         method?: 'get' | 'post' | 'put' | 'patch' | 'delete';
         type?: 'button' | 'submit';
         variant?: Variant;
@@ -15,6 +16,7 @@ withDefaults(
         block?: boolean;
     }>(),
     {
+        external: false,
         method: 'get',
         type: 'button',
         variant: 'secondary',
@@ -41,8 +43,22 @@ const sizeClasses = {
 </script>
 
 <template>
+    <a
+        v-if="href && external"
+        :href="href"
+        :class="
+            cn(
+                'inline-flex items-center justify-center rounded-xl border font-medium transition disabled:cursor-not-allowed disabled:opacity-50',
+                block && 'w-full',
+                variantClasses[variant],
+                sizeClasses[size],
+            )
+        "
+    >
+        <slot />
+    </a>
     <Link
-        v-if="href"
+        v-else-if="href"
         :href="href"
         :method="method"
         as="button"

@@ -40,6 +40,13 @@ class PermissionRegistry
                 'leave-requests.view-all' => 'View all leave requests',
                 'leave-requests.record-for-others' => 'Record leave for any employee (auto-approved)',
             ],
+            'Leave Balances' => [
+                'leave-balances.view' => 'View employee leave balances',
+            ],
+            'Payroll Structure' => [
+                'payroll-structure.view' => 'View payroll structure',
+                'payroll-structure.update' => 'Manage payroll components and designations',
+            ],
             'Attendance Machines' => [
                 'zkt-devices.view' => 'View machines',
                 'zkt-devices.create' => 'Create machines',

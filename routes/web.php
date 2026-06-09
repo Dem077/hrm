@@ -6,8 +6,10 @@ use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DepartmentController;
 use App\Http\Controllers\EmployeeController;
+use App\Http\Controllers\LeaveBalanceController;
 use App\Http\Controllers\LeaveRequestController;
 use App\Http\Controllers\LeaveTypeController;
+use App\Http\Controllers\PayrollStructureController;
 use App\Http\Controllers\RoleController;
 use App\Http\Controllers\ZktAttendanceLogController;
 use App\Http\Controllers\ZktDeviceController;
@@ -104,6 +106,9 @@ Route::middleware('auth')->group(function () {
         Route::post('leave-requests/check-punches', [LeaveRequestController::class, 'checkPunches'])
             ->middleware('permission:leave-requests.create|leave-requests.record-for-others')
             ->name('leave-requests.check-punches');
+        Route::get('leave-requests/annual-balance', [LeaveRequestController::class, 'annualBalance'])
+            ->middleware('permission:leave-requests.create|leave-requests.record-for-others')
+            ->name('leave-requests.annual-balance');
         Route::get('leave-requests/create', [LeaveRequestController::class, 'create'])
             ->middleware('permission:leave-requests.create')
             ->name('leave-requests.create');
@@ -122,6 +127,12 @@ Route::middleware('auth')->group(function () {
             ->name('leave-requests.cancel');
     });
 
+    Route::middleware('permission:leave-balances.view')->group(function () {
+        Route::get('leave-balances', [LeaveBalanceController::class, 'index'])->name('leave-balances.index');
+        Route::get('leave-balances/export-all', [LeaveBalanceController::class, 'exportAll'])->name('leave-balances.export-all');
+        Route::get('leave-balances/export', [LeaveBalanceController::class, 'export'])->name('leave-balances.export');
+    });
+
     Route::middleware('permission:leave-types.view')->group(function () {
         Route::get('leave-types', [LeaveTypeController::class, 'index'])->name('leave-types.index');
         Route::post('leave-types', [LeaveTypeController::class, 'store'])
@@ -133,6 +144,28 @@ Route::middleware('auth')->group(function () {
         Route::delete('leave-types/{leave_type}', [LeaveTypeController::class, 'destroy'])
             ->middleware('permission:leave-types.delete')
             ->name('leave-types.destroy');
+    });
+
+    Route::middleware('permission:payroll-structure.view')->group(function () {
+        Route::get('payroll-structure', [PayrollStructureController::class, 'index'])->name('payroll-structure.index');
+        Route::post('payroll-structure/components', [PayrollStructureController::class, 'storeComponent'])
+            ->middleware('permission:payroll-structure.update')
+            ->name('payroll-structure.components.store');
+        Route::put('payroll-structure/components/{payroll_component}', [PayrollStructureController::class, 'updateComponent'])
+            ->middleware('permission:payroll-structure.update')
+            ->name('payroll-structure.components.update');
+        Route::delete('payroll-structure/components/{payroll_component}', [PayrollStructureController::class, 'destroyComponent'])
+            ->middleware('permission:payroll-structure.update')
+            ->name('payroll-structure.components.destroy');
+        Route::post('payroll-structure/designations', [PayrollStructureController::class, 'storeDesignation'])
+            ->middleware('permission:payroll-structure.update')
+            ->name('payroll-structure.designations.store');
+        Route::put('payroll-structure/designations/{designation}', [PayrollStructureController::class, 'updateDesignation'])
+            ->middleware('permission:payroll-structure.update')
+            ->name('payroll-structure.designations.update');
+        Route::delete('payroll-structure/designations/{designation}', [PayrollStructureController::class, 'destroyDesignation'])
+            ->middleware('permission:payroll-structure.update')
+            ->name('payroll-structure.designations.destroy');
     });
 
     Route::middleware('permission:attendance-settings.view')->group(function () {

@@ -70,8 +70,18 @@ function updateDropdownPosition() {
 
 function open() {
     isOpen.value = true;
-    query.value = closedLabel.value === (props.emptyLabel ?? '') ? '' : closedLabel.value;
+    query.value = '';
     nextTick(updateDropdownPosition);
+}
+
+function onFocus() {
+    open();
+}
+
+function onClick() {
+    if (!isOpen.value) {
+        open();
+    }
 }
 
 function close() {
@@ -145,7 +155,8 @@ onUnmounted(() => {
             :aria-expanded="isOpen"
             :placeholder="placeholder ?? 'Search...'"
             class="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-brand-500 focus:ring-4 focus:ring-brand-500/15 dark:border-slate-700 dark:bg-surface-elevated dark:text-slate-100"
-            @focus="open"
+            @focus="onFocus"
+            @click="onClick"
             @input="onInput"
             @keydown="onKeydown"
         />

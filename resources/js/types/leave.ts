@@ -7,6 +7,7 @@ export type LeaveType = {
     is_visible_to_employees: boolean;
     is_active: boolean;
     sort_order: number;
+    annual_limit: number | null;
     leave_requests_count?: number;
 };
 
@@ -54,4 +55,37 @@ export type LeaveTypeOption = {
     name: string;
     description: string | null;
     requires_document: boolean;
+    annual_limit: number | null;
+    used_days: number | null;
+    remaining_days: number | null;
+    period_start: string | null;
+    period_end: string | null;
+};
+
+export type LeaveBalanceLeaveType = {
+    id: number;
+    name: string;
+    code: string | null;
+    annual_limit: number | null;
+    used_days: number | null;
+    remaining_days: number | null;
+    period_start: string | null;
+    period_end: string | null;
+};
+
+export type LeaveYearOption = {
+    offset: number;
+    period_start: string;
+    period_end: string;
+    label: string;
+    is_current: boolean;
+};
+
+export type LeaveBalanceEmployee = {
+    id: number;
+    name: string;
+    staff_id: string;
+    department: string | null;
+    joined_date: string | null;
+    balances: LeaveBalanceLeaveType[];
 };

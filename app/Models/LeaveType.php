@@ -14,6 +14,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'is_visible_to_employees',
     'is_active',
     'sort_order',
+    'annual_limit',
 ])]
 class LeaveType extends Model
 {
@@ -24,6 +25,7 @@ class LeaveType extends Model
             'is_visible_to_employees' => 'boolean',
             'is_active' => 'boolean',
             'sort_order' => 'integer',
+            'annual_limit' => 'integer',
         ];
     }
 
@@ -46,6 +48,7 @@ class LeaveType extends Model
             'is_visible_to_employees' => $this->is_visible_to_employees,
             'is_active' => $this->is_active,
             'sort_order' => $this->sort_order,
+            'annual_limit' => $this->annual_limit,
             'leave_requests_count' => $this->leave_requests_count ?? $this->leaveRequests()->count(),
         ];
     }

@@ -4,7 +4,7 @@ namespace App\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
 
-class StoreLeaveTypeRequest extends FormRequest
+class UpdateDesignationRequest extends FormRequest
 {
     public function authorize(): bool
     {
@@ -16,26 +16,26 @@ class StoreLeaveTypeRequest extends FormRequest
      */
     public function rules(): array
     {
+        /** @var \App\Models\Designation $designation */
+        $designation = $this->route('designation');
+
         return [
             'name' => ['required', 'string', 'max:255'],
-            'code' => ['nullable', 'string', 'max:50', 'unique:leave_types,code'],
+            'code' => ['nullable', 'string', 'max:50', 'unique:designations,code,'.$designation->id],
             'description' => ['nullable', 'string', 'max:2000'],
-            'requires_document' => ['boolean'],
-            'is_visible_to_employees' => ['boolean'],
-            'is_active' => ['boolean'],
             'sort_order' => ['integer', 'min:0', 'max:9999'],
-            'annual_limit' => ['nullable', 'integer', 'min:0', 'max:366'],
+            'is_active' => ['boolean'],
+            'items' => ['required', 'array', 'min:1'],
+            'items.*.payroll_component_id' => ['required', 'integer', 'exists:payroll_components,id'],
+            'items.*.amount' => ['required', 'numeric', 'min:0', 'max:999999999.99'],
         ];
     }
 
     protected function prepareForValidation(): void
     {
         $this->merge([
-            'requires_document' => $this->boolean('requires_document'),
-            'is_visible_to_employees' => $this->boolean('is_visible_to_employees', true),
             'is_active' => $this->boolean('is_active', true),
             'code' => $this->input('code') ?: null,
-            'annual_limit' => $this->filled('annual_limit') ? $this->integer('annual_limit') : null,
         ]);
     }
 }

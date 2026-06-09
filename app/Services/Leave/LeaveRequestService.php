@@ -9,6 +9,7 @@ use App\Models\LeaveType;
 use App\Models\User;
 use App\Models\ZktAttendanceLog;
 use App\Support\DateFormatter;
+use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
@@ -90,13 +91,378 @@ class LeaveRequestService
             });
     }
 
-    public function calculateDaysCount(Carbon $startDate, Carbon $endDate): int
+    public function calculateDaysCount(CarbonInterface $startDate, CarbonInterface $endDate): int
     {
         if ($endDate->lt($startDate)) {
             [$startDate, $endDate] = [$endDate, $startDate];
         }
 
         return (int) $startDate->diffInDays($endDate) + 1;
+    }
+
+    /**
+     * @return array{0: Carbon, 1: Carbon}
+     */
+    public function anniversaryYearBounds(Employee $employee, CarbonInterface $referenceDate): array
+    {
+        $timezone = config('app.timezone', 'UTC');
+        $reference = $referenceDate->copy()->timezone($timezone)->startOfDay();
+        $joined = $employee->joined_date?->copy()->timezone($timezone)->startOfDay();
+
+        if (! $joined) {
+            $periodStart = $reference->copy()->startOfYear();
+            $periodEnd = $reference->copy()->endOfYear()->startOfDay();
+
+            return [$periodStart, $periodEnd];
+        }
+
+        $anniversaryThisYear = Carbon::create(
+            $reference->year,
+            $joined->month,
+            $joined->day,
+            0,
+            0,
+            0,
+            $timezone,
+        );
+
+        if ($anniversaryThisYear->gt($reference)) {
+            $periodStart = Carbon::create(
+                $reference->year - 1,
+                $joined->month,
+                $joined->day,
+                0,
+                0,
+                0,
+                $timezone,
+            );
+        } else {
+            $periodStart = $anniversaryThisYear;
+        }
+
+        $periodEnd = $periodStart->copy()->addYear()->subDay();
+
+        return [$periodStart, $periodEnd];
+    }
+
+    public function usedLeaveDaysInAnniversaryYear(
+        int $employeeId,
+        int $leaveTypeId,
+        CarbonInterface $periodStart,
+        CarbonInterface $periodEnd,
+        ?int $ignoreLeaveRequestId = null,
+    ): int {
+        return $this->leaveDaysInAnniversaryYear(
+            $employeeId,
+            $leaveTypeId,
+            $periodStart,
+            $periodEnd,
+            [LeaveRequestStatus::Approved],
+            $ignoreLeaveRequestId,
+        );
+    }
+
+    /**
+     * @param  list<LeaveRequestStatus>  $statuses
+     */
+    public function leaveDaysInAnniversaryYear(
+        int $employeeId,
+        int $leaveTypeId,
+        CarbonInterface $periodStart,
+        CarbonInterface $periodEnd,
+        array $statuses,
+        ?int $ignoreLeaveRequestId = null,
+    ): int {
+        $requests = LeaveRequest::query()
+            ->where('employee_id', $employeeId)
+            ->where('leave_type_id', $leaveTypeId)
+            ->whereIn('status', $statuses)
+            ->when($ignoreLeaveRequestId, fn (Builder $query) => $query->whereKeyNot($ignoreLeaveRequestId))
+            ->whereBetween('start_date', [$periodStart->toDateString(), $periodEnd->toDateString()])
+            ->get(['start_date', 'end_date']);
+
+        $days = 0;
+
+        foreach ($requests as $request) {
+            $days += $this->calculateDaysCount($request->start_date, $request->end_date);
+        }
+
+        return $days;
+    }
+
+    public function committedLeaveDaysInAnniversaryYear(
+        int $employeeId,
+        int $leaveTypeId,
+        CarbonInterface $periodStart,
+        CarbonInterface $periodEnd,
+        ?int $ignoreLeaveRequestId = null,
+    ): int {
+        return $this->leaveDaysInAnniversaryYear(
+            $employeeId,
+            $leaveTypeId,
+            $periodStart,
+            $periodEnd,
+            [
+                LeaveRequestStatus::Pending,
+                LeaveRequestStatus::PendingHr,
+                LeaveRequestStatus::Approved,
+            ],
+            $ignoreLeaveRequestId,
+        );
+    }
+
+    public function wouldExceedAnnualLimit(
+        Employee $employee,
+        LeaveType $leaveType,
+        CarbonInterface $startDate,
+        CarbonInterface $endDate,
+        ?int $ignoreLeaveRequestId = null,
+    ): bool {
+        if ($leaveType->annual_limit === null) {
+            return false;
+        }
+
+        if ($endDate->lt($startDate)) {
+            [$startDate, $endDate] = [$endDate, $startDate];
+        }
+
+        [$periodStart, $periodEnd] = $this->anniversaryYearBounds($employee, $startDate);
+        $committed = $this->committedLeaveDaysInAnniversaryYear(
+            $employee->id,
+            $leaveType->id,
+            $periodStart,
+            $periodEnd,
+            $ignoreLeaveRequestId,
+        );
+
+        $requestDays = $this->calculateDaysCount($startDate, $endDate);
+
+        return ($committed + $requestDays) > $leaveType->annual_limit;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function leaveBalanceSummary(Employee $employee, LeaveType $leaveType, CarbonInterface $referenceDate): array
+    {
+        if ($leaveType->annual_limit === null) {
+            return [
+                'annual_limit' => null,
+                'used_days' => null,
+                'remaining_days' => null,
+                'period_start' => null,
+                'period_end' => null,
+            ];
+        }
+
+        [$periodStart, $periodEnd] = $this->anniversaryYearBounds($employee, $referenceDate);
+        $used = $this->usedLeaveDaysInAnniversaryYear(
+            $employee->id,
+            $leaveType->id,
+            $periodStart,
+            $periodEnd,
+        );
+
+        return $this->leaveBalanceSummaryForPeriod($employee, $leaveType, $periodStart, $periodEnd, $used);
+    }
+
+    /**
+     * @return array{0: Carbon, 1: Carbon}
+     */
+    public function leaveYearBoundsByOffset(Employee $employee, int $offset = 0): array
+    {
+        $timezone = config('app.timezone', 'UTC');
+        [$currentStart] = $this->anniversaryYearBounds($employee, now($timezone)->startOfDay());
+        $periodStart = $currentStart->copy()->subYears(max(0, $offset));
+        $periodEnd = $periodStart->copy()->addYear()->subDay();
+
+        return [$periodStart, $periodEnd];
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    public function leaveYearOptionsForEmployee(Employee $employee, int $maxYears = 30): array
+    {
+        $timezone = config('app.timezone', 'UTC');
+        [$currentStart] = $this->anniversaryYearBounds($employee, now($timezone)->startOfDay());
+        $joined = $employee->joined_date?->copy()->timezone($timezone)->startOfDay();
+        $options = [];
+
+        for ($offset = 0; $offset < $maxYears; $offset++) {
+            [$periodStart, $periodEnd] = $this->leaveYearBoundsByOffset($employee, $offset);
+
+            if ($joined && $periodEnd->lt($joined)) {
+                break;
+            }
+
+            $options[] = [
+                'offset' => $offset,
+                'period_start' => $periodStart->toDateString(),
+                'period_end' => $periodEnd->toDateString(),
+                'label' => DateFormatter::formatDate($periodStart).' – '.DateFormatter::formatDate($periodEnd),
+                'is_current' => $offset === 0,
+            ];
+        }
+
+        return $options;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function leaveBalanceSummaryForPeriod(
+        Employee $employee,
+        LeaveType $leaveType,
+        CarbonInterface $periodStart,
+        CarbonInterface $periodEnd,
+        ?int $usedDays = null,
+    ): array {
+        if ($leaveType->annual_limit === null) {
+            return [
+                'annual_limit' => null,
+                'used_days' => null,
+                'remaining_days' => null,
+                'period_start' => $periodStart->toDateString(),
+                'period_end' => $periodEnd->toDateString(),
+            ];
+        }
+
+        $usedDays ??= $this->usedLeaveDaysInAnniversaryYear(
+            $employee->id,
+            $leaveType->id,
+            $periodStart,
+            $periodEnd,
+        );
+
+        return [
+            'annual_limit' => $leaveType->annual_limit,
+            'used_days' => $usedDays,
+            'remaining_days' => max(0, $leaveType->annual_limit - $usedDays),
+            'period_start' => $periodStart->toDateString(),
+            'period_end' => $periodEnd->toDateString(),
+        ];
+    }
+
+    /**
+     * @return array{
+     *     employee: array<string, mixed>,
+     *     leaveTypes: list<array<string, mixed>>,
+     *     leaveYears: list<array<string, mixed>>,
+     *     selectedLeaveYear: array<string, mixed>
+     * }
+     */
+    public function buildEmployeeLeaveBalance(
+        Employee $employee,
+        int $leaveYearOffset = 0,
+        ?int $leaveTypeId = null,
+    ): array {
+        $employee->loadMissing('department:id,name');
+
+        $leaveTypes = LeaveType::query()
+            ->where('is_active', true)
+            ->when($leaveTypeId, fn (Builder $query) => $query->whereKey($leaveTypeId))
+            ->orderBy('sort_order')
+            ->orderBy('name')
+            ->get(['id', 'name', 'code', 'annual_limit']);
+
+        $leaveYears = $this->leaveYearOptionsForEmployee($employee);
+        $selectedOffset = collect($leaveYears)->pluck('offset')->contains($leaveYearOffset)
+            ? $leaveYearOffset
+            : 0;
+        [$periodStart, $periodEnd] = $this->leaveYearBoundsByOffset($employee, $selectedOffset);
+        $selectedLeaveYear = collect($leaveYears)->firstWhere('offset', $selectedOffset)
+            ?? [
+                'offset' => $selectedOffset,
+                'period_start' => $periodStart->toDateString(),
+                'period_end' => $periodEnd->toDateString(),
+                'label' => DateFormatter::formatDate($periodStart).' – '.DateFormatter::formatDate($periodEnd),
+                'is_current' => $selectedOffset === 0,
+            ];
+
+        $balances = $leaveTypes->map(function (LeaveType $leaveType) use ($employee, $periodStart, $periodEnd): array {
+            return [
+                'id' => $leaveType->id,
+                'leave_type_id' => $leaveType->id,
+                'name' => $leaveType->name,
+                'code' => $leaveType->code,
+                'annual_limit' => $leaveType->annual_limit,
+                ...$this->leaveBalanceSummaryForPeriod($employee, $leaveType, $periodStart, $periodEnd),
+            ];
+        })->values()->all();
+
+        return [
+            'employee' => [
+                'id' => $employee->id,
+                'name' => $employee->name,
+                'staff_id' => $employee->staff_id,
+                'department' => $employee->department?->name,
+                'joined_date' => $employee->joined_date?->toDateString(),
+                'balances' => $balances,
+            ],
+            'leaveYears' => $leaveYears,
+            'selectedLeaveYear' => $selectedLeaveYear,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function formatLeaveTypeOption(Employee $employee, LeaveType $leaveType, ?CarbonInterface $referenceDate = null): array
+    {
+        $referenceDate ??= now(config('app.timezone', 'UTC'))->startOfDay();
+
+        return [
+            'id' => $leaveType->id,
+            'name' => $leaveType->name,
+            'description' => $leaveType->description,
+            'requires_document' => $leaveType->requires_document,
+            ...$this->leaveBalanceSummary($employee, $leaveType, $referenceDate),
+        ];
+    }
+
+    public function exceedAnnualLimitMessage(
+        Employee $employee,
+        LeaveType $leaveType,
+        CarbonInterface $startDate,
+        CarbonInterface $endDate,
+        ?int $ignoreLeaveRequestId = null,
+    ): string {
+        $limit = $leaveType->annual_limit;
+        $typeName = $leaveType->name;
+
+        if ($endDate->lt($startDate)) {
+            [$startDate, $endDate] = [$endDate, $startDate];
+        }
+
+        [$periodStart, $periodEnd] = $this->anniversaryYearBounds($employee, $startDate);
+        $approved = $this->usedLeaveDaysInAnniversaryYear(
+            $employee->id,
+            $leaveType->id,
+            $periodStart,
+            $periodEnd,
+            $ignoreLeaveRequestId,
+        );
+        $committed = $this->committedLeaveDaysInAnniversaryYear(
+            $employee->id,
+            $leaveType->id,
+            $periodStart,
+            $periodEnd,
+            $ignoreLeaveRequestId,
+        );
+
+        $requestDays = $this->calculateDaysCount($startDate, $endDate);
+
+        if (($committed + $requestDays) > $limit) {
+            $periodLabel = DateFormatter::formatDate($periodStart).' to '.DateFormatter::formatDate($periodEnd);
+            $remaining = max(0, $limit - $committed);
+
+            return "Annual limit for {$typeName} is {$limit} days per leave year ({$periodLabel}). "
+                ."You have {$approved} approved day(s) and {$committed} day(s) already taken or pending approval, with {$remaining} day(s) remaining. "
+                ."This request needs {$requestDays} day(s).";
+        }
+
+        return "This request exceeds the annual limit for {$typeName}.";
     }
 
     /**

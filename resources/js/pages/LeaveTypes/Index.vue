@@ -29,6 +29,7 @@ function editLeaveType(leaveType: LeaveType) {
     form.is_visible_to_employees = leaveType.is_visible_to_employees;
     form.is_active = leaveType.is_active;
     form.sort_order = leaveType.sort_order;
+    form.annual_limit = leaveType.annual_limit;
 }
 
 function cancelEdit() {
@@ -78,6 +79,7 @@ function destroyLeaveType(id: number, name: string) {
                         <tr>
                             <th class="px-5 py-3.5 font-medium">Name</th>
                             <th class="px-5 py-3.5 font-medium">Code</th>
+                            <th class="px-5 py-3.5 font-medium">Annual limit</th>
                             <th class="px-5 py-3.5 font-medium">Document</th>
                             <th class="px-5 py-3.5 font-medium">Visible to employees</th>
                             <th class="px-5 py-3.5 font-medium">Status</th>
@@ -89,6 +91,9 @@ function destroyLeaveType(id: number, name: string) {
                         <tr v-for="leaveType in leaveTypes" :key="leaveType.id!">
                             <td class="px-5 py-4 font-medium text-slate-900 dark:text-white">{{ leaveType.name }}</td>
                             <td class="px-5 py-4 text-slate-600 dark:text-slate-400">{{ leaveType.code ?? '—' }}</td>
+                            <td class="px-5 py-4 text-slate-600 dark:text-slate-400">
+                                {{ leaveType.annual_limit ?? 'Unlimited' }}
+                            </td>
                             <td class="px-5 py-4 text-slate-600 dark:text-slate-400">{{ leaveType.requires_document ? 'Required' : 'Optional' }}</td>
                             <td class="px-5 py-4 text-slate-600 dark:text-slate-400">{{ leaveType.is_visible_to_employees ? 'Yes' : 'HR only' }}</td>
                             <td class="px-5 py-4">
@@ -119,7 +124,7 @@ function destroyLeaveType(id: number, name: string) {
                             </td>
                         </tr>
                         <tr v-if="leaveTypes.length === 0">
-                            <td colspan="7" class="px-5 py-12 text-center text-slate-500">No leave types configured yet.</td>
+                            <td colspan="8" class="px-5 py-12 text-center text-slate-500">No leave types configured yet.</td>
                         </tr>
                     </tbody>
                 </table>
@@ -137,6 +142,13 @@ function destroyLeaveType(id: number, name: string) {
                     <UiInput v-model="form.name" label="Name" required :error="form.errors.name" />
                     <UiInput v-model="form.code" label="Code" hint="Optional short code" :error="form.errors.code" />
                     <UiInput v-model="form.sort_order" label="Sort order" type="number" :error="form.errors.sort_order" />
+                    <UiInput
+                        v-model="form.annual_limit"
+                        label="Annual limit (days)"
+                        type="number"
+                        hint="Leave blank for unlimited. Counted per leave year from joining date."
+                        :error="form.errors.annual_limit"
+                    />
                 </div>
                 <UiInput v-model="form.description" label="Description" :error="form.errors.description" />
                 <div class="grid gap-3 md:grid-cols-3">

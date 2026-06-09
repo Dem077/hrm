@@ -63,6 +63,7 @@ class LeaveTypeController extends Controller
             'is_visible_to_employees' => true,
             'is_active' => true,
             'sort_order' => 0,
+            'annual_limit' => null,
         ];
     }
 }

@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Http\Requests\Concerns\ValidatesLeaveAnnualLimit;
 use App\Http\Requests\Concerns\ValidatesLeaveDateOverlap;
 use App\Http\Requests\Concerns\ValidatesLeavePunchOverlap;
 use App\Models\LeaveType;
@@ -11,6 +12,7 @@ use Illuminate\Validation\Validator;
 
 class StoreLeaveRequestRequest extends FormRequest
 {
+    use ValidatesLeaveAnnualLimit;
     use ValidatesLeaveDateOverlap;
     use ValidatesLeavePunchOverlap;
 
@@ -29,6 +31,7 @@ class StoreLeaveRequestRequest extends FormRequest
 
         $validator->after(function (Validator $validator) use ($employeeId): void {
             $this->validateLeaveDateOverlap($validator, $employeeId);
+            $this->validateLeaveAnnualLimit($validator, $employeeId);
             $this->validateLeavePunchOverlap($validator, $employeeId);
         });
     }

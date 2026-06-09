@@ -105,6 +105,48 @@ class AttendanceSheetService
         ];
     }
 
+    /**
+     * @param  array<int, array<string, mixed>>  $rows
+     * @return array{
+     *     present_days: int,
+     *     absent_days: int,
+     *     leave_days: int,
+     *     late_minutes: int
+     * }
+     */
+    public function summarizeRows(array $rows): array
+    {
+        $presentDays = 0;
+        $absentDays = 0;
+        $leaveDays = 0;
+        $lateMinutes = 0;
+
+        foreach ($rows as $row) {
+            $status = AttendanceDayStatus::from($row['status']);
+
+            if (in_array($status, [
+                AttendanceDayStatus::Present,
+                AttendanceDayStatus::Late,
+                AttendanceDayStatus::Incomplete,
+            ], true)) {
+                $presentDays++;
+            } elseif ($status === AttendanceDayStatus::Absent) {
+                $absentDays++;
+            } elseif ($status === AttendanceDayStatus::Leave) {
+                $leaveDays++;
+            }
+
+            $lateMinutes += (int) ($row['late_minutes'] ?? 0);
+        }
+
+        return [
+            'present_days' => $presentDays,
+            'absent_days' => $absentDays,
+            'leave_days' => $leaveDays,
+            'late_minutes' => $lateMinutes,
+        ];
+    }
+
     protected function resolveWeekendHoliday(Employee $employee, CarbonInterface $date): ?string
     {
         if ($date->dayOfWeek === Carbon::FRIDAY) {

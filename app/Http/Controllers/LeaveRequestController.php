@@ -8,6 +8,7 @@ use App\Http\Requests\StoreLeaveForStaffRequest;
 use App\Http\Requests\StoreLeaveRequestRequest;
 use App\Models\Employee;
 use App\Models\LeaveRequest;
+use App\Models\LeaveType;
 use App\Services\Leave\LeaveRequestService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -69,13 +70,8 @@ class LeaveRequestController extends Controller
         }
 
         $leaveTypes = $leaveService->visibleLeaveTypesQuery()
-            ->get(['id', 'name', 'description', 'requires_document'])
-            ->map(fn ($type) => [
-                'id' => $type->id,
-                'name' => $type->name,
-                'description' => $type->description,
-                'requires_document' => $type->requires_document,
-            ]);
+            ->get(['id', 'name', 'description', 'requires_document', 'annual_limit'])
+            ->map(fn (LeaveType $type) => $leaveService->formatLeaveTypeOption($employee, $type));
 
         if ($leaveTypes->isEmpty()) {
             return redirect()
@@ -170,15 +166,50 @@ class LeaveRequestController extends Controller
         return response()->json($leaveService->punchConflictSummary($employeeId, $startDate, $endDate));
     }
 
+    public function annualBalance(Request $request, LeaveRequestService $leaveService): JsonResponse
+    {
+        $validated = $request->validate([
+            'leave_type_id' => ['required', 'integer', 'exists:leave_types,id'],
+            'start_date' => ['nullable', 'date'],
+            'employee_id' => ['nullable', 'integer', 'exists:employees,id'],
+        ]);
+
+        $user = $request->user();
+        $canRecordForOthers = $user?->can('leave-requests.record-for-others') ?? false;
+
+        if (! empty($validated['employee_id'])) {
+            abort_unless($canRecordForOthers, 403);
+            $employee = Employee::query()->findOrFail((int) $validated['employee_id']);
+        } else {
+            abort_unless($user?->can('leave-requests.create') ?? false, 403);
+            $employee = $user?->employee;
+
+            abort_if(! $employee, 422, 'Your login account is not linked to an employee record.');
+        }
+
+        $leaveType = LeaveType::query()->findOrFail((int) $validated['leave_type_id']);
+        $timezone = config('app.timezone', 'UTC');
+        $referenceDate = ! empty($validated['start_date'])
+            ? Carbon::parse($validated['start_date'], $timezone)->startOfDay()
+            : now($timezone)->startOfDay();
+
+        return response()->json($leaveService->leaveBalanceSummary($employee, $leaveType, $referenceDate));
+    }
+
     public function createForStaff(LeaveRequestService $leaveService): Response|RedirectResponse
     {
         $leaveTypes = $leaveService->visibleLeaveTypesQuery(forEmployees: false)
-            ->get(['id', 'name', 'description', 'requires_document'])
-            ->map(fn ($type) => [
+            ->get(['id', 'name', 'description', 'requires_document', 'annual_limit'])
+            ->map(fn (LeaveType $type) => [
                 'id' => $type->id,
                 'name' => $type->name,
                 'description' => $type->description,
                 'requires_document' => $type->requires_document,
+                'annual_limit' => $type->annual_limit,
+                'used_days' => null,
+                'remaining_days' => null,
+                'period_start' => null,
+                'period_end' => null,
             ]);
 
         if ($leaveTypes->isEmpty()) {
