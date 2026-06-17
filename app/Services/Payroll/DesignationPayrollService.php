@@ -4,6 +4,7 @@ namespace App\Services\Payroll;
 
 use App\Enums\PayrollComponentCalculationMethod;
 use App\Enums\PayrollComponentType;
+use App\Enums\PayrollLoanBank;
 use App\Models\Designation;
 use App\Models\PayrollComponent;
 use Illuminate\Support\Collection;
@@ -71,6 +72,11 @@ class DesignationPayrollService
 
         $sync = [];
 
+        $componentsById = PayrollComponent::query()
+            ->whereIn('id', collect($items)->pluck('payroll_component_id')->filter()->unique())
+            ->get()
+            ->keyBy('id');
+
         foreach ($items as $item) {
             $componentId = (int) $item['payroll_component_id'];
 
@@ -78,9 +84,19 @@ class DesignationPayrollService
                 continue;
             }
 
-            $sync[$componentId] = [
+            $component = $componentsById->get($componentId);
+            $pivot = [
                 'amount' => round((float) $item['amount'], 2),
+                'loan_months' => null,
+                'loan_bank' => null,
             ];
+
+            if ($component?->isLoan()) {
+                $pivot['loan_months'] = (int) $item['loan_months'];
+                $pivot['loan_bank'] = PayrollLoanBank::from($item['loan_bank'])->value;
+            }
+
+            $sync[$componentId] = $pivot;
         }
 
         foreach ($mandatoryIds as $componentId) {
@@ -133,7 +149,7 @@ class DesignationPayrollService
         ]);
 
         $items = $designation->payrollComponents
-            ->map(fn (PayrollComponent $component) => $component->toPayrollItem((float) $component->pivot->amount))
+            ->map(fn (PayrollComponent $component) => $this->formatComponentPivotItem($component))
             ->values()
             ->all();
 
@@ -156,7 +172,8 @@ class DesignationPayrollService
      *     mandatory: list<array<string, mixed>>,
      *     fixed_additions: list<array<string, mixed>>,
      *     fixed_deductions: list<array<string, mixed>>,
-     *     daily: list<array<string, mixed>>
+     *     daily: list<array<string, mixed>>,
+     *     loans: list<array<string, mixed>>
      * }
      */
     public function groupPayrollItems(Collection $items): array
@@ -165,18 +182,22 @@ class DesignationPayrollService
             'mandatory' => $items->where('is_mandatory', true)->values()->all(),
             'fixed_additions' => $items
                 ->where('is_mandatory', false)
-                ->where('calculation_method', PayrollComponentCalculationMethod::Fixed->value)
                 ->where('type', PayrollComponentType::Addition->value)
+                ->where('calculation_method', PayrollComponentCalculationMethod::Fixed->value)
                 ->values()
                 ->all(),
             'fixed_deductions' => $items
                 ->where('is_mandatory', false)
-                ->where('calculation_method', PayrollComponentCalculationMethod::Fixed->value)
                 ->where('type', PayrollComponentType::Deduction->value)
+                ->where('calculation_method', PayrollComponentCalculationMethod::Fixed->value)
                 ->values()
                 ->all(),
             'daily' => $items
                 ->where('calculation_method', PayrollComponentCalculationMethod::Daily->value)
+                ->values()
+                ->all(),
+            'loans' => $items
+                ->where('type', PayrollComponentType::Loan->value)
                 ->values()
                 ->all(),
         ];
@@ -184,27 +205,32 @@ class DesignationPayrollService
 
     /**
      * @param  Collection<int, array<string, mixed>>  $items
-     * @return array{additions: float, deductions: float, net: float, has_daily: bool, daily_count: int}
+     * @return array{additions: float, deductions: float, net: float, has_daily: bool, daily_count: int, has_loans: bool, loan_count: int}
      */
     public function calculateTotals(Collection $items): array
     {
-        $fixedItems = $items->where(
-            'calculation_method',
-            PayrollComponentCalculationMethod::Fixed->value,
-        );
-
-        $additions = $fixedItems
+        $additions = $items
             ->where('type', PayrollComponentType::Addition->value)
+            ->where('calculation_method', PayrollComponentCalculationMethod::Fixed->value)
             ->sum(fn (array $item) => (float) $item['amount']);
 
-        $deductions = $fixedItems
+        $deductions = $items
             ->where('type', PayrollComponentType::Deduction->value)
+            ->where('calculation_method', PayrollComponentCalculationMethod::Fixed->value)
             ->sum(fn (array $item) => (float) $item['amount']);
+
+        $loanDeductions = $items
+            ->where('type', PayrollComponentType::Loan->value)
+            ->sum(fn (array $item) => (float) $item['amount']);
+
+        $deductions += $loanDeductions;
 
         $dailyCount = $items->where(
             'calculation_method',
             PayrollComponentCalculationMethod::Daily->value,
         )->count();
+
+        $loanCount = $items->where('type', PayrollComponentType::Loan->value)->count();
 
         return [
             'additions' => round($additions, 2),
@@ -212,7 +238,25 @@ class DesignationPayrollService
             'net' => round($additions - $deductions, 2),
             'has_daily' => $dailyCount > 0,
             'daily_count' => $dailyCount,
+            'has_loans' => $loanCount > 0,
+            'loan_count' => $loanCount,
         ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    protected function formatComponentPivotItem(PayrollComponent $component): array
+    {
+        $loanBank = filled($component->pivot->loan_bank)
+            ? PayrollLoanBank::from($component->pivot->loan_bank)
+            : null;
+
+        return $component->toPayrollItem(
+            (float) $component->pivot->amount,
+            $component->pivot->loan_months !== null ? (int) $component->pivot->loan_months : null,
+            $loanBank,
+        );
     }
 
     /**

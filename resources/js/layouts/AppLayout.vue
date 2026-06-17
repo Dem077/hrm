@@ -3,6 +3,7 @@ import { Link, usePage } from '@inertiajs/vue3';
 import { computed, watch } from 'vue';
 
 import FlashMessage from '@/components/FlashMessage.vue';
+import LiveClock from '@/components/LiveClock.vue';
 import ThemeToggle from '@/components/ThemeToggle.vue';
 import { usePermissions } from '@/composables/usePermissions';
 import { useSidebar } from '@/composables/useSidebar';
@@ -400,6 +401,7 @@ watch(
                     </div>
 
                     <div class="flex items-center gap-3 sm:gap-4">
+                        <LiveClock />
                         <ThemeToggle />
 
                         <div class="hidden items-center gap-3 lg:flex">

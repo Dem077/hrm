@@ -6,7 +6,7 @@ import { usePermissions } from '@/composables/usePermissions';
 import AppLayout from '@/layouts/AppLayout.vue';
 import DesignationsCard from '@/pages/PayrollStructure/components/DesignationsCard.vue';
 import PayrollComponentsCard from '@/pages/PayrollStructure/components/PayrollComponentsCard.vue';
-import type { Designation, DesignationPayrollItem, PayrollComponent } from '@/types/payroll';
+import type { Designation, DesignationPayrollItem, LoanBankOption, PayrollComponent } from '@/types/payroll';
 
 defineProps<{
     components: PayrollComponent[];
@@ -14,6 +14,7 @@ defineProps<{
     emptyComponent: PayrollComponent;
     emptyDesignation: Designation;
     defaultDesignationItems: DesignationPayrollItem[];
+    loanBanks: LoanBankOption[];
 }>();
 
 const { can } = usePermissions();
@@ -55,6 +56,7 @@ function destroyDesignation(id: number, name: string) {
                 :components="components"
                 :empty-designation="emptyDesignation"
                 :default-designation-items="defaultDesignationItems"
+                :loan-banks="loanBanks"
                 :can-manage="canManage"
                 @delete="destroyDesignation"
             />

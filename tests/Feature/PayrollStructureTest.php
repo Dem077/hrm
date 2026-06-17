@@ -138,6 +138,52 @@ it('supports daily rate components excluded from fixed net', function () {
             ->where('designations.0.items.1.amount', 250));
 });
 
+it('creates a designation with loan repayment details', function () {
+    $basicSalary = PayrollComponent::query()->where('code', 'basic_salary')->firstOrFail();
+
+    $this->actingAs($this->user)->post('/payroll-structure/components', [
+        'name' => 'Staff Loan',
+        'code' => 'staff_loan',
+        'type' => 'loan',
+        'calculation_method' => 'fixed',
+        'is_mandatory' => false,
+        'sort_order' => 20,
+        'is_active' => true,
+    ]);
+
+    $loan = PayrollComponent::query()->where('code', 'staff_loan')->firstOrFail();
+
+    $response = $this->actingAs($this->user)->post('/payroll-structure/designations', [
+        'name' => 'Accounts Officer',
+        'is_active' => true,
+        'items' => [
+            [
+                'payroll_component_id' => $basicSalary->id,
+                'amount' => 40000,
+            ],
+            [
+                'payroll_component_id' => $loan->id,
+                'amount' => 3500,
+                'loan_months' => 24,
+                'loan_bank' => 'MIB',
+            ],
+        ],
+    ]);
+
+    $response->assertRedirect();
+    $response->assertSessionHas('success');
+
+    $this->actingAs($this->user)
+        ->get('/payroll-structure')
+        ->assertInertia(fn ($page) => $page
+            ->where('designations.0.items.1.type', 'loan')
+            ->where('designations.0.items.1.amount', 3500)
+            ->where('designations.0.items.1.loan_months', 24)
+            ->where('designations.0.items.1.loan_bank', 'MIB')
+            ->where('designations.0.totals.deductions', 3500)
+            ->where('designations.0.totals.net', 36500));
+});
+
 it('prevents editing basic salary', function () {
     $basicSalary = PayrollComponent::query()->where('code', 'basic_salary')->firstOrFail();
 

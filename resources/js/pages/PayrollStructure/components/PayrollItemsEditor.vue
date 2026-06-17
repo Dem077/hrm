@@ -3,12 +3,18 @@ import { computed } from 'vue';
 
 import UiButton from '@/components/ui/UiButton.vue';
 import UiInput from '@/components/ui/UiInput.vue';
-import { amountFieldLabel, componentToPayrollItem, groupPayrollItems } from '@/lib/payroll';
-import type { DesignationPayrollItem, PayrollComponent } from '@/types/payroll';
+import {
+    amountFieldLabel,
+    componentToPayrollItem,
+    groupPayrollItems,
+    updatePayrollItem,
+} from '@/lib/payroll';
+import type { DesignationPayrollItem, LoanBankOption, PayrollComponent, PayrollLoanBank } from '@/types/payroll';
 
 const props = defineProps<{
     items: DesignationPayrollItem[];
     components: PayrollComponent[];
+    loanBanks: LoanBankOption[];
     errors: Record<string, string>;
 }>();
 
@@ -33,11 +39,22 @@ function itemIndex(item: DesignationPayrollItem) {
 }
 
 function updateAmount(item: DesignationPayrollItem, amount: number) {
+    emit('update:items', updatePayrollItem(props.items, item, { amount }));
+}
+
+function updateLoanMonths(item: DesignationPayrollItem, loanMonths: number) {
+    emit('update:items', updatePayrollItem(props.items, item, { loan_months: loanMonths }));
+}
+
+function updateLoanBank(item: DesignationPayrollItem, loanBank: PayrollLoanBank) {
+    const bank = props.loanBanks.find((option) => option.value === loanBank);
+
     emit(
         'update:items',
-        props.items.map((row) =>
-            row.payroll_component_id === item.payroll_component_id ? { ...row, amount } : row,
-        ),
+        updatePayrollItem(props.items, item, {
+            loan_bank: loanBank,
+            loan_bank_label: bank?.label ?? loanBank,
+        }),
     );
 }
 
@@ -74,7 +91,7 @@ function removeItem(item: DesignationPayrollItem) {
             >
                 <option value="">Add optional component…</option>
                 <option v-for="component in availableOptionalComponents" :key="component.id!" :value="component.id!">
-                    {{ component.name }} ({{ component.calculation_method_label ?? component.calculation_method }})
+                    {{ component.name }} ({{ component.type_label ?? component.type }})
                 </option>
             </select>
         </div>
@@ -160,6 +177,59 @@ function removeItem(item: DesignationPayrollItem) {
                         >
                             Remove
                         </UiButton>
+                    </div>
+                </div>
+            </section>
+
+            <section v-if="groups.loans.length > 0" class="overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700">
+                <div class="border-b border-slate-200 bg-slate-50 px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:border-slate-700 dark:bg-surface-elevated dark:text-slate-400">
+                    Loans
+                </div>
+                <div class="divide-y divide-slate-100 dark:divide-slate-800">
+                    <div
+                        v-for="item in groups.loans"
+                        :key="item.payroll_component_id"
+                        class="grid gap-3 px-4 py-3 md:grid-cols-[1fr_repeat(3,minmax(0,9rem))_auto] md:items-start"
+                    >
+                        <div>
+                            <p class="font-medium text-slate-900 dark:text-white">{{ item.name }}</p>
+                            <p class="text-xs text-slate-500 dark:text-slate-400">Monthly deduction for the repayment period</p>
+                        </div>
+                        <UiInput
+                            :model-value="item.amount"
+                            label="Monthly payment"
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            :error="errors[`items.${itemIndex(item)}.amount`]"
+                            @update:model-value="updateAmount(item, Number($event))"
+                        />
+                        <UiInput
+                            :model-value="item.loan_months ?? ''"
+                            label="Period (months)"
+                            type="number"
+                            min="1"
+                            step="1"
+                            :error="errors[`items.${itemIndex(item)}.loan_months`]"
+                            @update:model-value="updateLoanMonths(item, Number($event))"
+                        />
+                        <div>
+                            <label class="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Bank</label>
+                            <select
+                                :value="item.loan_bank ?? ''"
+                                class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20 dark:border-slate-700 dark:bg-surface-elevated dark:text-white"
+                                @change="updateLoanBank(item, ($event.target as HTMLSelectElement).value as PayrollLoanBank)"
+                            >
+                                <option value="" disabled>Select bank</option>
+                                <option v-for="bank in loanBanks" :key="bank.value" :value="bank.value">
+                                    {{ bank.label }}
+                                </option>
+                            </select>
+                            <p v-if="errors[`items.${itemIndex(item)}.loan_bank`]" class="mt-1 text-sm text-red-600">
+                                {{ errors[`items.${itemIndex(item)}.loan_bank`] }}
+                            </p>
+                        </div>
+                        <UiButton type="button" size="sm" variant="ghost" class="self-end" @click="removeItem(item)">Remove</UiButton>
                     </div>
                 </div>
             </section>

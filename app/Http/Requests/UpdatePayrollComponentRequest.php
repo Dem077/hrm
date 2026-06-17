@@ -8,6 +8,7 @@ use App\Models\PayrollComponent;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Validator;
 
 class UpdatePayrollComponentRequest extends FormRequest
 {
@@ -44,12 +45,28 @@ class UpdatePayrollComponentRequest extends FormRequest
         ];
     }
 
+    public function withValidator(Validator $validator): void
+    {
+        $validator->after(function (Validator $validator): void {
+            if ($this->input('type') === PayrollComponentType::Loan->value && $this->boolean('is_mandatory')) {
+                $validator->errors()->add('is_mandatory', 'Loan components cannot be mandatory for all designations.');
+            }
+        });
+    }
+
     protected function prepareForValidation(): void
     {
-        $this->merge([
+        $merge = [
             'is_mandatory' => $this->boolean('is_mandatory'),
             'is_active' => $this->boolean('is_active', true),
             'code' => $this->input('code') ?: null,
-        ]);
+        ];
+
+        if ($this->input('type') === PayrollComponentType::Loan->value) {
+            $merge['calculation_method'] = PayrollComponentCalculationMethod::Fixed->value;
+            $merge['is_mandatory'] = false;
+        }
+
+        $this->merge($merge);
     }
 }

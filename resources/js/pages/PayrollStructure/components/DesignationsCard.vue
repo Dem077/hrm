@@ -5,13 +5,14 @@ import UiButton from '@/components/ui/UiButton.vue';
 import UiCard from '@/components/ui/UiCard.vue';
 import { formatPayrollMoney } from '@/lib/payroll';
 import DesignationFormModal from '@/pages/PayrollStructure/components/DesignationFormModal.vue';
-import type { Designation, DesignationPayrollItem, PayrollComponent } from '@/types/payroll';
+import type { Designation, DesignationPayrollItem, LoanBankOption, PayrollComponent } from '@/types/payroll';
 
 defineProps<{
     designations: Designation[];
     components: PayrollComponent[];
     emptyDesignation: Designation;
     defaultDesignationItems: DesignationPayrollItem[];
+    loanBanks: LoanBankOption[];
     canManage: boolean;
 }>();
 
@@ -116,6 +117,7 @@ function closeModal() {
             :empty-designation="emptyDesignation"
             :default-items="defaultDesignationItems"
             :components="components"
+            :loan-banks="loanBanks"
             @close="closeModal"
             @saved="closeModal"
         />

@@ -2,6 +2,8 @@
 
 namespace App\Services\Payroll;
 
+use App\Enums\PayrollLoanBank;
+
 class PayrollStructureService
 {
     public function __construct(
@@ -20,6 +22,7 @@ class PayrollStructureService
             'emptyComponent' => $this->payrollComponentService->emptyAttributes(),
             'emptyDesignation' => $this->designationPayrollService->emptyAttributes(),
             'defaultDesignationItems' => $this->designationPayrollService->defaultItemsForNewDesignation(),
+            'loanBanks' => PayrollLoanBank::options(),
         ];
     }
 }

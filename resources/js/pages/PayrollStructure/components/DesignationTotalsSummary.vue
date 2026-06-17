@@ -30,5 +30,8 @@ const totals = computed(() => calculateDesignationTotals(props.items));
         <p v-if="totals.has_daily" class="text-xs text-slate-500 dark:text-slate-400">
             {{ totals.daily_count }} daily component(s) are excluded from fixed net — pay is calculated from days present × rate.
         </p>
+        <p v-if="totals.has_loans" class="text-xs text-slate-500 dark:text-slate-400">
+            {{ totals.loan_count }} loan(s) included in deductions as monthly repayments for their set period.
+        </p>
     </div>
 </template>

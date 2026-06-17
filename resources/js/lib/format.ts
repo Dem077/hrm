@@ -1,5 +1,38 @@
 const appTimezone = import.meta.env.VITE_APP_TIMEZONE || 'UTC';
 
+function resolveTimezone(timezone?: string): string {
+    return timezone || appTimezone;
+}
+
+export function formatClockTime(date: Date, timezone?: string): string {
+    return new Intl.DateTimeFormat('en-GB', {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false,
+        timeZone: resolveTimezone(timezone),
+    }).format(date);
+}
+
+export function formatClockDate(date: Date, timezone?: string): string {
+    return new Intl.DateTimeFormat('en-GB', {
+        weekday: 'short',
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+        timeZone: resolveTimezone(timezone),
+    }).format(date);
+}
+
+export function formatClockTimezoneLabel(date: Date, timezone?: string): string {
+    const parts = new Intl.DateTimeFormat('en-GB', {
+        timeZone: resolveTimezone(timezone),
+        timeZoneName: 'short',
+    }).formatToParts(date);
+
+    return parts.find((part) => part.type === 'timeZoneName')?.value ?? resolveTimezone(timezone);
+}
+
 const isoDatePattern = /^(\d{4})-(\d{2})-(\d{2})$/;
 
 function parseDate(value: string): Date | null {

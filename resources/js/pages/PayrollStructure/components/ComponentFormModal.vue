@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useForm } from '@inertiajs/vue3';
-import { watch } from 'vue';
+import { computed, watch } from 'vue';
 
 import UiButton from '@/components/ui/UiButton.vue';
 import UiInput from '@/components/ui/UiInput.vue';
@@ -19,6 +19,8 @@ const emit = defineEmits<{
 }>();
 
 const form = useForm({ ...props.emptyComponent });
+
+const isLoanType = computed(() => form.type === 'loan');
 
 watch(
     () => [props.open, props.component] as const,
@@ -81,10 +83,11 @@ function submit() {
                 >
                     <option value="addition">Addition</option>
                     <option value="deduction">Deduction</option>
+                    <option value="loan">Loan</option>
                 </select>
                 <p v-if="form.errors.type" class="mt-1 text-sm text-red-600">{{ form.errors.type }}</p>
             </div>
-            <div>
+            <div v-if="!isLoanType">
                 <label class="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Calculation</label>
                 <select
                     v-model="form.calculation_method"
@@ -98,8 +101,11 @@ function submit() {
                 </p>
                 <p v-if="form.errors.calculation_method" class="mt-1 text-sm text-red-600">{{ form.errors.calculation_method }}</p>
             </div>
+            <div v-else class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-600 dark:border-slate-700 dark:bg-surface-elevated dark:text-slate-400">
+                Loan components use monthly payment, repayment period, and bank details on each designation.
+            </div>
             <UiInput v-model.number="form.sort_order" label="Sort order" type="number" min="0" :error="form.errors.sort_order" />
-            <label class="flex items-center gap-2 self-end pb-2 text-sm text-slate-700 dark:text-slate-300">
+            <label v-if="!isLoanType" class="flex items-center gap-2 self-end pb-2 text-sm text-slate-700 dark:text-slate-300">
                 <input v-model="form.is_mandatory" type="checkbox" class="rounded border-slate-300 text-brand-600 focus:ring-brand-500" />
                 Mandatory for all designations
             </label>

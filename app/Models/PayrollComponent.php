@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Enums\PayrollComponentCalculationMethod;
 use App\Enums\PayrollComponentType;
+use App\Enums\PayrollLoanBank;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -35,7 +36,7 @@ class PayrollComponent extends Model
     public function designations(): BelongsToMany
     {
         return $this->belongsToMany(Designation::class, 'designation_payroll_component')
-            ->withPivot('amount')
+            ->withPivot(['amount', 'loan_months', 'loan_bank'])
             ->withTimestamps();
     }
 
@@ -44,22 +45,40 @@ class PayrollComponent extends Model
         return $this->code === self::BASIC_SALARY_CODE;
     }
 
+    public function isLoan(): bool
+    {
+        return $this->type->isLoan();
+    }
+
     /**
      * @return array<string, mixed>
      */
-    public function toPayrollItem(float $amount = 0): array
+    public function toPayrollItem(float $amount = 0, ?int $loanMonths = null, ?PayrollLoanBank $loanBank = null): array
     {
-        return [
+        $item = [
             'payroll_component_id' => $this->id,
             'name' => $this->name,
             'type' => $this->type->value,
             'type_label' => $this->type->label(),
             'calculation_method' => $this->calculation_method->value,
             'calculation_method_label' => $this->calculation_method->label(),
-            'amount_label' => $this->calculation_method->amountLabel(),
+            'amount_label' => $this->isLoan()
+                ? 'Monthly payment'
+                : $this->calculation_method->amountLabel(),
             'is_mandatory' => $this->is_mandatory,
             'amount' => $amount,
+            'loan_months' => null,
+            'loan_bank' => null,
+            'loan_bank_label' => null,
         ];
+
+        if ($this->isLoan()) {
+            $item['loan_months'] = $loanMonths;
+            $item['loan_bank'] = $loanBank?->value;
+            $item['loan_bank_label'] = $loanBank?->label();
+        }
+
+        return $item;
     }
 
     /**

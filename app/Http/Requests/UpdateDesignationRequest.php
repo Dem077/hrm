@@ -2,10 +2,14 @@
 
 namespace App\Http\Requests;
 
+use App\Http\Requests\Concerns\ValidatesDesignationPayrollItems;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Validator;
 
 class UpdateDesignationRequest extends FormRequest
 {
+    use ValidatesDesignationPayrollItems;
+
     public function authorize(): bool
     {
         return true;
@@ -25,10 +29,13 @@ class UpdateDesignationRequest extends FormRequest
             'description' => ['nullable', 'string', 'max:2000'],
             'sort_order' => ['integer', 'min:0', 'max:9999'],
             'is_active' => ['boolean'],
-            'items' => ['required', 'array', 'min:1'],
-            'items.*.payroll_component_id' => ['required', 'integer', 'exists:payroll_components,id'],
-            'items.*.amount' => ['required', 'numeric', 'min:0', 'max:999999999.99'],
+            ...$this->designationPayrollItemRules(),
         ];
+    }
+
+    public function withValidator(Validator $validator): void
+    {
+        $this->validateDesignationPayrollItems($validator);
     }
 
     protected function prepareForValidation(): void

@@ -7,7 +7,7 @@ import UiInput from '@/components/ui/UiInput.vue';
 import UiModal from '@/components/ui/UiModal.vue';
 import DesignationTotalsSummary from '@/pages/PayrollStructure/components/DesignationTotalsSummary.vue';
 import PayrollItemsEditor from '@/pages/PayrollStructure/components/PayrollItemsEditor.vue';
-import type { Designation, DesignationPayrollItem, PayrollComponent } from '@/types/payroll';
+import type { Designation, DesignationPayrollItem, LoanBankOption, PayrollComponent } from '@/types/payroll';
 
 const props = defineProps<{
     open: boolean;
@@ -15,6 +15,7 @@ const props = defineProps<{
     emptyDesignation: Designation;
     defaultItems: DesignationPayrollItem[];
     components: PayrollComponent[];
+    loanBanks: LoanBankOption[];
 }>();
 
 const emit = defineEmits<{
@@ -98,6 +99,7 @@ function submit() {
             <PayrollItemsEditor
                 :items="form.items"
                 :components="components"
+                :loan-banks="loanBanks"
                 :errors="form.errors"
                 @update:items="form.items = $event"
             />
