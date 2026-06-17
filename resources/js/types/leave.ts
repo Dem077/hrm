@@ -8,6 +8,8 @@ export type LeaveType = {
     is_active: boolean;
     sort_order: number;
     annual_limit: number | null;
+    can_carry_forward: boolean;
+    max_carry_forward_days: number | null;
     leave_requests_count?: number;
 };
 
@@ -56,6 +58,8 @@ export type LeaveTypeOption = {
     description: string | null;
     requires_document: boolean;
     annual_limit: number | null;
+    carry_forward_days: number | null;
+    available_days: number | null;
     used_days: number | null;
     remaining_days: number | null;
     period_start: string | null;
@@ -64,9 +68,12 @@ export type LeaveTypeOption = {
 
 export type LeaveBalanceLeaveType = {
     id: number;
+    leave_type_id: number;
     name: string;
     code: string | null;
     annual_limit: number | null;
+    carry_forward_days: number | null;
+    available_days: number | null;
     used_days: number | null;
     remaining_days: number | null;
     period_start: string | null;
@@ -88,4 +95,15 @@ export type LeaveBalanceEmployee = {
     department: string | null;
     joined_date: string | null;
     balances: LeaveBalanceLeaveType[];
+};
+
+export type LeaveCarryForwardAdjustment = {
+    id: number;
+    leave_type: { id: number; name: string; code: string | null } | null;
+    days: number;
+    reason: string;
+    from_period_label: string;
+    to_period_label: string;
+    moved_by: string;
+    created_at: string | null;
 };

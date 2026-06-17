@@ -15,6 +15,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'is_active',
     'sort_order',
     'annual_limit',
+    'can_carry_forward',
+    'max_carry_forward_days',
 ])]
 class LeaveType extends Model
 {
@@ -26,6 +28,8 @@ class LeaveType extends Model
             'is_active' => 'boolean',
             'sort_order' => 'integer',
             'annual_limit' => 'integer',
+            'can_carry_forward' => 'boolean',
+            'max_carry_forward_days' => 'integer',
         ];
     }
 
@@ -49,6 +53,8 @@ class LeaveType extends Model
             'is_active' => $this->is_active,
             'sort_order' => $this->sort_order,
             'annual_limit' => $this->annual_limit,
+            'can_carry_forward' => $this->can_carry_forward,
+            'max_carry_forward_days' => $this->max_carry_forward_days,
             'leave_requests_count' => $this->leave_requests_count ?? $this->leaveRequests()->count(),
         ];
     }

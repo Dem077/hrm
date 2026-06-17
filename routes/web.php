@@ -169,6 +169,9 @@ Route::middleware('auth')->group(function () {
         Route::get('leave-balances', [LeaveBalanceController::class, 'index'])->name('leave-balances.index');
         Route::get('leave-balances/export-all', [LeaveBalanceController::class, 'exportAll'])->name('leave-balances.export-all');
         Route::get('leave-balances/export', [LeaveBalanceController::class, 'export'])->name('leave-balances.export');
+        Route::post('leave-balances/manual-carry-forward', [LeaveBalanceController::class, 'storeCarryForward'])
+            ->middleware('permission:leave-balances.manual-carry-forward')
+            ->name('leave-balances.manual-carry-forward.store');
     });
 
     Route::middleware('permission:leave-types.view')->group(function () {
@@ -218,6 +221,9 @@ Route::middleware('auth')->group(function () {
         Route::put('attendance-settings/payroll-period', [AttendanceSettingController::class, 'updatePayrollPeriod'])
             ->middleware('permission:attendance-settings.payroll-period.update')
             ->name('attendance-settings.payroll-period.update');
+        Route::put('attendance-settings/leave-carry-forward', [AttendanceSettingController::class, 'updateLeaveCarryForward'])
+            ->middleware('permission:attendance-settings.payroll-period.update')
+            ->name('attendance-settings.leave-carry-forward.update');
         Route::post('attendance-settings/duty-policies', [AttendanceSettingController::class, 'storePolicy'])
             ->middleware('permission:attendance-settings.duty-policies.create')
             ->name('attendance-settings.duty-policies.store');

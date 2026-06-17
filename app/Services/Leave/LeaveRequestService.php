@@ -3,7 +3,9 @@
 namespace App\Services\Leave;
 
 use App\Enums\LeaveRequestStatus;
+use App\Models\AppSetting;
 use App\Models\Employee;
+use App\Models\LeaveCarryForwardAdjustment;
 use App\Models\LeaveRequest;
 use App\Models\LeaveType;
 use App\Models\User;
@@ -15,6 +17,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 class LeaveRequestService
 {
@@ -237,7 +240,9 @@ class LeaveRequestService
 
         $requestDays = $this->calculateDaysCount($startDate, $endDate);
 
-        return ($committed + $requestDays) > $leaveType->annual_limit;
+        $availableDays = $this->availableAnnualLimitForPeriod($employee, $leaveType, $periodStart, $periodEnd);
+
+        return ($committed + $requestDays) > $availableDays;
     }
 
     /**
@@ -248,6 +253,8 @@ class LeaveRequestService
         if ($leaveType->annual_limit === null) {
             return [
                 'annual_limit' => null,
+                'carry_forward_days' => null,
+                'available_days' => null,
                 'used_days' => null,
                 'remaining_days' => null,
                 'period_start' => null,
@@ -277,6 +284,136 @@ class LeaveRequestService
         $periodEnd = $periodStart->copy()->addYear()->subDay();
 
         return [$periodStart, $periodEnd];
+    }
+
+    public function availableAnnualLimitForPeriod(
+        Employee $employee,
+        LeaveType $leaveType,
+        CarbonInterface $periodStart,
+        CarbonInterface $periodEnd,
+    ): int {
+        if ($leaveType->annual_limit === null) {
+            return 0;
+        }
+
+        return max(0, $leaveType->annual_limit
+            + $this->carriedForwardDaysForPeriod($employee, $leaveType, $periodStart, $periodEnd)
+            + $this->manualCarryForwardInDaysForPeriod($employee, $leaveType, $periodStart)
+            - $this->manualCarryForwardOutDaysForPeriod($employee, $leaveType, $periodStart));
+    }
+
+    public function manualCarryForwardInDaysForPeriod(
+        Employee $employee,
+        LeaveType $leaveType,
+        CarbonInterface $periodStart,
+    ): int {
+        return (int) LeaveCarryForwardAdjustment::query()
+            ->where('employee_id', $employee->id)
+            ->where('leave_type_id', $leaveType->id)
+            ->whereDate('to_period_start', $periodStart->toDateString())
+            ->sum('days');
+    }
+
+    public function manualCarryForwardOutDaysForPeriod(
+        Employee $employee,
+        LeaveType $leaveType,
+        CarbonInterface $periodStart,
+    ): int {
+        return (int) LeaveCarryForwardAdjustment::query()
+            ->where('employee_id', $employee->id)
+            ->where('leave_type_id', $leaveType->id)
+            ->whereDate('from_period_start', $periodStart->toDateString())
+            ->sum('days');
+    }
+
+    public function carriedForwardDaysForPeriod(
+        Employee $employee,
+        LeaveType $leaveType,
+        CarbonInterface $periodStart,
+        CarbonInterface $periodEnd,
+    ): int {
+        if (
+            ! AppSetting::current()->leave_carry_forward_enabled
+            || 
+            $leaveType->annual_limit === null
+            || ! $leaveType->can_carry_forward
+            || $leaveType->max_carry_forward_days === null
+            || $leaveType->max_carry_forward_days <= 0
+        ) {
+            return 0;
+        }
+
+        $joined = $employee->joined_date?->copy()->startOfDay();
+        $previousStart = $periodStart->copy()->subYear()->startOfDay();
+        $previousEnd = $periodEnd->copy()->subYear()->startOfDay();
+
+        if ($joined && $previousEnd->lt($joined)) {
+            return 0;
+        }
+
+        $previousCarry = $this->carriedForwardDaysForPeriod($employee, $leaveType, $previousStart, $previousEnd);
+        $previousAvailable = $leaveType->annual_limit + $previousCarry;
+        $previousUsed = $this->usedLeaveDaysInAnniversaryYear(
+            $employee->id,
+            $leaveType->id,
+            $previousStart,
+            $previousEnd,
+        );
+        $unusedPrevious = max(0, $previousAvailable - $previousUsed);
+
+        return min($leaveType->max_carry_forward_days, $unusedPrevious);
+    }
+
+    public function createManualCarryForward(
+        Employee $employee,
+        LeaveType $leaveType,
+        int $fromLeaveYearOffset,
+        int $toLeaveYearOffset,
+        int $days,
+        string $reason,
+        User $movedBy,
+    ): LeaveCarryForwardAdjustment {
+        if ($leaveType->annual_limit === null) {
+            throw ValidationException::withMessages([
+                'leave_type_id' => 'Cannot carry forward on leave types without annual limit.',
+            ]);
+        }
+
+        if ($days <= 0) {
+            throw ValidationException::withMessages([
+                'days' => 'Days must be greater than zero.',
+            ]);
+        }
+
+        [$fromPeriodStart, $fromPeriodEnd] = $this->leaveYearBoundsByOffset($employee, $fromLeaveYearOffset);
+        [$toPeriodStart, $toPeriodEnd] = $this->leaveYearBoundsByOffset($employee, $toLeaveYearOffset);
+
+        if (! $toPeriodStart->gt($fromPeriodStart)) {
+            throw ValidationException::withMessages([
+                'to_leave_year_offset' => 'Carry forward must move from an older leave year to a newer one.',
+            ]);
+        }
+
+        $fromBalance = $this->leaveBalanceSummaryForPeriod($employee, $leaveType, $fromPeriodStart, $fromPeriodEnd);
+        $movableDays = (int) ($fromBalance['remaining_days'] ?? 0);
+
+        if ($days > $movableDays) {
+            throw ValidationException::withMessages([
+                'days' => "Only {$movableDays} day(s) are available to move from the selected source year.",
+            ]);
+        }
+
+        return LeaveCarryForwardAdjustment::query()->create([
+            'employee_id' => $employee->id,
+            'leave_type_id' => $leaveType->id,
+            'from_period_start' => $fromPeriodStart->toDateString(),
+            'from_period_end' => $fromPeriodEnd->toDateString(),
+            'to_period_start' => $toPeriodStart->toDateString(),
+            'to_period_end' => $toPeriodEnd->toDateString(),
+            'days' => $days,
+            'reason' => $reason,
+            'moved_by_user_id' => $movedBy->id,
+        ]);
     }
 
     /**
@@ -321,6 +458,8 @@ class LeaveRequestService
         if ($leaveType->annual_limit === null) {
             return [
                 'annual_limit' => null,
+                'carry_forward_days' => null,
+                'available_days' => null,
                 'used_days' => null,
                 'remaining_days' => null,
                 'period_start' => $periodStart->toDateString(),
@@ -335,10 +474,15 @@ class LeaveRequestService
             $periodEnd,
         );
 
+        $carryForwardDays = $this->carriedForwardDaysForPeriod($employee, $leaveType, $periodStart, $periodEnd);
+        $availableDays = $this->availableAnnualLimitForPeriod($employee, $leaveType, $periodStart, $periodEnd);
+
         return [
             'annual_limit' => $leaveType->annual_limit,
+            'carry_forward_days' => $carryForwardDays,
+            'available_days' => $availableDays,
             'used_days' => $usedDays,
-            'remaining_days' => max(0, $leaveType->annual_limit - $usedDays),
+            'remaining_days' => max(0, $availableDays - $usedDays),
             'period_start' => $periodStart->toDateString(),
             'period_end' => $periodEnd->toDateString(),
         ];
@@ -364,7 +508,7 @@ class LeaveRequestService
             ->when($leaveTypeId, fn (Builder $query) => $query->whereKey($leaveTypeId))
             ->orderBy('sort_order')
             ->orderBy('name')
-            ->get(['id', 'name', 'code', 'annual_limit']);
+            ->get(['id', 'name', 'code', 'annual_limit', 'can_carry_forward', 'max_carry_forward_days']);
 
         $leaveYears = $this->leaveYearOptionsForEmployee($employee);
         $selectedOffset = collect($leaveYears)->pluck('offset')->contains($leaveYearOffset)
@@ -387,6 +531,8 @@ class LeaveRequestService
                 'name' => $leaveType->name,
                 'code' => $leaveType->code,
                 'annual_limit' => $leaveType->annual_limit,
+                'can_carry_forward' => $leaveType->can_carry_forward,
+                'max_carry_forward_days' => $leaveType->max_carry_forward_days,
                 ...$this->leaveBalanceSummaryForPeriod($employee, $leaveType, $periodStart, $periodEnd),
             ];
         })->values()->all();
@@ -453,11 +599,17 @@ class LeaveRequestService
 
         $requestDays = $this->calculateDaysCount($startDate, $endDate);
 
-        if (($committed + $requestDays) > $limit) {
-            $periodLabel = DateFormatter::formatDate($periodStart).' to '.DateFormatter::formatDate($periodEnd);
-            $remaining = max(0, $limit - $committed);
+        $availableDays = $this->availableAnnualLimitForPeriod($employee, $leaveType, $periodStart, $periodEnd);
+        $carryForward = $this->carriedForwardDaysForPeriod($employee, $leaveType, $periodStart, $periodEnd);
 
-            return "Annual limit for {$typeName} is {$limit} days per leave year ({$periodLabel}). "
+        if (($committed + $requestDays) > $availableDays) {
+            $periodLabel = DateFormatter::formatDate($periodStart).' to '.DateFormatter::formatDate($periodEnd);
+            $remaining = max(0, $availableDays - $committed);
+            $limitLabel = $carryForward > 0
+                ? "{$limit} + {$carryForward} carry-forward = {$availableDays}"
+                : (string) $limit;
+
+            return "Annual limit for {$typeName} is {$limitLabel} day(s) for leave year {$periodLabel}. "
                 ."You have {$approved} approved day(s) and {$committed} day(s) already taken or pending approval, with {$remaining} day(s) remaining. "
                 ."This request needs {$requestDays} day(s).";
         }

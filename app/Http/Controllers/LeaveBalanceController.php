@@ -2,12 +2,16 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\StoreLeaveCarryForwardRequest;
 use App\Models\Department;
 use App\Models\Employee;
+use App\Models\LeaveCarryForwardAdjustment;
 use App\Models\LeaveType;
 use App\Services\Leave\LeaveBalanceExportService;
 use App\Services\Leave\LeaveRequestService;
+use App\Support\DateFormatter;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -30,6 +34,30 @@ class LeaveBalanceController extends Controller
 
         return Inertia::render('LeaveBalances/Index', [
             'employee' => $report['employee'] ?? null,
+            'manualCarryForwardAdjustments' => $employee
+                ? LeaveCarryForwardAdjustment::query()
+                    ->with(['leaveType:id,name,code', 'movedBy:id,name'])
+                    ->where('employee_id', $employee->id)
+                    ->latest('created_at')
+                    ->limit(50)
+                    ->get()
+                    ->map(fn (LeaveCarryForwardAdjustment $adjustment) => [
+                        'id' => $adjustment->id,
+                        'leave_type' => $adjustment->leaveType ? [
+                            'id' => $adjustment->leaveType->id,
+                            'name' => $adjustment->leaveType->name,
+                            'code' => $adjustment->leaveType->code,
+                        ] : null,
+                        'days' => $adjustment->days,
+                        'reason' => $adjustment->reason,
+                        'from_period_label' => DateFormatter::formatDate($adjustment->from_period_start).' – '.DateFormatter::formatDate($adjustment->from_period_end),
+                        'to_period_label' => DateFormatter::formatDate($adjustment->to_period_start).' – '.DateFormatter::formatDate($adjustment->to_period_end),
+                        'moved_by' => $adjustment->movedBy?->name ?? 'Unknown',
+                        'created_at' => $adjustment->created_at?->toIso8601String(),
+                    ])
+                    ->values()
+                    ->all()
+                : [],
             'leaveYears' => $report['leaveYears'] ?? [],
             'selectedLeaveYear' => $report['selectedLeaveYear'] ?? null,
             'departments' => Department::query()
@@ -70,6 +98,30 @@ class LeaveBalanceController extends Controller
         $departmentId = $request->filled('department_id') ? $request->integer('department_id') : null;
 
         return $exportService->downloadAllEmployeesUsed($departmentId);
+    }
+
+    public function storeCarryForward(StoreLeaveCarryForwardRequest $request, LeaveRequestService $leaveService): \Illuminate\Http\RedirectResponse
+    {
+        $employee = Employee::query()->where('is_active', true)->find($request->integer('employee_id'));
+        $leaveType = LeaveType::query()->where('is_active', true)->find($request->integer('leave_type_id'));
+
+        if (! $employee || ! $leaveType) {
+            throw ValidationException::withMessages([
+                'employee_id' => 'Employee or leave type is not active.',
+            ]);
+        }
+
+        $leaveService->createManualCarryForward(
+            $employee,
+            $leaveType,
+            $request->integer('from_leave_year_offset'),
+            $request->integer('to_leave_year_offset'),
+            $request->integer('days'),
+            $request->string('reason')->toString(),
+            $request->user(),
+        );
+
+        return back()->with('success', 'Manual carry-forward recorded successfully.');
     }
 
     /**

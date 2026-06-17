@@ -4,6 +4,7 @@ use App\Enums\LeaveRequestStatus;
 use App\Models\Employee;
 use App\Models\LeaveRequest;
 use App\Models\LeaveType;
+use App\Models\User;
 use App\Services\Leave\LeaveRequestService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
@@ -260,4 +261,90 @@ it('rejects leave when the start date leave year is already exhausted', function
         Carbon::parse('2026-03-13'),
         Carbon::parse('2026-03-16'),
     ))->toBeTrue();
+});
+
+it('carries forward unused leave up to configured max accumulation', function () {
+    $employee = createEmployeeForLeaveTests('2024-03-15');
+    $leaveType = LeaveType::query()->create([
+        'name' => 'Annual Leave',
+        'annual_limit' => 12,
+        'can_carry_forward' => true,
+        'max_carry_forward_days' => 20,
+    ]);
+
+    // Year 1 usage: 4, unused 8 -> carry to year 2.
+    createLeaveRequestForTests(
+        $employee,
+        $leaveType,
+        '2024-06-01',
+        '2024-06-04',
+        4,
+        LeaveRequestStatus::Approved,
+    );
+
+    // Year 2 usage: 0, available 20 (12+8), unused 20 -> carry to year 3 capped at 20.
+    $service = app(LeaveRequestService::class);
+    [$year3Start, $year3End] = $service->anniversaryYearBounds($employee, Carbon::parse('2026-06-10'));
+
+    expect($service->carriedForwardDaysForPeriod($employee, $leaveType, $year3Start, $year3End))->toBe(20)
+        ->and($service->availableAnnualLimitForPeriod($employee, $leaveType, $year3Start, $year3End))->toBe(32);
+});
+
+it('does not carry forward when leave type carry forward is disabled', function () {
+    $employee = createEmployeeForLeaveTests('2024-03-15');
+    $leaveType = LeaveType::query()->create([
+        'name' => 'Casual Leave',
+        'annual_limit' => 10,
+        'can_carry_forward' => false,
+        'max_carry_forward_days' => 10,
+    ]);
+
+    $service = app(LeaveRequestService::class);
+    [$periodStart, $periodEnd] = $service->anniversaryYearBounds($employee, Carbon::parse('2026-06-10'));
+
+    expect($service->carriedForwardDaysForPeriod($employee, $leaveType, $periodStart, $periodEnd))->toBe(0)
+        ->and($service->availableAnnualLimitForPeriod($employee, $leaveType, $periodStart, $periodEnd))->toBe(10);
+});
+
+it('allows manual carry forward even when global carry forward is disabled', function () {
+    \App\Models\AppSetting::current()->update(['leave_carry_forward_enabled' => false]);
+
+    $employee = createEmployeeForLeaveTests('2024-03-15');
+    $leaveType = LeaveType::query()->create([
+        'name' => 'Annual Leave',
+        'annual_limit' => 12,
+        'can_carry_forward' => false,
+        'max_carry_forward_days' => null,
+    ]);
+
+    createLeaveRequestForTests(
+        $employee,
+        $leaveType,
+        '2024-06-01',
+        '2024-06-04',
+        4,
+        LeaveRequestStatus::Approved,
+    );
+
+    $user = User::factory()->create();
+    $service = app(LeaveRequestService::class);
+
+    $adjustment = $service->createManualCarryForward(
+        $employee,
+        $leaveType,
+        1,
+        0,
+        3,
+        'Carry balance to current year',
+        $user,
+    );
+
+    expect($adjustment->days)->toBe(3);
+
+    [$currentStart, $currentEnd] = $service->leaveYearBoundsByOffset($employee, 0);
+    $summary = $service->leaveBalanceSummaryForPeriod($employee, $leaveType, $currentStart, $currentEnd);
+
+    expect($summary['carry_forward_days'])->toBe(0)
+        ->and($summary['available_days'])->toBe(15)
+        ->and($summary['remaining_days'])->toBe(15);
 });

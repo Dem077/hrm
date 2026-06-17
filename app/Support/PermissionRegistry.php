@@ -42,6 +42,7 @@ class PermissionRegistry
             ],
             'Leave Balances' => [
                 'leave-balances.view' => 'View employee leave balances',
+                'leave-balances.manual-carry-forward' => 'Carry forward leave manually for specific employee',
             ],
             'Payroll Structure' => [
                 'payroll-structure.view' => 'View payroll structure',
@@ -78,6 +79,7 @@ class PermissionRegistry
             'Global Settings' => [
                 'attendance-settings.view' => 'View attendance settings',
                 'attendance-settings.payroll-period.update' => 'Update payroll period',
+                'attendance-settings.leave-carry-forward.update' => 'Update leave carry-forward setting',
                 'attendance-settings.duty-policies.create' => 'Add duty policies',
                 'attendance-settings.duty-policies.update' => 'Update duty policies',
                 'attendance-settings.duty-policies.delete' => 'Delete duty policies',

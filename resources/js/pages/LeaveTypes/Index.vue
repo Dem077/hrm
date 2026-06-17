@@ -13,6 +13,7 @@ import type { LeaveType } from '@/types/leave';
 const props = defineProps<{
     leaveTypes: LeaveType[];
     emptyLeaveType: LeaveType;
+    carryForwardEnabled: boolean;
 }>();
 
 const { can } = usePermissions();
@@ -30,6 +31,8 @@ function editLeaveType(leaveType: LeaveType) {
     form.is_active = leaveType.is_active;
     form.sort_order = leaveType.sort_order;
     form.annual_limit = leaveType.annual_limit;
+    form.can_carry_forward = leaveType.can_carry_forward;
+    form.max_carry_forward_days = leaveType.max_carry_forward_days;
 }
 
 function cancelEdit() {
@@ -80,6 +83,7 @@ function destroyLeaveType(id: number, name: string) {
                             <th class="px-5 py-3.5 font-medium">Name</th>
                             <th class="px-5 py-3.5 font-medium">Code</th>
                             <th class="px-5 py-3.5 font-medium">Annual limit</th>
+                            <th v-if="carryForwardEnabled" class="px-5 py-3.5 font-medium">Carry forward</th>
                             <th class="px-5 py-3.5 font-medium">Document</th>
                             <th class="px-5 py-3.5 font-medium">Visible to employees</th>
                             <th class="px-5 py-3.5 font-medium">Status</th>
@@ -93,6 +97,12 @@ function destroyLeaveType(id: number, name: string) {
                             <td class="px-5 py-4 text-slate-600 dark:text-slate-400">{{ leaveType.code ?? '—' }}</td>
                             <td class="px-5 py-4 text-slate-600 dark:text-slate-400">
                                 {{ leaveType.annual_limit ?? 'Unlimited' }}
+                            </td>
+                            <td v-if="carryForwardEnabled" class="px-5 py-4 text-slate-600 dark:text-slate-400">
+                                <template v-if="leaveType.can_carry_forward">
+                                    Yes (max {{ leaveType.max_carry_forward_days ?? 0 }} days)
+                                </template>
+                                <template v-else>No</template>
                             </td>
                             <td class="px-5 py-4 text-slate-600 dark:text-slate-400">{{ leaveType.requires_document ? 'Required' : 'Optional' }}</td>
                             <td class="px-5 py-4 text-slate-600 dark:text-slate-400">{{ leaveType.is_visible_to_employees ? 'Yes' : 'HR only' }}</td>
@@ -124,7 +134,9 @@ function destroyLeaveType(id: number, name: string) {
                             </td>
                         </tr>
                         <tr v-if="leaveTypes.length === 0">
-                            <td colspan="8" class="px-5 py-12 text-center text-slate-500">No leave types configured yet.</td>
+                            <td :colspan="carryForwardEnabled ? 9 : 8" class="px-5 py-12 text-center text-slate-500">
+                                No leave types configured yet.
+                            </td>
                         </tr>
                     </tbody>
                 </table>
@@ -150,6 +162,9 @@ function destroyLeaveType(id: number, name: string) {
                         :error="form.errors.annual_limit"
                     />
                 </div>
+                <p v-if="!carryForwardEnabled" class="text-xs text-slate-500 dark:text-slate-400">
+                    Carry-forward is disabled in global app settings.
+                </p>
                 <UiInput v-model="form.description" label="Description" :error="form.errors.description" />
                 <div class="grid gap-3 md:grid-cols-3">
                     <label class="flex items-center gap-3 rounded-xl border border-slate-200 px-4 py-3 text-sm dark:border-slate-700">
@@ -164,6 +179,23 @@ function destroyLeaveType(id: number, name: string) {
                         <input v-model="form.is_active" type="checkbox" class="rounded border-slate-300 text-brand-600 dark:border-slate-600" />
                         Active
                     </label>
+                    <label v-if="carryForwardEnabled" class="flex items-center gap-3 rounded-xl border border-slate-200 px-4 py-3 text-sm dark:border-slate-700">
+                        <input v-model="form.can_carry_forward" type="checkbox" class="rounded border-slate-300 text-brand-600 dark:border-slate-600" />
+                        Can carry forward unused leave
+                    </label>
+                </div>
+                <div v-if="carryForwardEnabled" class="grid gap-4 md:grid-cols-2">
+                    <UiInput
+                        v-model="form.max_carry_forward_days"
+                        label="Max accumulated carry-forward days"
+                        type="number"
+                        hint="Required when carry forward is enabled."
+                        :disabled="!form.can_carry_forward"
+                        :error="form.errors.max_carry_forward_days"
+                    />
+                    <p v-if="form.errors.can_carry_forward" class="text-sm text-red-600 md:self-end">
+                        {{ form.errors.can_carry_forward }}
+                    </p>
                 </div>
                 <div class="flex gap-2">
                     <UiButton type="submit" variant="primary" :disabled="form.processing">

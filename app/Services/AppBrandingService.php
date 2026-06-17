@@ -31,6 +31,7 @@ class AppBrandingService
             'app_name' => $settings->app_name,
             'tagline' => $settings->tagline,
             'logo_url' => $this->logoUrl($settings),
+            'leave_carry_forward_enabled' => $settings->leave_carry_forward_enabled,
             'brand_color_400' => $settings->brand_color_400,
             'brand_color_500' => $settings->brand_color_500,
             'brand_color_600' => $settings->brand_color_600,

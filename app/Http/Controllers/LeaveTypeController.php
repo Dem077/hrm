@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\StoreLeaveTypeRequest;
 use App\Http\Requests\UpdateLeaveTypeRequest;
+use App\Models\AppSetting;
 use App\Models\LeaveType;
 use Illuminate\Http\RedirectResponse;
 use Inertia\Inertia;
@@ -21,6 +22,7 @@ class LeaveTypeController extends Controller
                 ->get()
                 ->map(fn (LeaveType $leaveType) => $leaveType->toPresentationArray()),
             'emptyLeaveType' => $this->emptyLeaveType(),
+            'carryForwardEnabled' => AppSetting::current()->leave_carry_forward_enabled,
         ]);
     }
 
@@ -64,6 +66,8 @@ class LeaveTypeController extends Controller
             'is_active' => true,
             'sort_order' => 0,
             'annual_limit' => null,
+            'can_carry_forward' => false,
+            'max_carry_forward_days' => null,
         ];
     }
 }

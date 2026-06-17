@@ -21,6 +21,7 @@ class AppSettingController extends Controller
                 'app_name' => $settings->app_name,
                 'tagline' => $settings->tagline,
                 'logo_url' => $brandingService->logoUrl($settings),
+                'leave_carry_forward_enabled' => $settings->leave_carry_forward_enabled,
                 'brand_color_400' => $settings->brand_color_400,
                 'brand_color_500' => $settings->brand_color_500,
                 'brand_color_600' => $settings->brand_color_600,
@@ -29,6 +30,7 @@ class AppSettingController extends Controller
             'defaults' => [
                 'app_name' => config('app.name', 'HRM'),
                 'tagline' => 'Attendance',
+                'leave_carry_forward_enabled' => true,
                 ...$brandingService->defaultColors(),
             ],
         ]);

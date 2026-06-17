@@ -13,6 +13,7 @@ import { formatDate } from '@/lib/format';
 import type { AttendanceDutyPolicy, PayrollPeriodSettings, PublicHoliday } from '@/types/attendance';
 
 const props = defineProps<{
+    leaveCarryForwardEnabled: boolean;
     policies: AttendanceDutyPolicy[];
     tempPolicies: AttendanceDutyPolicy[];
     holidays: PublicHoliday[];
@@ -38,6 +39,9 @@ const tempPolicyForm = useForm({ ...props.emptyTempPolicy, is_temporary: true })
 const holidayForm = useForm({ ...props.emptyHoliday });
 const payrollForm = useForm({
     payroll_period_start_day: props.payrollPeriod.payroll_period_start_day,
+});
+const leaveCarryForwardForm = useForm({
+    leave_carry_forward_enabled: props.leaveCarryForwardEnabled ? '1' : '0',
 });
 
 function applyYear() {
@@ -65,6 +69,13 @@ function submitPayrollPeriod() {
     payrollForm.put('/attendance-settings/payroll-period', {
         preserveScroll: true,
         onSuccess: closePayrollModal,
+    });
+}
+
+function submitLeaveCarryForwardSetting() {
+    leaveCarryForwardForm.put('/attendance-settings/leave-carry-forward', {
+        preserveScroll: true,
+        forceFormData: true,
     });
 }
 
@@ -273,107 +284,177 @@ function payrollEndLabel(startDay: number, endDay: number | null): string {
             </UiCard>
 
             <UiCard
-                title="Permanent duty policies"
-                description="Regular duty times apply Sun–Thu. Saturday duty times apply only to employees marked as working Saturday. The latest permanent policy on or before each date is used unless a temporary override is active."
+                title="Leave policies"
+                description="Global controls for leave behavior across the system."
             >
-                <template #actions>
-                    <UiButton
-                        v-if="can('attendance-settings.duty-policies.create')"
-                        size="sm"
-                        variant="primary"
-                        @click="openAddPolicyModal"
-                    >
-                        Add policy
-                    </UiButton>
-                </template>
-
-                <div class="overflow-x-auto">
-                    <table class="min-w-full text-sm">
-                        <thead class="border-b border-slate-100 text-left text-slate-500 dark:border-slate-800 dark:text-slate-400">
-                            <tr>
-                                <th class="px-3 py-3 font-medium">Effective from</th>
-                                <th class="px-3 py-3 font-medium">Weekday start</th>
-                                <th class="px-3 py-3 font-medium">Weekday end</th>
-                                <th class="px-3 py-3 font-medium">Grace</th>
-                                <th class="px-3 py-3 font-medium">Sat start</th>
-                                <th class="px-3 py-3 font-medium">Sat end</th>
-                                <th class="px-3 py-3 font-medium">Sat grace</th>
-                                <th class="px-3 py-3 font-medium">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
-                            <tr v-for="policy in policies" :key="policy.id!">
-                                <td class="px-3 py-3 text-slate-700 dark:text-slate-300">{{ formatDate(policy.effective_from) }}</td>
-                                <td class="px-3 py-3">{{ policy.duty_start_time }}</td>
-                                <td class="px-3 py-3">{{ policy.duty_end_time }}</td>
-                                <td class="px-3 py-3">{{ policy.grace_minutes }} min</td>
-                                <td class="px-3 py-3">{{ policy.saturday_duty_start_time }}</td>
-                                <td class="px-3 py-3">{{ policy.saturday_duty_end_time }}</td>
-                                <td class="px-3 py-3">{{ policy.saturday_grace_minutes }} min</td>
-                                <td class="px-3 py-3">
-                                    <div v-if="can('attendance-settings.duty-policies.update') || can('attendance-settings.duty-policies.delete')" class="flex gap-2">
-                                        <UiButton v-if="can('attendance-settings.duty-policies.update')" size="sm" variant="ghost" @click="editPolicy(policy)">Edit</UiButton>
-                                        <UiButton v-if="can('attendance-settings.duty-policies.delete')" size="sm" variant="danger" @click="deletePolicy(policy.id!, false)">Delete</UiButton>
-                                    </div>
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
+                <form class="space-y-4" @submit.prevent="submitLeaveCarryForwardSetting">
+                    <div class="rounded-xl border border-slate-200 p-4 dark:border-slate-700">
+                        <p class="mb-3 text-sm font-medium text-slate-700 dark:text-slate-300">Carry forward</p>
+                        <div class="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-1 dark:border-slate-700 dark:bg-surface-elevated">
+                            <label class="cursor-pointer">
+                                <input
+                                    v-model="leaveCarryForwardForm.leave_carry_forward_enabled"
+                                    type="radio"
+                                    value="1"
+                                    class="sr-only"
+                                    :disabled="!can('attendance-settings.payroll-period.update')"
+                                />
+                                <span
+                                    class="inline-flex rounded-md px-4 py-1.5 text-sm"
+                                    :class="
+                                        leaveCarryForwardForm.leave_carry_forward_enabled === '1'
+                                            ? 'bg-brand-600 text-white'
+                                            : 'text-slate-600 dark:text-slate-300'
+                                    "
+                                >
+                                    On
+                                </span>
+                            </label>
+                            <label class="cursor-pointer">
+                                <input
+                                    v-model="leaveCarryForwardForm.leave_carry_forward_enabled"
+                                    type="radio"
+                                    value="0"
+                                    class="sr-only"
+                                    :disabled="!can('attendance-settings.payroll-period.update')"
+                                />
+                                <span
+                                    class="inline-flex rounded-md px-4 py-1.5 text-sm"
+                                    :class="
+                                        leaveCarryForwardForm.leave_carry_forward_enabled === '0'
+                                            ? 'bg-brand-600 text-white'
+                                            : 'text-slate-600 dark:text-slate-300'
+                                    "
+                                >
+                                    Off
+                                </span>
+                            </label>
+                        </div>
+                        <p class="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                            Controls whether carry-forward options appear in Leave Types.
+                        </p>
+                    </div>
+                    <div v-if="can('attendance-settings.payroll-period.update')" class="flex justify-end">
+                        <UiButton type="submit" variant="primary" :disabled="leaveCarryForwardForm.processing">
+                            Save
+                        </UiButton>
+                    </div>
+                </form>
             </UiCard>
 
             <UiCard
-                title="Temporary duty overrides"
-                description="Use these for limited periods such as Ramadan or special office hours. They override any permanent policy for all employees without custom duty times."
+                title="Duty policies"
+                description="Regular duty times come from permanent policies. Temporary overrides apply for limited periods and take priority over permanent settings."
             >
-                <template #actions>
-                    <UiButton
-                        v-if="can('attendance-settings.duty-policies.create')"
-                        size="sm"
-                        variant="primary"
-                        @click="openAddTempPolicyModal"
-                    >
-                        Add override
-                    </UiButton>
-                </template>
+                <div class="space-y-6">
+                    <section class="rounded-xl border border-slate-100 dark:border-slate-800">
+                        <div class="flex items-center justify-between border-b border-slate-100 bg-slate-50 px-4 py-3 dark:border-slate-800 dark:bg-surface-elevated">
+                            <div>
+                                <h3 class="text-sm font-semibold text-slate-900 dark:text-slate-100">Permanent duty policy</h3>
+                                <p class="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                                    Applies from the effective date onward until a newer permanent policy starts.
+                                </p>
+                            </div>
+                            <UiButton
+                                v-if="can('attendance-settings.duty-policies.create')"
+                                size="sm"
+                                variant="primary"
+                                @click="openAddPolicyModal"
+                            >
+                                Add policy
+                            </UiButton>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full text-sm">
+                                <thead class="border-b border-slate-100 text-left text-slate-500 dark:border-slate-800 dark:text-slate-400">
+                                    <tr>
+                                        <th class="px-3 py-3 font-medium">Effective from</th>
+                                        <th class="px-3 py-3 font-medium">Weekday start</th>
+                                        <th class="px-3 py-3 font-medium">Weekday end</th>
+                                        <th class="px-3 py-3 font-medium">Grace</th>
+                                        <th class="px-3 py-3 font-medium">Sat start</th>
+                                        <th class="px-3 py-3 font-medium">Sat end</th>
+                                        <th class="px-3 py-3 font-medium">Sat grace</th>
+                                        <th class="px-3 py-3 font-medium">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+                                    <tr v-for="policy in policies" :key="policy.id!">
+                                        <td class="px-3 py-3 text-slate-700 dark:text-slate-300">{{ formatDate(policy.effective_from) }}</td>
+                                        <td class="px-3 py-3">{{ policy.duty_start_time }}</td>
+                                        <td class="px-3 py-3">{{ policy.duty_end_time }}</td>
+                                        <td class="px-3 py-3">{{ policy.grace_minutes }} min</td>
+                                        <td class="px-3 py-3">{{ policy.saturday_duty_start_time }}</td>
+                                        <td class="px-3 py-3">{{ policy.saturday_duty_end_time }}</td>
+                                        <td class="px-3 py-3">{{ policy.saturday_grace_minutes }} min</td>
+                                        <td class="px-3 py-3">
+                                            <div v-if="can('attendance-settings.duty-policies.update') || can('attendance-settings.duty-policies.delete')" class="flex gap-2">
+                                                <UiButton v-if="can('attendance-settings.duty-policies.update')" size="sm" variant="ghost" @click="editPolicy(policy)">Edit</UiButton>
+                                                <UiButton v-if="can('attendance-settings.duty-policies.delete')" size="sm" variant="danger" @click="deletePolicy(policy.id!, false)">Delete</UiButton>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </section>
 
-                <div class="overflow-x-auto">
-                    <table class="min-w-full text-sm">
-                        <thead class="border-b border-slate-100 text-left text-slate-500 dark:border-slate-800 dark:text-slate-400">
-                            <tr>
-                                <th class="px-3 py-3 font-medium">Period</th>
-                                <th class="px-3 py-3 font-medium">Name</th>
-                                <th class="px-3 py-3 font-medium">Weekday start</th>
-                                <th class="px-3 py-3 font-medium">Weekday end</th>
-                                <th class="px-3 py-3 font-medium">Grace</th>
-                                <th class="px-3 py-3 font-medium">Sat start</th>
-                                <th class="px-3 py-3 font-medium">Sat end</th>
-                                <th class="px-3 py-3 font-medium">Sat grace</th>
-                                <th class="px-3 py-3 font-medium">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
-                            <tr v-for="policy in tempPolicies" :key="policy.id!">
-                                <td class="px-3 py-3 text-slate-700 dark:text-slate-300">{{ policy.period_label }}</td>
-                                <td class="px-3 py-3 font-medium text-slate-900 dark:text-slate-100">{{ policy.name || '—' }}</td>
-                                <td class="px-3 py-3">{{ policy.duty_start_time }}</td>
-                                <td class="px-3 py-3">{{ policy.duty_end_time }}</td>
-                                <td class="px-3 py-3">{{ policy.grace_minutes }} min</td>
-                                <td class="px-3 py-3">{{ policy.saturday_duty_start_time }}</td>
-                                <td class="px-3 py-3">{{ policy.saturday_duty_end_time }}</td>
-                                <td class="px-3 py-3">{{ policy.saturday_grace_minutes }} min</td>
-                                <td class="px-3 py-3">
-                                    <div v-if="can('attendance-settings.duty-policies.update') || can('attendance-settings.duty-policies.delete')" class="flex gap-2">
-                                        <UiButton v-if="can('attendance-settings.duty-policies.update')" size="sm" variant="ghost" @click="editTempPolicy(policy)">Edit</UiButton>
-                                        <UiButton v-if="can('attendance-settings.duty-policies.delete')" size="sm" variant="danger" @click="deletePolicy(policy.id!, true)">Delete</UiButton>
-                                    </div>
-                                </td>
-                            </tr>
-                            <tr v-if="tempPolicies.length === 0">
-                                <td colspan="9" class="px-3 py-8 text-center text-slate-500">No temporary duty overrides configured.</td>
-                            </tr>
-                        </tbody>
-                    </table>
+                    <section class="rounded-xl border border-slate-100 dark:border-slate-800">
+                        <div class="flex items-center justify-between border-b border-slate-100 bg-slate-50 px-4 py-3 dark:border-slate-800 dark:bg-surface-elevated">
+                            <div>
+                                <h3 class="text-sm font-semibold text-slate-900 dark:text-slate-100">Temporary duty override</h3>
+                                <p class="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                                    Use for short periods (e.g. Ramadan). Overrides permanent policy in the selected date range.
+                                </p>
+                            </div>
+                            <UiButton
+                                v-if="can('attendance-settings.duty-policies.create')"
+                                size="sm"
+                                variant="primary"
+                                @click="openAddTempPolicyModal"
+                            >
+                                Add override
+                            </UiButton>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full text-sm">
+                                <thead class="border-b border-slate-100 text-left text-slate-500 dark:border-slate-800 dark:text-slate-400">
+                                    <tr>
+                                        <th class="px-3 py-3 font-medium">Period</th>
+                                        <th class="px-3 py-3 font-medium">Name</th>
+                                        <th class="px-3 py-3 font-medium">Weekday start</th>
+                                        <th class="px-3 py-3 font-medium">Weekday end</th>
+                                        <th class="px-3 py-3 font-medium">Grace</th>
+                                        <th class="px-3 py-3 font-medium">Sat start</th>
+                                        <th class="px-3 py-3 font-medium">Sat end</th>
+                                        <th class="px-3 py-3 font-medium">Sat grace</th>
+                                        <th class="px-3 py-3 font-medium">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+                                    <tr v-for="policy in tempPolicies" :key="policy.id!">
+                                        <td class="px-3 py-3 text-slate-700 dark:text-slate-300">{{ policy.period_label }}</td>
+                                        <td class="px-3 py-3 font-medium text-slate-900 dark:text-slate-100">{{ policy.name || '—' }}</td>
+                                        <td class="px-3 py-3">{{ policy.duty_start_time }}</td>
+                                        <td class="px-3 py-3">{{ policy.duty_end_time }}</td>
+                                        <td class="px-3 py-3">{{ policy.grace_minutes }} min</td>
+                                        <td class="px-3 py-3">{{ policy.saturday_duty_start_time }}</td>
+                                        <td class="px-3 py-3">{{ policy.saturday_duty_end_time }}</td>
+                                        <td class="px-3 py-3">{{ policy.saturday_grace_minutes }} min</td>
+                                        <td class="px-3 py-3">
+                                            <div v-if="can('attendance-settings.duty-policies.update') || can('attendance-settings.duty-policies.delete')" class="flex gap-2">
+                                                <UiButton v-if="can('attendance-settings.duty-policies.update')" size="sm" variant="ghost" @click="editTempPolicy(policy)">Edit</UiButton>
+                                                <UiButton v-if="can('attendance-settings.duty-policies.delete')" size="sm" variant="danger" @click="deletePolicy(policy.id!, true)">Delete</UiButton>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    <tr v-if="tempPolicies.length === 0">
+                                        <td colspan="9" class="px-3 py-8 text-center text-slate-500">No temporary duty overrides configured.</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </section>
                 </div>
             </UiCard>
 

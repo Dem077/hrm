@@ -1,20 +1,24 @@
 <script setup lang="ts">
-import { Head, router } from '@inertiajs/vue3';
-import { computed, reactive, watch } from 'vue';
+import { Head, router, useForm } from '@inertiajs/vue3';
+import { computed, reactive, ref, watch } from 'vue';
 
 import PageHeader from '@/components/ui/PageHeader.vue';
 import UiButton from '@/components/ui/UiButton.vue';
 import UiCard from '@/components/ui/UiCard.vue';
 import UiSearchableSelect from '@/components/ui/UiSearchableSelect.vue';
 import UiSelect from '@/components/ui/UiSelect.vue';
+import UiModal from '@/components/ui/UiModal.vue';
+import UiInput from '@/components/ui/UiInput.vue';
+import { usePermissions } from '@/composables/usePermissions';
 import AppLayout from '@/layouts/AppLayout.vue';
-import { formatDate } from '@/lib/format';
-import type { LeaveBalanceEmployee, LeaveYearOption } from '@/types/leave';
+import { formatDate, formatDateTime } from '@/lib/format';
+import type { LeaveBalanceEmployee, LeaveCarryForwardAdjustment, LeaveYearOption } from '@/types/leave';
 
 const props = defineProps<{
     employee: LeaveBalanceEmployee | null;
     leaveYears: LeaveYearOption[];
     selectedLeaveYear: LeaveYearOption | null;
+    manualCarryForwardAdjustments: LeaveCarryForwardAdjustment[];
     departments: Array<{ id: number; name: string }>;
     employees: Array<{ id: number; label: string }>;
     filterLeaveTypes: Array<{ id: number; name: string }>;
@@ -25,6 +29,10 @@ const props = defineProps<{
         leave_year_offset: number;
     };
 }>();
+
+const { can } = usePermissions();
+const manualCarryForwardModalOpen = ref(false);
+const adjustmentsModalOpen = ref(false);
 
 const filters = reactive({
     department_id: props.filters.department_id ?? '',
@@ -67,6 +75,15 @@ const employeeOptions = computed(() =>
 );
 
 const leaveYearOffset = computed(() => Number(filters.leave_year_offset));
+
+const manualCarryForwardForm = useForm({
+    employee_id: null as number | null,
+    leave_type_id: null as number | null,
+    from_leave_year_offset: 1,
+    to_leave_year_offset: 0,
+    days: 1,
+    reason: '',
+});
 
 const canGoToNewerLeaveYear = computed(() => leaveYearOffset.value > 0);
 const canGoToOlderLeaveYear = computed(() =>
@@ -151,6 +168,41 @@ function shiftLeaveYear(direction: 'older' | 'newer') {
 
     applyFilters();
 }
+
+function openManualCarryForwardModal() {
+    if (!props.employee) {
+        return;
+    }
+
+    manualCarryForwardForm.reset();
+    manualCarryForwardForm.employee_id = props.employee.id;
+    manualCarryForwardForm.leave_type_id = props.employee.balances[0]?.leave_type_id ?? null;
+    manualCarryForwardForm.from_leave_year_offset = props.leaveYears.some((item) => item.offset === 1) ? 1 : 0;
+    manualCarryForwardForm.to_leave_year_offset = 0;
+    manualCarryForwardForm.days = 1;
+    manualCarryForwardForm.reason = '';
+    manualCarryForwardForm.clearErrors();
+    manualCarryForwardModalOpen.value = true;
+}
+
+function closeManualCarryForwardModal() {
+    manualCarryForwardModalOpen.value = false;
+}
+
+function submitManualCarryForward() {
+    manualCarryForwardForm.post('/leave-balances/manual-carry-forward', {
+        preserveScroll: true,
+        onSuccess: closeManualCarryForwardModal,
+    });
+}
+
+function openAdjustmentsModal() {
+    adjustmentsModalOpen.value = true;
+}
+
+function closeAdjustmentsModal() {
+    adjustmentsModalOpen.value = false;
+}
 </script>
 
 <template>
@@ -215,6 +267,26 @@ function shiftLeaveYear(direction: 'older' | 'newer') {
         </UiCard>
 
         <template v-else>
+            <UiCard class="mb-6" title="Carry-forward actions">
+                <div class="flex flex-wrap gap-2">
+                    <UiButton
+                        v-if="can('leave-balances.manual-carry-forward')"
+                        type="button"
+                        variant="primary"
+                        @click="openManualCarryForwardModal"
+                    >
+                        Manual carry forward
+                    </UiButton>
+                    <UiButton
+                        type="button"
+                        variant="secondary"
+                        @click="openAdjustmentsModal"
+                    >
+                        View adjustments
+                    </UiButton>
+                </div>
+            </UiCard>
+
             <UiCard class="mb-6">
                 <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                     <div>
@@ -302,6 +374,118 @@ function shiftLeaveYear(direction: 'older' | 'newer') {
                     </table>
                 </div>
             </UiCard>
+
         </template>
     </AppLayout>
+
+    <UiModal
+        :open="adjustmentsModalOpen"
+        title="Manual carry-forward adjustments"
+        description="Recent manual carry-forward moves for this employee."
+        max-width="xl"
+        @close="closeAdjustmentsModal"
+    >
+        <div class="max-h-[28rem] overflow-auto">
+            <table class="min-w-full text-sm">
+                <thead class="border-b border-slate-100 text-left text-slate-500 dark:border-slate-800 dark:text-slate-400">
+                    <tr>
+                        <th class="px-3 py-3 font-medium">Date</th>
+                        <th class="px-3 py-3 font-medium">Leave type</th>
+                        <th class="px-3 py-3 font-medium">Days</th>
+                        <th class="px-3 py-3 font-medium">From</th>
+                        <th class="px-3 py-3 font-medium">To</th>
+                        <th class="px-3 py-3 font-medium">Reason</th>
+                        <th class="px-3 py-3 font-medium">Moved by</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+                    <tr v-for="item in manualCarryForwardAdjustments" :key="item.id">
+                        <td class="px-3 py-3 text-slate-600 dark:text-slate-400">{{ formatDateTime(item.created_at) }}</td>
+                        <td class="px-3 py-3">
+                            <div class="font-medium text-slate-900 dark:text-white">{{ item.leave_type?.name ?? '—' }}</div>
+                            <div v-if="item.leave_type?.code" class="text-xs text-slate-500">{{ item.leave_type.code }}</div>
+                        </td>
+                        <td class="px-3 py-3 text-slate-700 dark:text-slate-300">{{ item.days }}</td>
+                        <td class="px-3 py-3 text-slate-600 dark:text-slate-400">{{ item.from_period_label }}</td>
+                        <td class="px-3 py-3 text-slate-600 dark:text-slate-400">{{ item.to_period_label }}</td>
+                        <td class="px-3 py-3 text-slate-600 dark:text-slate-400">{{ item.reason }}</td>
+                        <td class="px-3 py-3 text-slate-600 dark:text-slate-400">{{ item.moved_by }}</td>
+                    </tr>
+                    <tr v-if="manualCarryForwardAdjustments.length === 0">
+                        <td colspan="7" class="px-3 py-8 text-center text-slate-500">
+                            No manual carry-forward adjustments for this employee.
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        <template #footer>
+            <UiButton type="button" variant="ghost" @click="closeAdjustmentsModal">Close</UiButton>
+        </template>
+    </UiModal>
+
+    <UiModal
+        :open="manualCarryForwardModalOpen"
+        title="Manual carry forward"
+        description="Move unused leave from one leave year to a newer leave year for this employee."
+        max-width="lg"
+        @close="closeManualCarryForwardModal"
+    >
+        <form id="manual-carry-forward-form" class="grid gap-4" @submit.prevent="submitManualCarryForward">
+            <UiSelect v-model="manualCarryForwardForm.leave_type_id" label="Leave type" :error="manualCarryForwardForm.errors.leave_type_id">
+                <option :value="null" disabled>Select leave type</option>
+                <option v-for="balance in employee?.balances ?? []" :key="balance.id" :value="balance.leave_type_id">
+                    {{ balance.name }}
+                </option>
+            </UiSelect>
+
+            <div class="grid gap-4 md:grid-cols-2">
+                <UiSelect
+                    v-model="manualCarryForwardForm.from_leave_year_offset"
+                    label="From leave year"
+                    :error="manualCarryForwardForm.errors.from_leave_year_offset"
+                >
+                    <option v-for="year in leaveYears" :key="`from-${year.offset}`" :value="year.offset">
+                        {{ year.label }}
+                    </option>
+                </UiSelect>
+                <UiSelect
+                    v-model="manualCarryForwardForm.to_leave_year_offset"
+                    label="To leave year"
+                    :error="manualCarryForwardForm.errors.to_leave_year_offset"
+                >
+                    <option v-for="year in leaveYears" :key="`to-${year.offset}`" :value="year.offset">
+                        {{ year.label }}
+                    </option>
+                </UiSelect>
+            </div>
+
+            <UiInput
+                v-model="manualCarryForwardForm.days"
+                label="Days to move"
+                type="number"
+                min="1"
+                :error="manualCarryForwardForm.errors.days"
+            />
+
+            <div>
+                <label class="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Reason</label>
+                <textarea
+                    v-model="manualCarryForwardForm.reason"
+                    rows="3"
+                    required
+                    class="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 shadow-sm outline-none focus:border-brand-500 focus:ring-4 focus:ring-brand-500/15 dark:border-slate-700 dark:bg-surface-elevated dark:text-slate-100"
+                />
+                <p v-if="manualCarryForwardForm.errors.reason" class="mt-1 text-sm text-red-600">
+                    {{ manualCarryForwardForm.errors.reason }}
+                </p>
+            </div>
+        </form>
+        <template #footer>
+            <UiButton type="button" variant="ghost" @click="closeManualCarryForwardModal">Cancel</UiButton>
+            <UiButton type="submit" form="manual-carry-forward-form" :disabled="manualCarryForwardForm.processing">
+                Save
+            </UiButton>
+        </template>
+    </UiModal>
 </template>

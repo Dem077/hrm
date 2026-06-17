@@ -7,9 +7,11 @@ use App\Http\Requests\StorePublicHolidayRequest;
 use App\Http\Requests\UpdateAttendanceDutyPolicyRequest;
 use App\Http\Requests\UpdatePayrollPeriodRequest;
 use App\Http\Requests\UpdatePublicHolidayRequest;
+use App\Models\AppSetting;
 use App\Models\AttendanceDutyPolicy;
 use App\Models\AttendanceGeneralSetting;
 use App\Models\PublicHoliday;
+use Illuminate\Http\Request;
 use App\Services\Attendance\PayrollPeriodService;
 use Illuminate\Http\RedirectResponse;
 use Inertia\Inertia;
@@ -23,6 +25,7 @@ class AttendanceSettingController extends Controller
         $settings = AttendanceGeneralSetting::current();
 
         return Inertia::render('AttendanceSettings/Index', [
+            'leaveCarryForwardEnabled' => AppSetting::current()->leave_carry_forward_enabled,
             'payrollPeriod' => [
                 'payroll_period_start_day' => $settings->payroll_period_start_day,
                 'payroll_period_end_day' => $settings->payroll_period_start_day > 1
@@ -81,6 +84,19 @@ class AttendanceSettingController extends Controller
         AttendanceGeneralSetting::current()->update($request->validated());
 
         return back()->with('success', 'Payroll period updated successfully.');
+    }
+
+    public function updateLeaveCarryForward(Request $request): RedirectResponse
+    {
+        $validated = $request->validate([
+            'leave_carry_forward_enabled' => ['required', 'in:0,1'],
+        ]);
+
+        AppSetting::current()->update([
+            'leave_carry_forward_enabled' => $validated['leave_carry_forward_enabled'] === '1',
+        ]);
+
+        return back()->with('success', 'Leave carry-forward setting updated successfully.');
     }
 
     public function storePolicy(StoreAttendanceDutyPolicyRequest $request): RedirectResponse

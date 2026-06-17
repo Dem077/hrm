@@ -49,6 +49,7 @@ const previewBranding = computed<AppBranding>(() => ({
     app_name: form.app_name,
     tagline: form.tagline || null,
     logo_url: logoPreview.value,
+    leave_carry_forward_enabled: props.settings.leave_carry_forward_enabled,
     brand_color_400: form.brand_color_400,
     brand_color_500: form.brand_color_500,
     brand_color_600: form.brand_color_600,
@@ -158,6 +159,21 @@ function submit() {
                             </p>
                         </div>
                     </div>
+                </UiCard>
+
+                <UiCard title="Leave settings" description="Control whether leave carry-forward is available in Leave Types.">
+                    <label class="flex items-center gap-3 rounded-xl border border-slate-200 px-4 py-3 text-sm dark:border-slate-700">
+                        <input
+                            v-model="form.leave_carry_forward_enabled"
+                            type="checkbox"
+                            class="rounded border-slate-300 text-brand-600 dark:border-slate-600"
+                            :disabled="!can('app-settings.update')"
+                        />
+                        Enable leave carry-forward
+                    </label>
+                    <p class="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                        Turn this off to hide carry-forward options in Leave Types and ignore carry-forward in leave balance checks.
+                    </p>
                 </UiCard>
 
                 <div v-if="can('app-settings.update')" class="flex justify-end">
