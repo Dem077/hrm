@@ -172,7 +172,7 @@ class DesignationPayrollService
      *     mandatory: list<array<string, mixed>>,
      *     fixed_additions: list<array<string, mixed>>,
      *     fixed_deductions: list<array<string, mixed>>,
-     *     daily: list<array<string, mixed>>,
+     *     attendance_allowance: list<array<string, mixed>>,
      *     loans: list<array<string, mixed>>
      * }
      */
@@ -192,8 +192,15 @@ class DesignationPayrollService
                 ->where('calculation_method', PayrollComponentCalculationMethod::Fixed->value)
                 ->values()
                 ->all(),
-            'daily' => $items
-                ->where('calculation_method', PayrollComponentCalculationMethod::Daily->value)
+            'attendance_allowance' => $items
+                ->filter(fn (array $item) => in_array(
+                    $item['calculation_method'],
+                    [
+                        PayrollComponentCalculationMethod::Daily->value,
+                        PayrollComponentCalculationMethod::Hourly->value,
+                    ],
+                    true
+                ))
                 ->values()
                 ->all(),
             'loans' => $items
@@ -205,7 +212,7 @@ class DesignationPayrollService
 
     /**
      * @param  Collection<int, array<string, mixed>>  $items
-     * @return array{additions: float, deductions: float, net: float, has_daily: bool, daily_count: int, has_loans: bool, loan_count: int}
+     * @return array{additions: float, deductions: float, net: float, has_attendance_allowance: bool, attendance_allowance_count: int, has_loans: bool, loan_count: int}
      */
     public function calculateTotals(Collection $items): array
     {
@@ -225,10 +232,20 @@ class DesignationPayrollService
 
         $deductions += $loanDeductions;
 
-        $dailyCount = $items->where(
-            'calculation_method',
-            PayrollComponentCalculationMethod::Daily->value,
-        )->count();
+        $attendanceAllowanceCount = $items
+            ->filter(fn (array $item) => in_array(
+                $item['calculation_method'],
+                [
+                    PayrollComponentCalculationMethod::Daily->value,
+                    PayrollComponentCalculationMethod::Hourly->value,
+                ],
+                true
+            ))
+            ->count();
+
+        $dailyCount = $items
+            ->where('calculation_method', PayrollComponentCalculationMethod::Daily->value)
+            ->count();
 
         $loanCount = $items->where('type', PayrollComponentType::Loan->value)->count();
 
@@ -236,6 +253,8 @@ class DesignationPayrollService
             'additions' => round($additions, 2),
             'deductions' => round($deductions, 2),
             'net' => round($additions - $deductions, 2),
+            'has_attendance_allowance' => $attendanceAllowanceCount > 0,
+            'attendance_allowance_count' => $attendanceAllowanceCount,
             'has_daily' => $dailyCount > 0,
             'daily_count' => $dailyCount,
             'has_loans' => $loanCount > 0,

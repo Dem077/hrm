@@ -138,6 +138,49 @@ it('supports daily rate components excluded from fixed net', function () {
             ->where('designations.0.items.1.amount', 250));
 });
 
+it('supports hourly attendance allowance components excluded from fixed net', function () {
+    $basicSalary = PayrollComponent::query()->where('code', 'basic_salary')->firstOrFail();
+
+    $this->actingAs($this->user)->post('/payroll-structure/components', [
+        'name' => 'Attendance Allowance',
+        'code' => 'attendance_allowance',
+        'type' => 'addition',
+        'calculation_method' => 'hourly',
+        'is_mandatory' => false,
+        'sort_order' => 6,
+        'is_active' => true,
+    ]);
+
+    $attendanceAllowance = PayrollComponent::query()->where('code', 'attendance_allowance')->firstOrFail();
+
+    $response = $this->actingAs($this->user)->post('/payroll-structure/designations', [
+        'name' => 'Support Staff',
+        'is_active' => true,
+        'items' => [
+            [
+                'payroll_component_id' => $basicSalary->id,
+                'amount' => 30000,
+            ],
+            [
+                'payroll_component_id' => $attendanceAllowance->id,
+                'amount' => 120,
+            ],
+        ],
+    ]);
+
+    $response->assertRedirect();
+    $response->assertSessionHas('success');
+
+    $this->actingAs($this->user)
+        ->get('/payroll-structure')
+        ->assertInertia(fn ($page) => $page
+            ->where('designations.0.totals.additions', 30000)
+            ->where('designations.0.totals.net', 30000)
+            ->where('designations.0.totals.has_attendance_allowance', true)
+            ->where('designations.0.items.1.calculation_method', 'hourly')
+            ->where('designations.0.items.1.amount', 120));
+});
+
 it('creates a designation with loan repayment details', function () {
     $basicSalary = PayrollComponent::query()->where('code', 'basic_salary')->firstOrFail();
 

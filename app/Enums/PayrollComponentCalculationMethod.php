@@ -6,12 +6,14 @@ enum PayrollComponentCalculationMethod: string
 {
     case Fixed = 'fixed';
     case Daily = 'daily';
+    case Hourly = 'hourly';
 
     public function label(): string
     {
         return match ($this) {
             self::Fixed => 'Fixed amount',
-            self::Daily => 'Per day worked',
+            self::Daily => 'Attendance allowance (days attended)',
+            self::Hourly => 'Attendance allowance (hours worked)',
         };
     }
 
@@ -19,7 +21,8 @@ enum PayrollComponentCalculationMethod: string
     {
         return match ($this) {
             self::Fixed => 'Amount',
-            self::Daily => 'Rate / day',
+            self::Daily => 'Rate / attended day',
+            self::Hourly => 'Rate / hour',
         };
     }
 }

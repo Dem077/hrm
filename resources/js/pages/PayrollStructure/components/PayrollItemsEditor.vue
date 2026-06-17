@@ -148,19 +148,25 @@ function removeItem(item: DesignationPayrollItem) {
                 </div>
             </section>
 
-            <section v-if="groups.daily.length > 0" class="overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700">
+            <section v-if="groups.attendance_allowance.length > 0" class="overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700">
                 <div class="border-b border-slate-200 bg-slate-50 px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:border-slate-700 dark:bg-surface-elevated dark:text-slate-400">
-                    Daily rates
+                    Attendance allowance rates
                 </div>
                 <div class="divide-y divide-slate-100 dark:divide-slate-800">
-                    <div v-for="item in groups.daily" :key="item.payroll_component_id" class="grid gap-3 px-4 py-3 md:grid-cols-[1fr_12rem_auto] md:items-start">
+                    <div v-for="item in groups.attendance_allowance" :key="item.payroll_component_id" class="grid gap-3 px-4 py-3 md:grid-cols-[1fr_12rem_auto] md:items-start">
                         <div>
                             <p class="font-medium text-slate-900 dark:text-white">{{ item.name }}</p>
-                            <p class="text-xs text-slate-500 dark:text-slate-400">Paid as rate × days present in the payroll period</p>
+                            <p class="text-xs text-slate-500 dark:text-slate-400">
+                                {{
+                                    item.calculation_method === 'hourly'
+                                        ? 'Paid as rate × hours worked in the payroll period'
+                                        : 'Paid as rate × days attended in the payroll period'
+                                }}
+                            </p>
                         </div>
                         <UiInput
                             :model-value="item.amount"
-                            label="Rate / day"
+                            :label="item.calculation_method === 'hourly' ? 'Rate / hour' : 'Rate / attended day'"
                             type="number"
                             min="0"
                             step="0.01"

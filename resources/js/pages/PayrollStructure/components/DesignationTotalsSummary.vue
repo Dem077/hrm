@@ -27,8 +27,9 @@ const totals = computed(() => calculateDesignationTotals(props.items));
                 <span class="ml-2 font-semibold text-slate-900 dark:text-white">{{ formatPayrollMoney(totals.net) }}</span>
             </div>
         </div>
-        <p v-if="totals.has_daily" class="text-xs text-slate-500 dark:text-slate-400">
-            {{ totals.daily_count }} daily component(s) are excluded from fixed net — pay is calculated from days present × rate.
+        <p v-if="totals.has_attendance_allowance" class="text-xs text-slate-500 dark:text-slate-400">
+            {{ totals.attendance_allowance_count }} attendance allowance component(s) are excluded from fixed net.
+            They are calculated from rate × attended days / worked hours.
         </p>
         <p v-if="totals.has_loans" class="text-xs text-slate-500 dark:text-slate-400">
             {{ totals.loan_count }} loan(s) included in deductions as monthly repayments for their set period.

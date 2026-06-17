@@ -94,10 +94,11 @@ function submit() {
                     class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20 dark:border-slate-700 dark:bg-surface-elevated dark:text-white"
                 >
                     <option value="fixed">Fixed amount</option>
-                    <option value="daily">Per day worked</option>
+                    <option value="daily">Attendance allowance (days attended)</option>
+                    <option value="hourly">Attendance allowance (hours worked)</option>
                 </select>
                 <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                    Daily lines are multiplied by days present when payroll is processed.
+                    Attendance allowance uses a rate based on either attended days or worked hours.
                 </p>
                 <p v-if="form.errors.calculation_method" class="mt-1 text-sm text-red-600">{{ form.errors.calculation_method }}</p>
             </div>

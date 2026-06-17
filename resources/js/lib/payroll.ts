@@ -17,6 +17,14 @@ export function isDailyCalculation(method: PayrollComponentCalculationMethod | s
     return method === 'daily';
 }
 
+export function isHourlyCalculation(method: PayrollComponentCalculationMethod | string): boolean {
+    return method === 'hourly';
+}
+
+export function isAttendanceAllowanceCalculation(method: PayrollComponentCalculationMethod | string): boolean {
+    return isDailyCalculation(method) || isHourlyCalculation(method);
+}
+
 export function isLoanType(type: string): boolean {
     return type === 'loan';
 }
@@ -26,7 +34,19 @@ export function amountFieldLabel(item: DesignationPayrollItem): string {
         return 'Monthly payment';
     }
 
-    return item.amount_label ?? (isDailyCalculation(item.calculation_method) ? 'Rate / day' : 'Amount');
+    if (item.amount_label) {
+        return item.amount_label;
+    }
+
+    if (isDailyCalculation(item.calculation_method)) {
+        return 'Rate / attended day';
+    }
+
+    if (isHourlyCalculation(item.calculation_method)) {
+        return 'Rate / hour';
+    }
+
+    return 'Amount';
 }
 
 export function componentToPayrollItem(component: PayrollComponent, amount = 0): DesignationPayrollItem {
@@ -50,7 +70,7 @@ export type PayrollItemGroups = {
     mandatory: DesignationPayrollItem[];
     fixed_additions: DesignationPayrollItem[];
     fixed_deductions: DesignationPayrollItem[];
-    daily: DesignationPayrollItem[];
+    attendance_allowance: DesignationPayrollItem[];
     loans: DesignationPayrollItem[];
 };
 
@@ -63,7 +83,9 @@ export function groupPayrollItems(items: DesignationPayrollItem[]): PayrollItemG
         fixed_deductions: items.filter(
             (item) => !item.is_mandatory && item.calculation_method === 'fixed' && item.type === 'deduction',
         ),
-        daily: items.filter((item) => item.calculation_method === 'daily'),
+        attendance_allowance: items.filter((item) =>
+            isAttendanceAllowanceCalculation(item.calculation_method),
+        ),
         loans: items.filter((item) => item.type === 'loan'),
     };
 }
@@ -82,6 +104,9 @@ export function calculateDesignationTotals(items: DesignationPayrollItem[]): Des
         .reduce((sum, item) => sum + Number(item.amount || 0), 0);
 
     const deductions = fixedDeductions + loanDeductions;
+    const attendanceAllowanceCount = items.filter((item) =>
+        isAttendanceAllowanceCalculation(item.calculation_method),
+    ).length;
     const dailyCount = items.filter((item) => item.calculation_method === 'daily').length;
     const loanCount = items.filter((item) => item.type === 'loan').length;
 
@@ -89,6 +114,8 @@ export function calculateDesignationTotals(items: DesignationPayrollItem[]): Des
         additions: Math.round(additions * 100) / 100,
         deductions: Math.round(deductions * 100) / 100,
         net: Math.round((additions - deductions) * 100) / 100,
+        has_attendance_allowance: attendanceAllowanceCount > 0,
+        attendance_allowance_count: attendanceAllowanceCount,
         has_daily: dailyCount > 0,
         daily_count: dailyCount,
         has_loans: loanCount > 0,

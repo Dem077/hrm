@@ -1,6 +1,6 @@
 export type PayrollComponentType = 'addition' | 'deduction' | 'loan';
 
-export type PayrollComponentCalculationMethod = 'fixed' | 'daily';
+export type PayrollComponentCalculationMethod = 'fixed' | 'daily' | 'hourly';
 
 export type PayrollLoanBank = 'BML' | 'MIB' | 'CBM';
 
@@ -44,7 +44,7 @@ export type PayrollItemGroups = {
     mandatory: DesignationPayrollItem[];
     fixed_additions: DesignationPayrollItem[];
     fixed_deductions: DesignationPayrollItem[];
-    daily: DesignationPayrollItem[];
+    attendance_allowance: DesignationPayrollItem[];
     loans: DesignationPayrollItem[];
 };
 
@@ -52,6 +52,8 @@ export type DesignationTotals = {
     additions: number;
     deductions: number;
     net: number;
+    has_attendance_allowance?: boolean;
+    attendance_allowance_count?: number;
     has_daily?: boolean;
     daily_count?: number;
     has_loans?: boolean;
