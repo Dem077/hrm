@@ -13,6 +13,7 @@ import type { DutyTypeOption, Employee, GenderOption, SelectOption } from '@/typ
 const props = defineProps<{
     employee: Employee;
     departments: SelectOption[];
+    designations: SelectOption[];
     managers: SelectOption[];
     genders: GenderOption[];
     dutyTypes: DutyTypeOption[];
@@ -31,6 +32,7 @@ const form = useForm({
     joined_date: props.employee.joined_date ?? '',
     gender: props.employee.gender,
     department_id: props.employee.department_id ?? '',
+    designation_id: props.employee.designation_id ?? '',
     manager_id: props.employee.manager_id ?? '',
     password: '',
     is_active: props.employee.is_active,
@@ -126,11 +128,17 @@ function submit() {
             </UiCard>
 
             <UiCard title="Organization & approvals" description="Department and one direct manager for approvals.">
-                <div class="grid gap-5 md:grid-cols-2">
+                <div class="grid gap-5 md:grid-cols-3">
                     <UiSelect v-model="form.department_id" label="Department" :error="form.errors.department_id">
                         <option value="">Unassigned</option>
                         <option v-for="department in departments" :key="department.id" :value="department.id">
                             {{ department.name }}
+                        </option>
+                    </UiSelect>
+                    <UiSelect v-model="form.designation_id" label="Designation" :error="form.errors.designation_id">
+                        <option value="">Unassigned</option>
+                        <option v-for="designation in designations" :key="designation.id" :value="designation.id">
+                            {{ designation.name }}
                         </option>
                     </UiSelect>
                     <UiSelect v-model="form.manager_id" label="Direct manager" :error="form.errors.manager_id">

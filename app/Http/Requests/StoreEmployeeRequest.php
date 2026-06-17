@@ -38,6 +38,7 @@ class StoreEmployeeRequest extends FormRequest
             'duty_type' => $dutyType,
             'uses_custom_duty_times' => $usesCustomDutyTimes,
             'department_id' => $this->input('department_id') ?: null,
+            'designation_id' => $this->input('designation_id') ?: null,
             'manager_id' => $this->input('manager_id') ?: null,
         ];
 
@@ -95,6 +96,7 @@ class StoreEmployeeRequest extends FormRequest
             'joined_date' => ['required', 'date'],
             'gender' => ['required', Rule::enum(Gender::class)],
             'department_id' => ['nullable', 'exists:departments,id'],
+            'designation_id' => ['nullable', 'exists:designations,id'],
             'manager_id' => ['nullable', 'exists:employees,id'],
             'password' => ['nullable', 'string', 'min:8'],
             'is_active' => ['boolean'],

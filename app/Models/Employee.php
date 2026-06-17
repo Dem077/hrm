@@ -20,6 +20,7 @@ use Illuminate\Support\Carbon;
     'joined_date',
     'gender',
     'department_id',
+    'designation_id',
     'user_id',
     'manager_id',
     'is_active',
@@ -109,6 +110,11 @@ class Employee extends Model
     public function department(): BelongsTo
     {
         return $this->belongsTo(Department::class);
+    }
+
+    public function designation(): BelongsTo
+    {
+        return $this->belongsTo(Designation::class);
     }
 
     public function user(): BelongsTo

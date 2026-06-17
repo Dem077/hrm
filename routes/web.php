@@ -14,6 +14,7 @@ use App\Http\Controllers\LeaveRequestController;
 use App\Http\Controllers\LeaveTypeController;
 use App\Http\Controllers\DesignationController;
 use App\Http\Controllers\PayrollComponentController;
+use App\Http\Controllers\PayrollController;
 use App\Http\Controllers\PayrollStructureController;
 use App\Http\Controllers\RoleController;
 use App\Http\Controllers\ZktAttendanceLogController;
@@ -207,6 +208,13 @@ Route::middleware('auth')->group(function () {
         Route::delete('payroll-structure/designations/{designation}', [DesignationController::class, 'destroy'])
             ->middleware('permission:payroll-structure.update')
             ->name('payroll-structure.designations.destroy');
+    });
+
+    Route::middleware('permission:payroll.view')->group(function () {
+        Route::get('payroll', [PayrollController::class, 'index'])->name('payroll.index');
+        Route::get('payroll/export', [PayrollController::class, 'export'])
+            ->middleware('permission:payroll.export')
+            ->name('payroll.export');
     });
 
     Route::middleware('permission:app-settings.view')->group(function () {

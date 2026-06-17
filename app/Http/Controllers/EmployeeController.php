@@ -7,6 +7,7 @@ use App\Enums\Gender;
 use App\Http\Requests\StoreEmployeeRequest;
 use App\Http\Requests\UpdateEmployeeRequest;
 use App\Models\Department;
+use App\Models\Designation;
 use App\Models\Employee;
 use App\Models\User;
 use Illuminate\Http\RedirectResponse;
@@ -171,6 +172,7 @@ class EmployeeController extends Controller
             'joined_date' => now()->toDateString(),
             'gender' => Gender::Male->value,
             'department_id' => null,
+            'designation_id' => null,
             'manager_id' => null,
             'is_active' => true,
             'works_saturday' => false,
@@ -199,6 +201,15 @@ class EmployeeController extends Controller
                 ->map(fn (Department $department) => [
                     'id' => $department->id,
                     'name' => $department->name,
+                ]),
+            'designations' => Designation::query()
+                ->where('is_active', true)
+                ->orderBy('sort_order')
+                ->orderBy('name')
+                ->get(['id', 'name'])
+                ->map(fn (Designation $designation) => [
+                    'id' => $designation->id,
+                    'name' => $designation->name,
                 ]),
             'managers' => Employee::query()
                 ->when($employee, fn ($query) => $query->whereKeyNot($employee->id))
@@ -255,7 +266,7 @@ class EmployeeController extends Controller
      */
     protected function formatEmployee(Employee $employee, bool $includeRelations = false): array
     {
-        $employee->loadMissing(['department:id,name', 'manager:id,name,staff_id', 'user:id,name,email']);
+        $employee->loadMissing(['department:id,name', 'designation:id,name', 'manager:id,name,staff_id', 'user:id,name,email']);
         $employee->user?->loadMissing('roles:id,name');
 
         $data = [
@@ -272,6 +283,11 @@ class EmployeeController extends Controller
             'department' => $employee->department ? [
                 'id' => $employee->department->id,
                 'name' => $employee->department->name,
+            ] : null,
+            'designation_id' => $employee->designation_id,
+            'designation' => $employee->designation ? [
+                'id' => $employee->designation->id,
+                'name' => $employee->designation->name,
             ] : null,
             'user_id' => $employee->user_id,
             'has_login' => $employee->user_id !== null,

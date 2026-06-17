@@ -48,6 +48,10 @@ class PermissionRegistry
                 'payroll-structure.view' => 'View payroll structure',
                 'payroll-structure.update' => 'Manage payroll components and designations',
             ],
+            'Payroll Processing' => [
+                'payroll.view' => 'View payroll processing page',
+                'payroll.export' => 'Export payroll sheets',
+            ],
             'Attendance Machines' => [
                 'zkt-devices.view' => 'View machines',
                 'zkt-devices.create' => 'Create machines',

@@ -14,6 +14,8 @@ export type Employee = {
     gender_label?: string;
     department_id: number | null;
     department?: { id: number; name: string } | null;
+    designation_id: number | null;
+    designation?: { id: number; name: string } | null;
     user_id: number | null;
     has_login?: boolean;
     user?: { id: number; name: string; email: string } | null;
