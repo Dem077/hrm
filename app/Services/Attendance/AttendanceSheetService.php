@@ -5,6 +5,7 @@ namespace App\Services\Attendance;
 use App\Enums\AttendanceDayStatus;
 use App\Enums\LeaveRequestStatus;
 use App\Models\AttendanceDutyPolicy;
+use App\Models\DutyRoster;
 use App\Models\Employee;
 use App\Models\LeaveRequest;
 use App\Models\PublicHoliday;
@@ -60,6 +61,7 @@ class AttendanceSheetService
                 'name',
                 'department_id',
                 'works_saturday',
+                'duty_type',
                 'uses_custom_duty_times',
                 'custom_duty_start_time',
                 'custom_duty_end_time',
@@ -72,7 +74,9 @@ class AttendanceSheetService
         $staffIds = $employees->pluck('staff_id')->filter()->values();
 
         $punchIndex = $this->indexPunches($staffIds, $from, $to, $timezone);
+        $punchEditIndex = $this->indexPunchEdits($staffIds, $from, $to, $timezone);
         $leaveIndex = $this->indexApprovedLeave($employees, $from, $to, $timezone);
+        $rosterIndex = $this->indexDutyRosters($employees, $from, $to);
 
         $rows = [];
 
@@ -83,18 +87,24 @@ class AttendanceSheetService
 
             foreach ($employees as $employee) {
                 $dayPunches = collect($punchIndex[$employee->staff_id][$dateKey] ?? []);
-                $weekendHoliday = $this->resolveWeekendHoliday($employee, $date);
+                $roster = $rosterIndex[$employee->id][$dateKey] ?? null;
+                $weekendHoliday = $employee->isShiftDuty()
+                    ? null
+                    : $this->resolveWeekendHoliday($employee, $date);
                 $approvedLeaveType = $leaveIndex[$employee->id][$dateKey] ?? null;
+                $effectiveHoliday = $employee->isShiftDuty() && $roster ? null : $holiday;
 
                 $rows[] = $this->buildRow(
                     $employee,
                     $date,
                     $dayPunches,
                     $policy,
-                    $holiday,
+                    $effectiveHoliday,
                     $weekendHoliday,
                     $timezone,
                     $approvedLeaveType,
+                    $roster,
+                    $punchEditIndex[$employee->staff_id][$dateKey] ?? [],
                 );
             }
         }
@@ -177,7 +187,7 @@ class AttendanceSheetService
         $index = [];
 
         ZktAttendanceLog::query()
-            ->select(['id', 'device_user_id', 'punch_state', 'punched_at'])
+            ->select(['id', 'device_user_id', 'punch_state', 'punched_at', 'source', 'manual_reason'])
             ->whereIn('device_user_id', $staffIds)
             ->whereBetween('punched_at', [
                 $from->copy()->startOfDay(),
@@ -190,6 +200,92 @@ class AttendanceSheetService
                     $index[$log->device_user_id][$dateKey][] = $log;
                 }
             });
+
+        return $index;
+    }
+
+    /**
+     * @param  Collection<int, non-empty-string>  $staffIds
+     * @return array<string, array<string, list<array{action: string, punch_type: string, punched_at: string, reason: string, acted_at: string, acted_by_name: string|null}>>>
+     */
+    protected function indexPunchEdits(
+        Collection $staffIds,
+        CarbonInterface $from,
+        CarbonInterface $to,
+        string $timezone,
+    ): array {
+        if ($staffIds->isEmpty()) {
+            return [];
+        }
+
+        $index = [];
+
+        ZktAttendanceLog::query()
+            ->withTrashed()
+            ->with(['addedBy:id,name', 'removedBy:id,name'])
+            ->select([
+                'id',
+                'device_user_id',
+                'punch_state',
+                'punched_at',
+                'source',
+                'manual_reason',
+                'removal_reason',
+                'added_by_user_id',
+                'removed_by_user_id',
+                'created_at',
+                'deleted_at',
+            ])
+            ->whereIn('device_user_id', $staffIds)
+            ->where(function ($query) {
+                $query->where(function ($inner) {
+                    $inner->where('source', 'attendance_sheet')
+                        ->whereNotNull('manual_reason');
+                })->orWhere(function ($inner) {
+                    $inner->whereNotNull('removal_reason')
+                        ->whereNotNull('deleted_at');
+                });
+            })
+            ->whereBetween('punched_at', [
+                $from->copy()->startOfDay(),
+                $to->copy()->endOfDay(),
+            ])
+            ->orderBy('punched_at')
+            ->chunkById(1000, function ($logs) use (&$index, $timezone) {
+                foreach ($logs as $log) {
+                    $dateKey = $log->punched_at->timezone($timezone)->toDateString();
+                    $punchType = $log->punchStateLabel();
+
+                    if ($log->isFromAttendanceSheet() && filled($log->manual_reason)) {
+                        $index[$log->device_user_id][$dateKey][] = [
+                            'action' => 'added',
+                            'punch_type' => $punchType,
+                            'punched_at' => $log->punched_at->toIso8601String(),
+                            'reason' => $log->manual_reason,
+                            'acted_at' => $log->created_at?->toIso8601String() ?? $log->punched_at->toIso8601String(),
+                            'acted_by_name' => $log->addedBy?->name,
+                        ];
+                    }
+
+                    if ($log->trashed() && filled($log->removal_reason)) {
+                        $index[$log->device_user_id][$dateKey][] = [
+                            'action' => 'removed',
+                            'punch_type' => $punchType,
+                            'punched_at' => $log->punched_at->toIso8601String(),
+                            'reason' => $log->removal_reason,
+                            'acted_at' => $log->deleted_at?->toIso8601String() ?? $log->punched_at->toIso8601String(),
+                            'acted_by_name' => $log->removedBy?->name,
+                        ];
+                    }
+                }
+            });
+
+        foreach ($index as $staffId => $dates) {
+            foreach ($dates as $dateKey => $edits) {
+                usort($edits, fn (array $a, array $b) => strcmp($a['acted_at'], $b['acted_at']));
+                $index[$staffId][$dateKey] = $edits;
+            }
+        }
 
         return $index;
     }
@@ -245,6 +341,34 @@ class AttendanceSheetService
      * @param  Collection<int, ZktAttendanceLog>  $dayPunches
      * @return array<string, mixed>
      */
+    /**
+     * @param  Collection<int, Employee>  $employees
+     * @return array<int, array<string, DutyRoster>>
+     */
+    protected function indexDutyRosters(Collection $employees, CarbonInterface $from, CarbonInterface $to): array
+    {
+        $shiftEmployeeIds = $employees
+            ->filter(fn (Employee $employee) => $employee->isShiftDuty())
+            ->pluck('id');
+
+        if ($shiftEmployeeIds->isEmpty()) {
+            return [];
+        }
+
+        $index = [];
+
+        DutyRoster::query()
+            ->whereIn('employee_id', $shiftEmployeeIds)
+            ->whereDate('duty_date', '>=', $from->toDateString())
+            ->whereDate('duty_date', '<=', $to->toDateString())
+            ->get()
+            ->each(function (DutyRoster $roster) use (&$index): void {
+                $index[$roster->employee_id][$roster->duty_date->toDateString()] = $roster;
+            });
+
+        return $index;
+    }
+
     protected function buildRow(
         Employee $employee,
         CarbonInterface $date,
@@ -254,8 +378,27 @@ class AttendanceSheetService
         ?string $weekendHoliday,
         string $timezone,
         ?string $approvedLeaveType = null,
+        ?DutyRoster $roster = null,
+        array $punchEdits = [],
     ): array {
-        $dutyTimes = $employee->resolveDutyTimes($date, $policy);
+        if ($employee->isShiftDuty() && ! $roster) {
+            return $this->baseRow($employee, $date, [
+                'start' => '00:00:00',
+                'end' => '00:00:00',
+                'grace' => 0,
+            ], [
+                'check_in' => null,
+                'check_out' => null,
+                'working_minutes' => null,
+                'working_hours_label' => '—',
+                'late_minutes' => null,
+                'status' => AttendanceDayStatus::Holiday,
+                'status_label' => 'Off roster',
+                'holiday_name' => 'Off roster',
+            ], isHoliday: true, punchEdits: $punchEdits);
+        }
+
+        $dutyTimes = $employee->resolveDutyTimes($date, $policy, $roster);
 
         if ($holiday) {
             return $this->baseRow($employee, $date, $dutyTimes, [
@@ -266,7 +409,7 @@ class AttendanceSheetService
                 'late_minutes' => null,
                 'status' => AttendanceDayStatus::Holiday,
                 'holiday_name' => $holiday->name,
-            ], isHoliday: true);
+            ], isHoliday: true, punchEdits: $punchEdits);
         }
 
         if ($weekendHoliday) {
@@ -278,10 +421,13 @@ class AttendanceSheetService
                 'late_minutes' => null,
                 'status' => AttendanceDayStatus::Holiday,
                 'holiday_name' => $weekendHoliday,
-            ], isHoliday: true);
+            ], isHoliday: true, punchEdits: $punchEdits);
         }
 
-        [$checkIn, $checkOut] = $this->resolvePunchPair($dayPunches, $date, $dutyTimes, $timezone);
+        $punchPair = $this->resolvePunchPair($dayPunches, $date, $dutyTimes, $timezone);
+        $checkIn = $punchPair['check_in'];
+        $checkOut = $punchPair['check_out'];
+        $manualFields = $this->punchLogFields($punchPair['check_in_log'], $punchPair['check_out_log']);
 
         if (! $checkIn && ! $checkOut) {
             if ($approvedLeaveType) {
@@ -295,7 +441,8 @@ class AttendanceSheetService
                     'status_label' => $approvedLeaveType,
                     'holiday_name' => null,
                     'leave_type_name' => $approvedLeaveType,
-                ]);
+                    ...$manualFields,
+                ], punchEdits: $punchEdits);
             }
 
             return $this->baseRow($employee, $date, $dutyTimes, [
@@ -306,7 +453,8 @@ class AttendanceSheetService
                 'late_minutes' => null,
                 'status' => AttendanceDayStatus::Absent,
                 'holiday_name' => null,
-            ]);
+                ...$manualFields,
+            ], punchEdits: $punchEdits);
         }
 
         $lateMinutes = $checkIn
@@ -338,7 +486,32 @@ class AttendanceSheetService
             'late_minutes' => $lateMinutes > 0 ? $lateMinutes : null,
             'status' => $status,
             'holiday_name' => null,
-        ]);
+            ...$manualFields,
+        ], punchEdits: $punchEdits);
+    }
+
+    /**
+     * @return array{
+     *     check_in_log_id: int|null,
+     *     check_out_log_id: int|null,
+     *     check_in_is_manual: bool,
+     *     check_out_is_manual: bool,
+     *     check_in_manual_reason: string|null,
+     *     check_out_manual_reason: string|null,
+     *     has_removable_punch: bool
+     * }
+     */
+    protected function punchLogFields(?ZktAttendanceLog $checkInLog, ?ZktAttendanceLog $checkOutLog): array
+    {
+        return [
+            'check_in_log_id' => $checkInLog?->id,
+            'check_out_log_id' => $checkOutLog?->id,
+            'check_in_is_manual' => $checkInLog?->isFromAttendanceSheet() ?? false,
+            'check_out_is_manual' => $checkOutLog?->isFromAttendanceSheet() ?? false,
+            'check_in_manual_reason' => $checkInLog?->isFromAttendanceSheet() ? $checkInLog->manual_reason : null,
+            'check_out_manual_reason' => $checkOutLog?->isFromAttendanceSheet() ? $checkOutLog->manual_reason : null,
+            'has_removable_punch' => $checkInLog !== null || $checkOutLog !== null,
+        ];
     }
 
     /**
@@ -352,6 +525,7 @@ class AttendanceSheetService
         array $dutyTimes,
         array $values,
         bool $isHoliday = false,
+        array $punchEdits = [],
     ): array {
         /** @var AttendanceDayStatus $status */
         $status = $values['status'];
@@ -374,13 +548,27 @@ class AttendanceSheetService
             'leave_type_name' => $values['leave_type_name'] ?? null,
             'duty_start_time' => $isHoliday ? '—' : substr($dutyTimes['start'], 0, 5),
             'duty_end_time' => $isHoliday ? '—' : substr($dutyTimes['end'], 0, 5),
+            'check_in_log_id' => $values['check_in_log_id'] ?? null,
+            'check_out_log_id' => $values['check_out_log_id'] ?? null,
+            'check_in_is_manual' => $values['check_in_is_manual'] ?? false,
+            'check_out_is_manual' => $values['check_out_is_manual'] ?? false,
+            'check_in_manual_reason' => $values['check_in_manual_reason'] ?? null,
+            'check_out_manual_reason' => $values['check_out_manual_reason'] ?? null,
+            'has_removable_punch' => $values['has_removable_punch'] ?? false,
+            'punch_edits' => $punchEdits,
+            'has_punch_edits' => count($punchEdits) > 0,
         ];
     }
 
     /**
      * @param  Collection<int, ZktAttendanceLog>  $dayPunches
      * @param  array{start: string, end: string, grace: int}  $dutyTimes
-     * @return array{0: ?CarbonInterface, 1: ?CarbonInterface}
+     * @return array{
+     *     check_in: ?CarbonInterface,
+     *     check_out: ?CarbonInterface,
+     *     check_in_log: ?ZktAttendanceLog,
+     *     check_out_log: ?ZktAttendanceLog
+     * }
      */
     protected function resolvePunchPair(
         Collection $dayPunches,
@@ -389,7 +577,12 @@ class AttendanceSheetService
         string $timezone,
     ): array {
         if ($dayPunches->isEmpty()) {
-            return [null, null];
+            return [
+                'check_in' => null,
+                'check_out' => null,
+                'check_in_log' => null,
+                'check_out_log' => null,
+            ];
         }
 
         $dutyStart = Carbon::parse($date->toDateString().' '.$dutyTimes['start'], $timezone);
@@ -402,6 +595,7 @@ class AttendanceSheetService
                 $toEnd = abs($at->diffInMinutes($dutyEnd, false));
 
                 return [
+                    'log' => $log,
                     'at' => $at,
                     'to_start' => $toStart,
                     'to_end' => $toEnd,
@@ -413,18 +607,26 @@ class AttendanceSheetService
         $inCandidates = $punches->filter(fn (array $punch) => $punch['to_start'] <= $punch['to_end']);
         $outCandidates = $punches->filter(fn (array $punch) => $punch['to_end'] < $punch['to_start']);
 
-        $checkIn = $inCandidates->sortBy('to_start')->first()['at'] ?? null;
+        $checkInEntry = $inCandidates->sortBy('to_start')->first();
+        $checkOutEntry = $outCandidates->sortBy('to_end')->first();
 
-        $checkOut = $outCandidates->sortBy('to_end')->first()['at'] ?? null;
+        $checkIn = $checkInEntry['at'] ?? null;
+        $checkOut = $checkOutEntry['at'] ?? null;
 
         if ($checkIn && $checkOut && $checkOut->lte($checkIn)) {
-            $checkOut = $outCandidates
+            $checkOutEntry = $outCandidates
                 ->filter(fn (array $punch) => $punch['at']->gt($checkIn))
                 ->sortBy('to_end')
-                ->first()['at'] ?? null;
+                ->first();
+            $checkOut = $checkOutEntry['at'] ?? null;
         }
 
-        return [$checkIn, $checkOut];
+        return [
+            'check_in' => $checkIn,
+            'check_out' => $checkOut,
+            'check_in_log' => $checkInEntry ? $checkInEntry['log'] : null,
+            'check_out_log' => $checkOutEntry ? $checkOutEntry['log'] : null,
+        ];
     }
 
     /**

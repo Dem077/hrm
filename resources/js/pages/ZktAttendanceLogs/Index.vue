@@ -68,11 +68,17 @@ function applyFilters() {
                             <th class="px-5 py-3.5 font-medium">Emp No</th>
                             <th class="px-5 py-3.5 font-medium">Employee</th>
                             <th class="px-5 py-3.5 font-medium">State</th>
+                            <th class="px-5 py-3.5 font-medium">Source</th>
                             <th class="px-5 py-3.5 font-medium">Punched at</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
-                        <tr v-for="log in logs.data" :key="log.id" class="hover:bg-slate-50/60 dark:hover:bg-surface-elevated/60">
+                        <tr
+                            v-for="log in logs.data"
+                            :key="log.id"
+                            class="hover:bg-slate-50/60 dark:hover:bg-surface-elevated/60"
+                            :class="log.is_removed ? 'opacity-70' : ''"
+                        >
                             <td class="px-5 py-4">
                                 <Link :href="`/zkt-devices/${log.device.id}`" class="font-medium text-brand-700 hover:text-brand-600 hover:underline dark:text-brand-400 dark:hover:text-brand-300">
                                     {{ log.device.name }}
@@ -90,10 +96,22 @@ function applyFilters() {
                                 <span v-else class="text-slate-500">Unlinked</span>
                             </td>
                             <td class="px-5 py-4 text-slate-700 dark:text-slate-300">{{ log.punch_state_label }}</td>
+                            <td class="px-5 py-4 text-slate-600 dark:text-slate-400">
+                                <div class="flex flex-wrap items-center gap-2">
+                                    <span>{{ log.source_label }}</span>
+                                    <span
+                                        v-if="log.is_removed"
+                                        class="rounded-md bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700 dark:bg-red-950/40 dark:text-red-300"
+                                    >
+                                        Removed
+                                    </span>
+                                </div>
+                                <p v-if="log.removal_reason" class="mt-1 text-xs text-slate-500">{{ log.removal_reason }}</p>
+                            </td>
                             <td class="px-5 py-4 text-slate-600 dark:text-slate-400">{{ formatDateTime(log.punched_at) }}</td>
                         </tr>
                         <tr v-if="logs.data.length === 0">
-                            <td colspan="5" class="px-5 py-12 text-center text-slate-500">No punch logs found.</td>
+                            <td colspan="6" class="px-5 py-12 text-center text-slate-500">No punch logs found.</td>
                         </tr>
                     </tbody>
                 </table>

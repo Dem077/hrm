@@ -64,7 +64,7 @@ class ZktDeviceSyncService
         foreach ($records as $record) {
             $punchedAt = Carbon::parse($record['record_time']);
 
-            $log = ZktAttendanceLog::query()->firstOrCreate(
+            $log = ZktAttendanceLog::withTrashed()->firstOrCreate(
                 [
                     'zkt_device_id' => $device->id,
                     'device_uid' => (int) $record['uid'],
@@ -77,7 +77,21 @@ class ZktDeviceSyncService
                 ],
             );
 
-            if ($log->wasRecentlyCreated) {
+            $wasRestored = false;
+
+            if ($log->trashed()) {
+                $log->restore();
+                $log->forceFill([
+                    'device_user_id' => (string) $record['user_id'],
+                    'punch_state' => (int) ($record['state'] ?? 0),
+                    'punch_type' => isset($record['type']) ? (int) $record['type'] : null,
+                    'removal_reason' => null,
+                    'removed_by_user_id' => null,
+                ])->save();
+                $wasRestored = true;
+            }
+
+            if ($log->wasRecentlyCreated || $wasRestored) {
                 $stored++;
             }
         }

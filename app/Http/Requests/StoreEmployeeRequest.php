@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Enums\DutyType;
 use App\Enums\Gender;
 use App\Support\PermissionRegistry;
 use Illuminate\Foundation\Http\FormRequest;
@@ -27,11 +28,14 @@ class StoreEmployeeRequest extends FormRequest
 
     protected function prepareForValidation(): void
     {
-        $usesCustomDutyTimes = $this->boolean('uses_custom_duty_times', false);
+        $dutyType = $this->input('duty_type', DutyType::Normal->value);
+        $isShiftDuty = $dutyType === DutyType::Shift->value;
+        $usesCustomDutyTimes = ! $isShiftDuty && $this->boolean('uses_custom_duty_times', false);
 
         $merge = [
             'is_active' => $this->boolean('is_active', true),
             'works_saturday' => $this->boolean('works_saturday', false),
+            'duty_type' => $dutyType,
             'uses_custom_duty_times' => $usesCustomDutyTimes,
             'department_id' => $this->input('department_id') ?: null,
             'manager_id' => $this->input('manager_id') ?: null,
@@ -95,13 +99,14 @@ class StoreEmployeeRequest extends FormRequest
             'password' => ['nullable', 'string', 'min:8'],
             'is_active' => ['boolean'],
             'works_saturday' => ['boolean'],
+            'duty_type' => ['required', Rule::enum(DutyType::class)],
             'uses_custom_duty_times' => ['boolean'],
-            'custom_duty_start_time' => ['nullable', 'required_if:uses_custom_duty_times,true', 'date_format:H:i:s'],
-            'custom_duty_end_time' => ['nullable', 'required_if:uses_custom_duty_times,true', 'date_format:H:i:s', 'after:custom_duty_start_time'],
-            'custom_grace_minutes' => ['nullable', 'integer', 'min:0', 'max:180'],
-            'custom_saturday_duty_start_time' => ['nullable', 'date_format:H:i:s'],
-            'custom_saturday_duty_end_time' => ['nullable', 'date_format:H:i:s', 'after:custom_saturday_duty_start_time'],
-            'custom_saturday_grace_minutes' => ['nullable', 'integer', 'min:0', 'max:180'],
+            'custom_duty_start_time' => ['nullable', 'required_if:uses_custom_duty_times,true', 'prohibited_if:duty_type,shift', 'date_format:H:i:s'],
+            'custom_duty_end_time' => ['nullable', 'required_if:uses_custom_duty_times,true', 'prohibited_if:duty_type,shift', 'date_format:H:i:s', 'after:custom_duty_start_time'],
+            'custom_grace_minutes' => ['nullable', 'prohibited_if:duty_type,shift', 'integer', 'min:0', 'max:180'],
+            'custom_saturday_duty_start_time' => ['nullable', 'prohibited_if:duty_type,shift', 'date_format:H:i:s'],
+            'custom_saturday_duty_end_time' => ['nullable', 'prohibited_if:duty_type,shift', 'date_format:H:i:s', 'after:custom_saturday_duty_start_time'],
+            'custom_saturday_grace_minutes' => ['nullable', 'prohibited_if:duty_type,shift', 'integer', 'min:0', 'max:180'],
         ];
     }
 

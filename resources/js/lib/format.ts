@@ -117,6 +117,25 @@ export function formatDate(value: string | null | undefined, timeZone: string = 
     return formatDateValue(date, timeZone);
 }
 
+export function formatTime(value: string | null | undefined, timeZone: string = appTimezone): string {
+    if (!value) {
+        return '—';
+    }
+
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+        return '—';
+    }
+
+    return new Intl.DateTimeFormat('en-GB', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+        timeZone,
+    }).format(date);
+}
+
 export function formatDateTime(value: string | null | undefined, timeZone: string = appTimezone): string {
     if (!value) {
         return '—';

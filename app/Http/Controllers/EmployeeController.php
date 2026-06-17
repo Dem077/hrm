@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\DutyType;
 use App\Enums\Gender;
 use App\Http\Requests\StoreEmployeeRequest;
 use App\Http\Requests\UpdateEmployeeRequest;
@@ -173,6 +174,7 @@ class EmployeeController extends Controller
             'manager_id' => null,
             'is_active' => true,
             'works_saturday' => false,
+            'duty_type' => DutyType::Normal->value,
             'uses_custom_duty_times' => false,
             'custom_duty_start_time' => null,
             'custom_duty_end_time' => null,
@@ -208,6 +210,7 @@ class EmployeeController extends Controller
                     'label' => "{$manager->name} ({$manager->staff_id})",
                 ]),
             'genders' => Gender::options(),
+            'dutyTypes' => DutyType::options(),
             'roles' => $this->assignableRoles($employee),
             'canAssignRoles' => $this->canAssignRoles(),
         ];
@@ -285,6 +288,8 @@ class EmployeeController extends Controller
             ] : null,
             'is_active' => $employee->is_active,
             'works_saturday' => $employee->works_saturday,
+            'duty_type' => $employee->duty_type->value,
+            'duty_type_label' => $employee->duty_type->label(),
             'uses_custom_duty_times' => $employee->uses_custom_duty_times,
             'custom_duty_start_time' => $employee->formatCustomTimeForInput($employee->custom_duty_start_time),
             'custom_duty_end_time' => $employee->formatCustomTimeForInput($employee->custom_duty_end_time),

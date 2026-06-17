@@ -2,10 +2,14 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\RemoveManualAttendancePunchRequest;
+use App\Http\Requests\StoreManualAttendancePunchRequest;
 use App\Models\Department;
 use App\Models\Employee;
 use App\Services\Attendance\AttendanceSheetService;
+use App\Services\Attendance\ManualAttendancePunchService;
 use App\Services\Attendance\PayrollPeriodService;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Carbon;
@@ -95,12 +99,33 @@ class AttendanceSheetController extends Controller
             ['path' => $request->url(), 'query' => $request->query()],
         );
 
+        $canAddPunch = $request->user()?->can('attendance-sheet.add-punch') ?? false;
+        $canRemovePunch = $request->user()?->can('attendance-sheet.remove-punch') ?? false;
+        $ownEmployeeId = $request->user()?->employee?->id;
+
         return Inertia::render('AttendanceSheets/Index', [
             'rows' => $paginated,
             'canViewAll' => $canViewAll,
+            'canAddPunch' => $canAddPunch,
+            'canRemovePunch' => $canRemovePunch,
             'singleDayOnly' => $isAllEmployees,
-            'hasEmployeeProfile' => $request->user()?->employee !== null,
+            'hasEmployeeProfile' => $ownEmployeeId !== null,
             'payrollPeriod' => $payrollPeriod,
+            'punchEmployees' => $canAddPunch
+                ? Employee::query()
+                    ->where('is_active', true)
+                    ->when(! $canViewAll, fn ($query) => $query->where('id', $ownEmployeeId))
+                    ->orderBy('name')
+                    ->get(['id', 'name', 'staff_id'])
+                    ->map(fn (Employee $employee) => [
+                        'id' => $employee->id,
+                        'label' => "{$employee->name} ({$employee->staff_id})",
+                    ])
+                : [],
+            'punchDefaults' => [
+                'employee_id' => $canViewAll ? $employeeId : $ownEmployeeId,
+                'duty_date' => $from->toDateString(),
+            ],
             'departments' => $canViewAll
                 ? Department::query()
                     ->where('is_active', true)
@@ -137,5 +162,46 @@ class AttendanceSheetController extends Controller
                 'max_days' => $maxDays,
             ],
         ]);
+    }
+
+    public function storeManualPunch(
+        StoreManualAttendancePunchRequest $request,
+        ManualAttendancePunchService $punchService,
+    ): RedirectResponse {
+        $timezone = config('app.timezone', 'UTC');
+        $employee = $request->employee();
+
+        abort_unless($employee->is_active, 422, 'Punches cannot be added for inactive employees.');
+
+        $punchService->create(
+            $employee,
+            $request->punchedAt($timezone),
+            $request->integer('punch_state'),
+            $request->string('reason')->toString(),
+            $request->user(),
+        );
+
+        return back()->with('success', 'Manual punch added successfully.');
+    }
+
+    public function destroyManualPunches(
+        RemoveManualAttendancePunchRequest $request,
+        ManualAttendancePunchService $punchService,
+    ): RedirectResponse {
+        $canViewAll = $request->user()?->can('attendance-sheet.view-all') ?? false;
+
+        $logs = $punchService->resolveRemovableLogs(
+            $request->input('punch_log_ids', []),
+            $request->user(),
+            $canViewAll,
+        );
+
+        $punchService->removeMany(
+            $logs,
+            $request->string('reason')->toString(),
+            $request->user(),
+        );
+
+        return back()->with('success', 'Punch record(s) removed successfully.');
     }
 }

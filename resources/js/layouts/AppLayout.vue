@@ -3,18 +3,20 @@ import { Link, usePage } from '@inertiajs/vue3';
 import { computed, watch } from 'vue';
 
 import FlashMessage from '@/components/FlashMessage.vue';
+import AppBrandMark from '@/components/AppBrandMark.vue';
 import LiveClock from '@/components/LiveClock.vue';
 import ThemeToggle from '@/components/ThemeToggle.vue';
 import { usePermissions } from '@/composables/usePermissions';
 import { useSidebar } from '@/composables/useSidebar';
 import type { Auth } from '@/types/auth';
+import type { AppBranding } from '@/types/branding';
 
 defineProps<{
     title?: string;
     description?: string;
 }>();
 
-const page = usePage<{ auth: Auth }>();
+const page = usePage<{ auth: Auth; branding: AppBranding }>();
 const {
     collapsed,
     mobileOpen,
@@ -28,6 +30,7 @@ const {
 const { can, primaryRole } = usePermissions();
 
 const user = computed(() => page.props.auth.user);
+const branding = computed(() => page.props.branding);
 
 type NavItem = {
     label: string;
@@ -57,6 +60,13 @@ const primaryNavItems: NavItem[] = [
         permission: 'attendance-sheet.view',
         icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01',
         match: (url: string) => url.startsWith('/attendance-sheet'),
+    },
+    {
+        label: 'Duty Roster',
+        href: '/duty-rosters',
+        permission: 'duty-rosters.view',
+        icon: 'M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z',
+        match: (url: string) => url.startsWith('/duty-rosters'),
     },
     {
         label: 'Leave Management',
@@ -109,6 +119,13 @@ const reportsNavItems: NavItem[] = [
 ];
 
 const configurationNavItems: NavItem[] = [
+    {
+        label: 'App Settings',
+        href: '/app-settings',
+        permission: 'app-settings.view',
+        icon: 'M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4',
+        match: (url: string) => url.startsWith('/app-settings'),
+    },
     {
         label: 'Global Settings',
         href: '/attendance-settings',
@@ -242,12 +259,10 @@ watch(
                     :class="collapsed ? 'min-w-0 flex-1 lg:flex-none lg:justify-center' : 'min-w-0 flex-1'"
                     @click="closeMobile"
                 >
-                    <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-600 text-sm font-bold text-white shadow-lg shadow-brand-600/20">
-                        H
-                    </div>
+                    <AppBrandMark />
                     <div :class="collapsed ? 'lg:hidden' : ''" class="min-w-0">
-                        <p class="truncate text-sm font-semibold text-slate-900 dark:text-white">HRM</p>
-                        <p class="truncate text-xs text-sidebar-muted">Attendance</p>
+                        <p class="truncate text-sm font-semibold text-slate-900 dark:text-white">{{ branding.app_name }}</p>
+                        <p class="truncate text-xs text-sidebar-muted">{{ branding.tagline || 'Attendance' }}</p>
                     </div>
                 </Link>
 

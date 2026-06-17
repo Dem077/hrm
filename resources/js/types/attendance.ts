@@ -16,6 +16,15 @@ export type PayrollPeriodSettings = {
     previous: PayrollPeriodOption;
 };
 
+export type AttendancePunchEdit = {
+    action: 'added' | 'removed';
+    punch_type: string;
+    punched_at: string;
+    reason: string;
+    acted_at: string;
+    acted_by_name: string | null;
+};
+
 export type AttendanceDutyPolicy = {
     id?: number | null;
     name?: string | null;
@@ -50,6 +59,15 @@ export type AttendanceSheetRow = {
     leave_type_name: string | null;
     duty_start_time: string;
     duty_end_time: string;
+    check_in_log_id: number | null;
+    check_out_log_id: number | null;
+    check_in_is_manual: boolean;
+    check_out_is_manual: boolean;
+    check_in_manual_reason: string | null;
+    check_out_manual_reason: string | null;
+    has_removable_punch: boolean;
+    punch_edits: AttendancePunchEdit[];
+    has_punch_edits: boolean;
     duty_policy?: AttendanceDutyPolicy;
 };
 

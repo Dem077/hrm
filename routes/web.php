@@ -1,10 +1,13 @@
 <?php
 
+use App\Http\Controllers\AppSettingController;
 use App\Http\Controllers\AttendanceSettingController;
 use App\Http\Controllers\AttendanceSheetController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DepartmentController;
+use App\Http\Controllers\DutyRosterController;
+use App\Http\Controllers\DutyShiftTemplateController;
 use App\Http\Controllers\EmployeeController;
 use App\Http\Controllers\LeaveBalanceController;
 use App\Http\Controllers\LeaveRequestController;
@@ -93,9 +96,42 @@ Route::middleware('auth')->group(function () {
         ]);
     });
 
-    Route::get('attendance-sheet', [AttendanceSheetController::class, 'index'])
-        ->middleware('permission:attendance-sheet.view')
-        ->name('attendance-sheet.index');
+    Route::middleware('permission:attendance-sheet.view')->group(function () {
+        Route::get('attendance-sheet', [AttendanceSheetController::class, 'index'])
+            ->name('attendance-sheet.index');
+        Route::post('attendance-sheet/manual-punches', [AttendanceSheetController::class, 'storeManualPunch'])
+            ->middleware('permission:attendance-sheet.add-punch')
+            ->name('attendance-sheet.manual-punches.store');
+        Route::delete('attendance-sheet/manual-punches', [AttendanceSheetController::class, 'destroyManualPunches'])
+            ->middleware('permission:attendance-sheet.remove-punch')
+            ->name('attendance-sheet.manual-punches.destroy');
+    });
+
+    Route::middleware('permission:duty-rosters.view')->group(function () {
+        Route::get('duty-rosters', [DutyRosterController::class, 'index'])->name('duty-rosters.index');
+        Route::post('duty-rosters/bulk-assign', [DutyRosterController::class, 'bulkAssign'])
+            ->middleware('permission:duty-rosters.create')
+            ->name('duty-rosters.bulk-assign');
+        Route::post('duty-rosters', [DutyRosterController::class, 'store'])
+            ->middleware('permission:duty-rosters.create')
+            ->name('duty-rosters.store');
+        Route::put('duty-rosters/{duty_roster}', [DutyRosterController::class, 'update'])
+            ->middleware('permission:duty-rosters.update')
+            ->name('duty-rosters.update');
+        Route::delete('duty-rosters/{duty_roster}', [DutyRosterController::class, 'destroy'])
+            ->middleware('permission:duty-rosters.delete')
+            ->name('duty-rosters.destroy');
+
+        Route::post('duty-shift-templates', [DutyShiftTemplateController::class, 'store'])
+            ->middleware('permission:duty-rosters.create')
+            ->name('duty-shift-templates.store');
+        Route::put('duty-shift-templates/{duty_shift_template}', [DutyShiftTemplateController::class, 'update'])
+            ->middleware('permission:duty-rosters.update')
+            ->name('duty-shift-templates.update');
+        Route::delete('duty-shift-templates/{duty_shift_template}', [DutyShiftTemplateController::class, 'destroy'])
+            ->middleware('permission:duty-rosters.delete')
+            ->name('duty-shift-templates.destroy');
+    });
 
     Route::middleware('permission:leave-requests.view|leave-requests.approve|leave-requests.approve-hr')->group(function () {
         Route::get('leave-requests', [LeaveRequestController::class, 'index'])->name('leave-requests.index');
@@ -168,6 +204,13 @@ Route::middleware('auth')->group(function () {
         Route::delete('payroll-structure/designations/{designation}', [DesignationController::class, 'destroy'])
             ->middleware('permission:payroll-structure.update')
             ->name('payroll-structure.designations.destroy');
+    });
+
+    Route::middleware('permission:app-settings.view')->group(function () {
+        Route::get('app-settings', [AppSettingController::class, 'index'])->name('app-settings.index');
+        Route::post('app-settings', [AppSettingController::class, 'update'])
+            ->middleware('permission:app-settings.update')
+            ->name('app-settings.update');
     });
 
     Route::middleware('permission:attendance-settings.view')->group(function () {

@@ -64,6 +64,20 @@ class ZktDevice extends Model
         ];
     }
 
+    public static function attendanceSheetDevice(): self
+    {
+        return static::query()->firstOrCreate(
+            ['name' => 'Attendance Sheet'],
+            [
+                'ip_address' => '0.0.0.0',
+                'is_active' => false,
+                'auto_sync' => false,
+                'connection_status' => 'unknown',
+                'notes' => 'System device for manual punches added from the attendance sheet.',
+            ],
+        );
+    }
+
     public function attendanceLogs(): HasMany
     {
         return $this->hasMany(ZktAttendanceLog::class);

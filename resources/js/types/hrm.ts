@@ -1,5 +1,7 @@
 export type Gender = 'male' | 'female' | 'other';
 
+export type DutyType = 'normal' | 'shift';
+
 export type Employee = {
     id: number | null;
     staff_id: string;
@@ -19,6 +21,8 @@ export type Employee = {
     manager?: { id: number; name: string; staff_id: string } | null;
     is_active: boolean;
     works_saturday: boolean;
+    duty_type: DutyType;
+    duty_type_label?: string;
     uses_custom_duty_times: boolean;
     custom_duty_start_time: string | null;
     custom_duty_end_time: string | null;
@@ -57,4 +61,42 @@ export type SelectOption = {
 export type GenderOption = {
     value: Gender;
     label: string;
+};
+
+export type DutyTypeOption = {
+    value: DutyType;
+    label: string;
+};
+
+export type DutyShiftTemplate = {
+    id: number | null;
+    name: string;
+    duty_start_time: string;
+    duty_end_time: string;
+    grace_minutes: number;
+    notes: string | null;
+    is_active: boolean;
+    sort_order: number;
+};
+
+export type ShiftEmployeeOption = {
+    id: number;
+    label: string;
+    department_id: number | null;
+};
+
+export type DutyRosterEntry = {
+    id: number | null;
+    employee_id: number | null;
+    employee?: {
+        id: number;
+        staff_id: string;
+        name: string;
+        department?: string | null;
+    } | null;
+    duty_date: string;
+    duty_start_time: string;
+    duty_end_time: string;
+    grace_minutes: number;
+    notes: string | null;
 };

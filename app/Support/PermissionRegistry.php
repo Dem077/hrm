@@ -65,6 +65,15 @@ class PermissionRegistry
             'Attendance Sheet' => [
                 'attendance-sheet.view' => 'View attendance sheet',
                 'attendance-sheet.view-all' => 'View all employees on attendance sheet',
+                'attendance-sheet.add-punch' => 'Add manual punch records from attendance sheet',
+                'attendance-sheet.remove-punch' => 'Remove punch records from attendance sheet',
+            ],
+            'Duty Roster' => [
+                'duty-rosters.view' => 'View duty roster',
+                'duty-rosters.view-all' => 'View and manage duty roster for all departments',
+                'duty-rosters.create' => 'Create duty roster entries',
+                'duty-rosters.update' => 'Update duty roster entries',
+                'duty-rosters.delete' => 'Delete duty roster entries',
             ],
             'Global Settings' => [
                 'attendance-settings.view' => 'View attendance settings',
@@ -75,6 +84,10 @@ class PermissionRegistry
                 'attendance-settings.holidays.create' => 'Add public holidays',
                 'attendance-settings.holidays.update' => 'Update public holidays',
                 'attendance-settings.holidays.delete' => 'Delete public holidays',
+            ],
+            'App Settings' => [
+                'app-settings.view' => 'View app settings',
+                'app-settings.update' => 'Update app logo and colors',
             ],
             'Roles & Access' => [
                 'roles.view' => 'View roles',

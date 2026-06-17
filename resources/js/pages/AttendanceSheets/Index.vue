@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Head, Link, router } from '@inertiajs/vue3';
-import { reactive, watch, computed } from 'vue';
+import { reactive, ref, watch, computed } from 'vue';
 
 import PageHeader from '@/components/ui/PageHeader.vue';
 import UiBadge from '@/components/ui/UiBadge.vue';
@@ -10,14 +10,35 @@ import UiDateInput from '@/components/ui/UiDateInput.vue';
 import UiSearchableSelect from '@/components/ui/UiSearchableSelect.vue';
 import UiSelect from '@/components/ui/UiSelect.vue';
 import AppLayout from '@/layouts/AppLayout.vue';
-import { formatDate, formatDateTime } from '@/lib/format';
+import AddManualPunchModal from '@/pages/AttendanceSheets/components/AddManualPunchModal.vue';
+import PunchEditsModal from '@/pages/AttendanceSheets/components/PunchEditsModal.vue';
+import RemovePunchModal from '@/pages/AttendanceSheets/components/RemovePunchModal.vue';
+import { formatDate, formatTime } from '@/lib/format';
 import type { AttendanceDutyPolicy, AttendanceSheetRow, Paginated, PayrollPeriodSettings } from '@/types/attendance';
+
+const punchModalOpen = ref(false);
+const editsModalOpen = ref(false);
+const editsModalRow = ref<AttendanceSheetRow | null>(null);
+const removeModalOpen = ref(false);
+const removeTarget = ref({
+    employeeName: '',
+    date: '',
+    punchLabel: '',
+    logId: null as number | null,
+});
 
 const props = defineProps<{
     rows: Paginated<AttendanceSheetRow>;
     currentPolicy?: AttendanceDutyPolicy;
     canViewAll: boolean;
+    canAddPunch: boolean;
+    canRemovePunch: boolean;
     hasEmployeeProfile: boolean;
+    punchEmployees: Array<{ id: number; label: string }>;
+    punchDefaults: {
+        employee_id: number | null;
+        duty_date: string;
+    };
     payrollPeriod: PayrollPeriodSettings;
     departments: Array<{ id: number; name: string }>;
     employees: Array<{ id: number; label: string }>;
@@ -141,6 +162,31 @@ function payrollPeriodOptionLabel(period: PayrollPeriodSettings['recent'][number
     return period.label;
 }
 
+function openAddPunchModal() {
+    punchModalOpen.value = true;
+}
+
+function openPunchEditsModal(row: AttendanceSheetRow) {
+    editsModalRow.value = row;
+    editsModalOpen.value = true;
+}
+
+function openRemovePunchModal(row: AttendanceSheetRow, punchType: 'Check in' | 'Check out', logId: number) {
+    const punchedAt = punchType === 'Check in' ? row.check_in : row.check_out;
+
+    removeTarget.value = {
+        employeeName: row.employee_name,
+        date: row.date,
+        punchLabel: `${punchType} — ${formatTime(punchedAt)}`,
+        logId,
+    };
+    removeModalOpen.value = true;
+}
+
+function isRowRemovable(row: AttendanceSheetRow): boolean {
+    return !['holiday', 'leave'].includes(row.status);
+}
+
 function applyFilters() {
     router.get(
         '/attendance-sheet',
@@ -170,7 +216,11 @@ function applyFilters() {
                     ? 'Processed punch logs with check-in/out, working hours, and late minutes.'
                     : 'Your attendance records for the selected date range.'
             "
-        />
+        >
+            <template v-if="canAddPunch && hasEmployeeProfile" #actions>
+                <UiButton variant="primary" @click="openAddPunchModal">Add manual punch</UiButton>
+            </template>
+        </PageHeader>
 
         <div
             v-if="!hasEmployeeProfile"
@@ -263,7 +313,26 @@ function applyFilters() {
                     </thead>
                     <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
                         <tr v-for="row in rows.data" :key="`${row.date}-${row.employee_id}`" class="hover:bg-slate-50/60 dark:hover:bg-surface-elevated/60">
-                            <td class="px-5 py-4 text-slate-700 dark:text-slate-300">{{ formatDate(row.date) }}</td>
+                            <td class="px-5 py-4 text-slate-700 dark:text-slate-300">
+                                <div class="flex items-center gap-2">
+                                    <span>{{ formatDate(row.date) }}</span>
+                                    <button
+                                        v-if="row.has_punch_edits"
+                                        type="button"
+                                        class="inline-flex rounded-md p-1 text-amber-600 hover:bg-amber-50 hover:text-amber-700 dark:text-amber-400 dark:hover:bg-amber-950/40 dark:hover:text-amber-300"
+                                        title="View punch edits"
+                                        @click="openPunchEditsModal(row)"
+                                    >
+                                        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                            <path
+                                                stroke-linecap="round"
+                                                stroke-linejoin="round"
+                                                d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"
+                                            />
+                                        </svg>
+                                    </button>
+                                </div>
+                            </td>
                             <td class="px-5 py-4 font-mono text-xs text-slate-700 dark:text-slate-300">{{ row.staff_id }}</td>
                             <td class="px-5 py-4">
                                 <Link
@@ -278,8 +347,38 @@ function applyFilters() {
                             <td class="px-5 py-4 text-slate-600 dark:text-slate-400">{{ row.department ?? '—' }}</td>
                             <td class="px-5 py-4 font-mono text-xs text-slate-600 dark:text-slate-400">{{ row.duty_start_time }}</td>
                             <td class="px-5 py-4 font-mono text-xs text-slate-600 dark:text-slate-400">{{ row.duty_end_time }}</td>
-                            <td class="px-5 py-4 text-slate-600 dark:text-slate-400">{{ formatDateTime(row.check_in) }}</td>
-                            <td class="px-5 py-4 text-slate-600 dark:text-slate-400">{{ formatDateTime(row.check_out) }}</td>
+                            <td class="px-5 py-4 font-mono text-xs text-slate-600 dark:text-slate-400">
+                                <div class="flex items-center gap-1.5">
+                                    <span>{{ formatTime(row.check_in) }}</span>
+                                    <button
+                                        v-if="canRemovePunch && row.check_in_log_id && isRowRemovable(row)"
+                                        type="button"
+                                        class="inline-flex rounded-md p-1 text-red-600 hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-950/40 dark:hover:text-red-300"
+                                        title="Remove check in"
+                                        @click="openRemovePunchModal(row, 'Check in', row.check_in_log_id)"
+                                    >
+                                        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                        </svg>
+                                    </button>
+                                </div>
+                            </td>
+                            <td class="px-5 py-4 font-mono text-xs text-slate-600 dark:text-slate-400">
+                                <div class="flex items-center gap-1.5">
+                                    <span>{{ formatTime(row.check_out) }}</span>
+                                    <button
+                                        v-if="canRemovePunch && row.check_out_log_id && isRowRemovable(row)"
+                                        type="button"
+                                        class="inline-flex rounded-md p-1 text-red-600 hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:hover:bg-red-950/40 dark:hover:text-red-300"
+                                        title="Remove check out"
+                                        @click="openRemovePunchModal(row, 'Check out', row.check_out_log_id)"
+                                    >
+                                        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                        </svg>
+                                    </button>
+                                </div>
+                            </td>
                             <td class="px-5 py-4 text-slate-700 dark:text-slate-300">{{ row.working_hours_label }}</td>
                             <td class="px-5 py-4">
                                 <span v-if="row.late_minutes" class="font-medium text-amber-700 dark:text-amber-300">
@@ -293,12 +392,33 @@ function applyFilters() {
                             </td>
                         </tr>
                         <tr v-if="rows.data.length === 0">
-                            <td colspan="11" class="px-5 py-12 text-center text-slate-500">No attendance rows for this period.</td>
+                            <td colspan="11" class="px-5 py-12 text-center text-slate-500">
+                                No attendance rows for this period.
+                            </td>
                         </tr>
                     </tbody>
                 </table>
             </div>
         </UiCard>
+
+        <AddManualPunchModal
+            :open="punchModalOpen"
+            :employees="punchEmployees"
+            :can-select-employee="canViewAll"
+            :defaults="punchDefaults"
+            @close="punchModalOpen = false"
+        />
+
+        <PunchEditsModal :open="editsModalOpen" :row="editsModalRow" @close="editsModalOpen = false" />
+
+        <RemovePunchModal
+            :open="removeModalOpen"
+            :employee-name="removeTarget.employeeName"
+            :date="removeTarget.date"
+            :punch-label="removeTarget.punchLabel"
+            :log-id="removeTarget.logId"
+            @close="removeModalOpen = false"
+        />
 
         <div v-if="rows.links.length > 3" class="mt-5 flex flex-wrap gap-2">
             <Link

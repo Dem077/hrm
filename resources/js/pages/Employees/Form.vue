@@ -8,13 +8,14 @@ import UiCard from '@/components/ui/UiCard.vue';
 import UiInput from '@/components/ui/UiInput.vue';
 import UiSelect from '@/components/ui/UiSelect.vue';
 import AppLayout from '@/layouts/AppLayout.vue';
-import type { Employee, GenderOption, SelectOption } from '@/types/hrm';
+import type { DutyTypeOption, Employee, GenderOption, SelectOption } from '@/types/hrm';
 
 const props = defineProps<{
     employee: Employee;
     departments: SelectOption[];
     managers: SelectOption[];
     genders: GenderOption[];
+    dutyTypes: DutyTypeOption[];
     roles: Array<{ id: number; name: string }>;
     canAssignRoles: boolean;
 }>();
@@ -34,6 +35,7 @@ const form = useForm({
     password: '',
     is_active: props.employee.is_active,
     works_saturday: props.employee.works_saturday ?? false,
+    duty_type: props.employee.duty_type ?? 'normal',
     uses_custom_duty_times: props.employee.uses_custom_duty_times ?? false,
     custom_duty_start_time: props.employee.custom_duty_start_time ?? '09:00',
     custom_duty_end_time: props.employee.custom_duty_end_time ?? '18:00',
@@ -96,7 +98,10 @@ function submit() {
                         <input v-model="form.is_active" type="checkbox" class="rounded border-slate-300 bg-white text-brand-600 dark:border-slate-600 dark:bg-surface dark:text-brand-500" />
                         Employee is active
                     </label>
-                    <label class="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-surface-elevated dark:text-slate-300 md:col-span-2">
+                    <label
+                        v-if="form.duty_type === 'normal'"
+                        class="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-surface-elevated dark:text-slate-300 md:col-span-2"
+                    >
                         <input v-model="form.works_saturday" type="checkbox" class="rounded border-slate-300 bg-white text-brand-600 dark:border-slate-600 dark:bg-surface dark:text-brand-500" />
                         Works on Saturday (uses Saturday duty policy from global settings)
                     </label>
@@ -137,7 +142,19 @@ function submit() {
                 </div>
             </UiCard>
 
+            <UiCard title="Duty type" description="Normal duty follows global settings. Shift duty uses the duty roster for daily timings.">
+                <UiSelect v-model="form.duty_type" label="Duty type" :error="form.errors.duty_type">
+                    <option v-for="option in dutyTypes" :key="option.value" :value="option.value">
+                        {{ option.label }}
+                    </option>
+                </UiSelect>
+                <p v-if="form.duty_type === 'shift'" class="mt-3 text-sm text-slate-500 dark:text-slate-400">
+                    Assign daily duty timings on the <a href="/duty-rosters" class="font-medium text-brand-600 hover:underline dark:text-brand-400">Duty Roster</a> page.
+                </p>
+            </UiCard>
+
             <UiCard
+                v-if="form.duty_type === 'normal'"
                 title="Custom duty times"
                 description="Bypass the global duty policy for this employee and use their own duty start, end, and grace minutes on the attendance sheet."
             >

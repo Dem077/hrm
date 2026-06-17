@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\DutyType;
 use App\Enums\Gender;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -23,6 +24,7 @@ use Illuminate\Support\Carbon;
     'manager_id',
     'is_active',
     'works_saturday',
+    'duty_type',
     'uses_custom_duty_times',
     'custom_duty_start_time',
     'custom_duty_end_time',
@@ -40,14 +42,24 @@ class Employee extends Model
             'gender' => Gender::class,
             'is_active' => 'boolean',
             'works_saturday' => 'boolean',
+            'duty_type' => DutyType::class,
             'uses_custom_duty_times' => 'boolean',
             'custom_grace_minutes' => 'integer',
             'custom_saturday_grace_minutes' => 'integer',
         ];
     }
 
+    public function isShiftDuty(): bool
+    {
+        return $this->duty_type->isShift();
+    }
+
     public function usesCustomDutyTimes(): bool
     {
+        if ($this->isShiftDuty()) {
+            return false;
+        }
+
         return $this->uses_custom_duty_times
             && $this->custom_duty_start_time
             && $this->custom_duty_end_time;
@@ -56,8 +68,16 @@ class Employee extends Model
     /**
      * @return array{start: string, end: string, grace: int}
      */
-    public function resolveDutyTimes(CarbonInterface $date, AttendanceDutyPolicy $policy): array
+    public function resolveDutyTimes(CarbonInterface $date, AttendanceDutyPolicy $policy, ?DutyRoster $roster = null): array
     {
+        if ($this->isShiftDuty()) {
+            return $roster?->resolveDutyTimes() ?? [
+                'start' => '00:00:00',
+                'end' => '00:00:00',
+                'grace' => 0,
+            ];
+        }
+
         if (! $this->usesCustomDutyTimes()) {
             return $policy->resolveDutyTimes($date, $this);
         }
@@ -124,5 +144,10 @@ class Employee extends Model
     public function leaveApprovals(): HasMany
     {
         return $this->hasMany(LeaveRequest::class, 'approver_employee_id');
+    }
+
+    public function dutyRosters(): HasMany
+    {
+        return $this->hasMany(DutyRoster::class);
     }
 }

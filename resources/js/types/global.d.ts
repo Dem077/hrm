@@ -17,6 +17,7 @@ declare module '@inertiajs/core' {
     export interface InertiaConfig {
         sharedPageProps: {
             name: string;
+            branding: import('@/types/branding').AppBranding;
             auth: Auth;
             sidebarOpen: boolean;
             [key: string]: unknown;

@@ -1,10 +1,12 @@
 import '../css/app.css';
 
-import { createInertiaApp } from '@inertiajs/vue3';
+import { createInertiaApp, router } from '@inertiajs/vue3';
 import { resolvePageComponent } from 'laravel-vite-plugin/inertia-helpers';
 import { createApp, h } from 'vue';
 
+import { applyAppBranding } from '@/composables/useAppBranding';
 import { initTheme } from '@/composables/useTheme';
+import type { AppBranding } from '@/types/branding';
 
 initTheme();
 
@@ -18,6 +20,20 @@ createInertiaApp({
             import.meta.glob('./pages/**/*.vue'),
         ),
     setup({ el, App, props, plugin }) {
+        const branding = props.initialPage.props.branding as AppBranding;
+
+        if (branding) {
+            applyAppBranding(branding);
+        }
+
+        router.on('navigate', (event) => {
+            const nextBranding = event.detail.page.props.branding as AppBranding | undefined;
+
+            if (nextBranding) {
+                applyAppBranding(nextBranding);
+            }
+        });
+
         createApp({ render: () => h(App, props) })
             .use(plugin)
             .mount(el);

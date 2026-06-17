@@ -27,6 +27,10 @@
             })();
         </script>
 
+        @if (! empty($brandingCss))
+            <style>:root { {{ $brandingCss }} }</style>
+        @endif
+
         @fonts
         @vite(['resources/css/app.css', 'resources/js/app.ts'])
         @inertiaHead

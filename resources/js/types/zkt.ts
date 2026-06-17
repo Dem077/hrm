@@ -94,4 +94,10 @@ export type AttendanceLog = {
     device_uid: number;
     punch_state_label: string;
     punched_at: string | null;
+    source: string;
+    source_label: string;
+    manual_reason: string | null;
+    is_manual: boolean;
+    is_removed: boolean;
+    removal_reason: string | null;
 };
