@@ -19,6 +19,7 @@ use App\Http\Controllers\PayrollStructureController;
 use App\Http\Controllers\RoleController;
 use App\Http\Controllers\ZktAttendanceLogController;
 use App\Http\Controllers\ZktDeviceController;
+use App\Http\Controllers\ZktLocationGroupController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -53,6 +54,12 @@ Route::middleware('auth')->group(function () {
             'update' => 'permission:employees.update',
             'destroy' => 'permission:employees.delete',
         ]);
+        Route::post('employees/{employee}/sync-devices', [EmployeeController::class, 'syncDevices'])
+            ->middleware('permission:zkt-devices.manage-users')
+            ->name('employees.sync-devices');
+        Route::post('employees/{employee}/pull-device-credentials', [EmployeeController::class, 'pullDeviceCredentials'])
+            ->middleware('permission:zkt-devices.manage-users')
+            ->name('employees.pull-device-credentials');
     });
 
     Route::middleware('permission:departments.view')->group(function () {
@@ -86,6 +93,12 @@ Route::middleware('auth')->group(function () {
         Route::post('zkt-devices/{zkt_device}/sync-time', [ZktDeviceController::class, 'syncTime'])
             ->middleware('permission:zkt-devices.sync-time')
             ->name('zkt-devices.sync-time');
+        Route::post('zkt-devices/{zkt_device}/sync-users', [ZktDeviceController::class, 'syncUsers'])
+            ->middleware('permission:zkt-devices.manage-users')
+            ->name('zkt-devices.sync-users');
+        Route::post('zkt-devices/{zkt_device}/pull-users', [ZktDeviceController::class, 'pullUsers'])
+            ->middleware('permission:zkt-devices.manage-users')
+            ->name('zkt-devices.pull-users');
         Route::resource('zkt-devices', ZktDeviceController::class)->middleware([
             'index' => 'permission:zkt-devices.view',
             'show' => 'permission:zkt-devices.view',
@@ -95,6 +108,22 @@ Route::middleware('auth')->group(function () {
             'update' => 'permission:zkt-devices.update',
             'destroy' => 'permission:zkt-devices.delete',
         ]);
+    });
+
+    Route::middleware('permission:zkt-location-groups.view')->group(function () {
+        Route::get('zkt-location-groups', [ZktLocationGroupController::class, 'index'])->name('zkt-location-groups.index');
+        Route::post('zkt-location-groups', [ZktLocationGroupController::class, 'store'])
+            ->middleware('permission:zkt-location-groups.create')
+            ->name('zkt-location-groups.store');
+        Route::put('zkt-location-groups/{zkt_location_group}', [ZktLocationGroupController::class, 'update'])
+            ->middleware('permission:zkt-location-groups.update')
+            ->name('zkt-location-groups.update');
+        Route::delete('zkt-location-groups/{zkt_location_group}', [ZktLocationGroupController::class, 'destroy'])
+            ->middleware('permission:zkt-location-groups.delete')
+            ->name('zkt-location-groups.destroy');
+        Route::post('zkt-location-groups/{zkt_location_group}/sync-users', [ZktLocationGroupController::class, 'syncUsers'])
+            ->middleware('permission:zkt-location-groups.sync-users')
+            ->name('zkt-location-groups.sync-users');
     });
 
     Route::middleware('permission:attendance-sheet.view')->group(function () {

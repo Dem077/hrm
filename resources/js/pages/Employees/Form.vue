@@ -8,12 +8,14 @@ import UiCard from '@/components/ui/UiCard.vue';
 import UiInput from '@/components/ui/UiInput.vue';
 import UiSelect from '@/components/ui/UiSelect.vue';
 import AppLayout from '@/layouts/AppLayout.vue';
-import type { DutyTypeOption, Employee, GenderOption, SelectOption } from '@/types/hrm';
+import type { DevicePrivilegeOption, DutyTypeOption, Employee, GenderOption, SelectOption } from '@/types/hrm';
 
 const props = defineProps<{
     employee: Employee;
     departments: SelectOption[];
     designations: SelectOption[];
+    locationGroups: Array<{ id: number; name: string; code: string | null }>;
+    devicePrivileges: DevicePrivilegeOption[];
     managers: SelectOption[];
     genders: GenderOption[];
     dutyTypes: DutyTypeOption[];
@@ -33,6 +35,9 @@ const form = useForm({
     gender: props.employee.gender,
     department_id: props.employee.department_id ?? '',
     designation_id: props.employee.designation_id ?? '',
+    device_privilege: props.employee.device_privilege ?? 'employee',
+    device_card_number: props.employee.device_card_number ?? '',
+    device_password: '',
     manager_id: props.employee.manager_id ?? '',
     password: '',
     is_active: props.employee.is_active,
@@ -46,6 +51,7 @@ const form = useForm({
     custom_saturday_duty_end_time: props.employee.custom_saturday_duty_end_time ?? '14:00',
     custom_saturday_grace_minutes: props.employee.custom_saturday_grace_minutes ?? 15,
     role_names: [...(props.employee.role_names ?? [])],
+    zkt_location_group_ids: [...(props.employee.zkt_location_group_ids ?? [])],
 });
 
 function toggleRole(roleName: string) {
@@ -57,6 +63,17 @@ function toggleRole(roleName: string) {
     }
 
     form.role_names.push(roleName);
+}
+
+function toggleLocationGroup(groupId: number) {
+    const index = form.zkt_location_group_ids.indexOf(groupId);
+
+    if (index >= 0) {
+        form.zkt_location_group_ids.splice(index, 1);
+        return;
+    }
+
+    form.zkt_location_group_ids.push(groupId);
 }
 
 function submit() {
@@ -224,6 +241,73 @@ function submit() {
                             :error="form.errors.custom_saturday_grace_minutes"
                         />
                     </template>
+                </div>
+            </UiCard>
+
+            <UiCard
+                title="Machine access"
+                description="Assign location groups for direct machine access."
+            >
+                <UiSelect v-model="form.device_privilege" label="Device privilege" :error="form.errors.device_privilege">
+                    <option v-for="option in devicePrivileges" :key="option.value" :value="option.value">
+                        {{ option.label }}
+                    </option>
+                </UiSelect>
+                <p class="mt-2 text-sm text-slate-500 dark:text-slate-400">
+                    Controls the privilege level pushed to biometric machines when this employee is synced. Defaults to Employee.
+                </p>
+
+                <div class="mt-5 grid gap-4 sm:grid-cols-2">
+                    <UiInput
+                        v-model="form.device_card_number"
+                        label="Card number"
+                        inputmode="numeric"
+                        hint="Optional RFID/card number synced to machines (digits only, up to 10)."
+                        :error="form.errors.device_card_number"
+                    />
+                    <UiInput
+                        v-model="form.device_password"
+                        label="Device password"
+                        type="password"
+                        inputmode="numeric"
+                        autocomplete="new-password"
+                        :hint="
+                            isEditing
+                                ? props.employee.has_device_password
+                                    ? 'Leave blank to keep the current device password.'
+                                    : 'Optional — up to 8 digits for machine menu access.'
+                                : 'Optional — up to 8 digits for machine menu access.'
+                        "
+                        :error="form.errors.device_password"
+                    />
+                </div>
+
+                <div class="mt-5">
+                    <p class="mb-2 text-sm font-medium text-slate-700 dark:text-slate-200">Location groups</p>
+                <div class="grid gap-2 sm:grid-cols-2">
+                    <label
+                        v-for="group in locationGroups"
+                        :key="group.id"
+                        class="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-200 px-4 py-3 text-sm transition hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-surface-elevated"
+                    >
+                        <input
+                            type="checkbox"
+                            class="rounded border-slate-300 text-brand-600 dark:border-slate-600 dark:bg-surface"
+                            :checked="form.zkt_location_group_ids.includes(group.id)"
+                            @change="toggleLocationGroup(group.id)"
+                        />
+                        <span>
+                            <span class="font-medium text-slate-800 dark:text-slate-200">{{ group.name }}</span>
+                            <span v-if="group.code" class="block text-xs text-slate-500">{{ group.code }}</span>
+                        </span>
+                    </label>
+                </div>
+                <p v-if="locationGroups.length === 0" class="mt-3 text-sm text-slate-500 dark:text-slate-400">
+                    Create machine location groups under Configurations first.
+                </p>
+                <p v-if="form.errors.zkt_location_group_ids" class="mt-3 text-sm text-red-600 dark:text-red-400">
+                    {{ form.errors.zkt_location_group_ids }}
+                </p>
                 </div>
             </UiCard>
 

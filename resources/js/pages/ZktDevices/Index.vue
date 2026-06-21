@@ -105,7 +105,7 @@ function iconTone(color?: string): string {
                             {{ device.name }}
                         </Link>
                         <p class="mt-0.5 truncate text-xs text-slate-500">
-                            {{ device.brand_label ?? device.brand }} · {{ device.location ?? 'No location' }}
+                            {{ device.brand_label ?? device.brand }} · {{ device.machine_type_short_label ?? device.machine_type_label ?? 'Attendance' }}
                         </p>
                     </div>
                 </div>
@@ -115,10 +115,16 @@ function iconTone(color?: string): string {
                         {{ device.ip_address }}:{{ device.port }}
                     </p>
                     <div class="flex items-center justify-between gap-2">
-                        <UiBadge
-                            :label="device.connection_status_label ?? device.connection_status"
-                            :color="device.connection_status_color"
-                        />
+                        <div class="flex flex-wrap gap-1">
+                            <UiBadge
+                                :label="device.connection_status_label ?? device.connection_status"
+                                :color="device.connection_status_color"
+                            />
+                            <UiBadge
+                                :label="device.machine_type_short_label ?? device.machine_type_label ?? 'Attendance'"
+                                :color="device.machine_type_color ?? 'info'"
+                            />
+                        </div>
                         <span class="truncate text-slate-500" :title="formatDateTime(device.last_synced_at)">
                             {{ formatDateTime(device.last_synced_at) }}
                         </span>

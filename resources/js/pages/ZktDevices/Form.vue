@@ -11,12 +11,13 @@ import UiInput from '@/components/ui/UiInput.vue';
 import UiSelect from '@/components/ui/UiSelect.vue';
 import AppLayout from '@/layouts/AppLayout.vue';
 import { formatDateTime } from '@/lib/format';
-import type { BrandOption, ProtocolOption, ZktDevice } from '@/types/zkt';
+import type { BrandOption, MachineTypeOption, ProtocolOption, ZktDevice } from '@/types/zkt';
 
 const props = defineProps<{
     device: ZktDevice;
     protocols: ProtocolOption[];
     brands: BrandOption[];
+    machineTypes: MachineTypeOption[];
 }>();
 
 const isEditing = computed(() => props.device.id !== null);
@@ -28,6 +29,7 @@ const form = useForm({
     name: props.device.name,
     brand: props.device.brand,
     location: props.device.location ?? '',
+    machine_type: props.device.machine_type ?? 'attendance',
     ip_address: props.device.ip_address,
     port: props.device.port,
     protocol: props.device.protocol,
@@ -156,7 +158,7 @@ function submit() {
         </div>
 
         <form class="space-y-6" @submit.prevent="submit">
-            <UiCard title="Machine details" description="Brand and connection settings used to reach the attendance machine.">
+            <UiCard title="Machine details" description="Choose the machine role and connection settings used to reach the device.">
                 <div class="grid gap-5 md:grid-cols-2">
                     <UiInput v-model="form.name" label="Name" required :error="form.errors.name" />
                     <UiSelect v-model="form.brand" label="Brand" required :error="form.errors.brand">
@@ -164,6 +166,15 @@ function submit() {
                             {{ option.label }}
                         </option>
                     </UiSelect>
+                    <UiSelect v-model="form.machine_type" label="Machine type" required :error="form.errors.machine_type">
+                        <option v-for="option in machineTypes" :key="option.value" :value="option.value">
+                            {{ option.label }}
+                        </option>
+                    </UiSelect>
+                    <p class="text-sm text-slate-500 dark:text-slate-400 md:col-span-2">
+                        Attendance machines feed the attendance sheet. Access machines are for door or access control only
+                        and their punches stay in punch logs but do not affect attendance.
+                    </p>
                     <UiInput v-model="form.location" label="Location" />
                     <UiInput v-model="form.ip_address" label="IP address" required :error="form.errors.ip_address" />
                     <UiInput v-model="form.port" label="Port" type="number" required />

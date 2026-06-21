@@ -1,9 +1,11 @@
 <?php
 
 use App\Enums\AttendancePunchSource;
+use App\Enums\ZktMachineType;
 use App\Models\Employee;
 use App\Models\User;
 use App\Models\ZktAttendanceLog;
+use App\Models\ZktDevice;
 use App\Services\Attendance\AttendanceSheetService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
@@ -142,4 +144,51 @@ it('requires a reason when removing a punch', function () {
             'reason' => '',
         ])
         ->assertSessionHasErrors('reason');
+});
+
+it('excludes access machine punches from the attendance sheet', function () {
+    $attendanceDevice = ZktDevice::query()->create([
+        'name' => 'Office Attendance',
+        'ip_address' => '192.168.1.10',
+        'machine_type' => ZktMachineType::Attendance,
+        'is_active' => true,
+        'auto_sync' => false,
+    ]);
+
+    $accessDevice = ZktDevice::query()->create([
+        'name' => 'Main Door',
+        'ip_address' => '192.168.1.11',
+        'machine_type' => ZktMachineType::Access,
+        'is_active' => true,
+        'auto_sync' => false,
+    ]);
+
+    $date = Carbon::parse('2026-06-10 09:00:00', config('app.timezone', 'UTC'));
+
+    ZktAttendanceLog::query()->create([
+        'zkt_device_id' => $accessDevice->id,
+        'device_uid' => 1,
+        'device_user_id' => $this->employee->staff_id,
+        'punch_state' => 0,
+        'punched_at' => $date->copy()->setTime(9, 0),
+        'source' => AttendancePunchSource::Device,
+    ]);
+
+    ZktAttendanceLog::query()->create([
+        'zkt_device_id' => $attendanceDevice->id,
+        'device_uid' => 2,
+        'device_user_id' => $this->employee->staff_id,
+        'punch_state' => 0,
+        'punched_at' => $date->copy()->setTime(9, 5),
+        'source' => AttendancePunchSource::Device,
+    ]);
+
+    $result = app(AttendanceSheetService::class)->build(
+        $date->copy()->startOfDay(),
+        $date->copy()->startOfDay(),
+        employeeId: $this->employee->id,
+    );
+
+    expect($result['rows'][0]['check_in'])->not->toBeNull()
+        ->and($result['rows'][0]['check_in'])->toContain('09:05');
 });

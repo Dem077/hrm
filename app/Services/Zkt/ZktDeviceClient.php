@@ -176,6 +176,92 @@ class ZktDeviceClient
     /**
      * @return array<int, array<string, mixed>>
      */
+    public function fetchUsers(ZktDevice $device): array
+    {
+        $zk = $this->makeConnection($device);
+
+        if (! $zk->connect()) {
+            throw new ZktDeviceException('Unable to connect to the device.');
+        }
+
+        try {
+            $users = $zk->getUsers();
+
+            if ($users === false) {
+                throw new ZktDeviceException('Device returned invalid user data.');
+            }
+
+            $this->markOnline($device);
+
+            return $users;
+        } finally {
+            $zk->disconnect();
+        }
+    }
+
+    /**
+     * @return array{uid: int, user_id: string}
+     */
+    public function pushUser(
+        ZktDevice $device,
+        int $uid,
+        string $userId,
+        string $name,
+        int $role = 0,
+        int $cardNo = 0,
+        string $password = '',
+    ): array {
+        $zk = $this->makeConnection($device);
+
+        if (! $zk->connect()) {
+            throw new ZktDeviceException('Unable to connect to the device.');
+        }
+
+        try {
+            $userId = substr($userId, 0, 9);
+            $name = substr($name, 0, 24);
+
+            $result = $zk->setUser($uid, $userId, $name, $password, $role, $cardNo);
+
+            if ($result === false) {
+                throw new ZktDeviceException('Device rejected the user profile update.');
+            }
+
+            $this->markOnline($device);
+
+            return [
+                'uid' => $uid,
+                'user_id' => $userId,
+            ];
+        } finally {
+            $zk->disconnect();
+        }
+    }
+
+    public function removeUserByUid(ZktDevice $device, int $uid): void
+    {
+        $zk = $this->makeConnection($device);
+
+        if (! $zk->connect()) {
+            throw new ZktDeviceException('Unable to connect to the device.');
+        }
+
+        try {
+            $result = $zk->removeUser($uid);
+
+            if ($result === false) {
+                throw new ZktDeviceException('Device rejected the user removal command.');
+            }
+
+            $this->markOnline($device);
+        } finally {
+            $zk->disconnect();
+        }
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
     public function fetchAttendance(ZktDevice $device): array
     {
         $zk = $this->makeConnection($device);

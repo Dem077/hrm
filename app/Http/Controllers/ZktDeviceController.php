@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Enums\AttendanceMachineBrand;
 use App\Enums\ZktConnectionProtocol;
 use App\Enums\ZktConnectionStatus;
+use App\Enums\ZktMachineType;
 use App\Http\Requests\ProbeZktDeviceRequest;
 use App\Http\Requests\StoreZktDeviceRequest;
 use App\Http\Requests\UpdateZktDeviceRequest;
@@ -12,6 +13,7 @@ use App\Jobs\SyncZktDeviceJob;
 use App\Models\ZktDevice;
 use App\Services\Zkt\ZktDeviceClient;
 use App\Services\Zkt\ZktDeviceSyncService;
+use App\Services\Zkt\ZktDeviceUserSyncService;
 use App\Support\DateFormatter;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -38,6 +40,7 @@ class ZktDeviceController extends Controller
             'device' => $this->emptyDevice(),
             'protocols' => $this->protocolOptions(),
             'brands' => AttendanceMachineBrand::options(),
+            'machineTypes' => ZktMachineType::options(),
         ]);
     }
 
@@ -55,6 +58,7 @@ class ZktDeviceController extends Controller
         $zktDevice->load([
             'syncLogs' => fn ($query) => $query->latest('started_at')->limit(20),
             'attendanceLogs' => fn ($query) => $query->with('employee:id,staff_id,name')->latest('punched_at')->limit(50),
+            'employeeSyncs.employee:id,staff_id,name',
         ]);
 
         return Inertia::render('ZktDevices/Show', [
@@ -68,6 +72,7 @@ class ZktDeviceController extends Controller
             'device' => $this->formatDevice($zktDevice),
             'protocols' => $this->protocolOptions(),
             'brands' => AttendanceMachineBrand::options(),
+            'machineTypes' => ZktMachineType::options(),
         ]);
     }
 
@@ -217,6 +222,68 @@ class ZktDeviceController extends Controller
         return back()->with('success', "Queued {$devices->count()} device(s) for sync.");
     }
 
+    public function syncUsers(ZktDevice $zktDevice, ZktDeviceUserSyncService $userSyncService): RedirectResponse
+    {
+        if ($redirect = $this->ensureDeviceIsActive($zktDevice)) {
+            return $redirect;
+        }
+
+        if (! $zktDevice->isManagedDevice()) {
+            return back()->with('error', 'User profiles cannot be managed on this device.');
+        }
+
+        $results = $userSyncService->syncDeviceUsers($zktDevice);
+        $failed = collect($results)->where('status', 'failed')->count();
+        $synced = collect($results)->where('status', 'synced')->count();
+
+        if ($failed > 0) {
+            return back()->with(
+                'error',
+                "Synced {$synced} user profile(s), but {$failed} failed. Review sync status below.",
+            );
+        }
+
+        return back()->with('success', "Synced {$synced} assigned user profile(s) to this machine.");
+    }
+
+    public function pullUsers(ZktDevice $zktDevice, ZktDeviceUserSyncService $userSyncService): RedirectResponse
+    {
+        if ($redirect = $this->ensureDeviceIsActive($zktDevice)) {
+            return $redirect;
+        }
+
+        if (! $zktDevice->isManagedDevice()) {
+            return back()->with('error', 'User profiles cannot be read from this device.');
+        }
+
+        try {
+            $results = $userSyncService->pullDeviceCredentials($zktDevice);
+            $updated = collect($results)->where('status', 'updated')->count();
+            $matched = count($results);
+
+            if ($matched === 0) {
+                return back()->with(
+                    'error',
+                    'No matching employees were found on this machine. Users must use the same staff ID in HRM.',
+                );
+            }
+
+            if ($updated === 0) {
+                return back()->with(
+                    'success',
+                    "Found {$matched} matching employee(s), but none had a card number, password, or privilege to import.",
+                );
+            }
+
+            return back()->with(
+                'success',
+                "Imported card number, password, and/or privilege for {$updated} employee(s) from this machine.",
+            );
+        } catch (Throwable $exception) {
+            return back()->with('error', $exception->getMessage());
+        }
+    }
+
     /**
      * @return array<string, mixed>
      */
@@ -228,6 +295,10 @@ class ZktDeviceController extends Controller
             'brand' => $device->brand->value,
             'brand_label' => $device->brand->label(),
             'location' => $device->location,
+            'machine_type' => $device->machine_type->value,
+            'machine_type_label' => $device->machine_type->label(),
+            'machine_type_short_label' => $device->machine_type->shortLabel(),
+            'machine_type_color' => $device->machine_type->color(),
             'ip_address' => $device->ip_address,
             'port' => $device->port,
             'protocol' => $device->protocol->value,
@@ -266,6 +337,16 @@ class ZktDeviceController extends Controller
             $data['attendance_logs'] = $device->attendanceLogs->map(
                 fn ($log) => $log->toPresentationArray(),
             );
+            $data['employee_syncs'] = $device->employeeSyncs->map(
+                fn ($sync) => [
+                    ...$sync->toPresentationArray(),
+                    'employee' => $sync->employee ? [
+                        'id' => $sync->employee->id,
+                        'name' => $sync->employee->name,
+                        'staff_id' => $sync->employee->staff_id,
+                    ] : null,
+                ],
+            );
         }
 
         return $data;
@@ -281,6 +362,7 @@ class ZktDeviceController extends Controller
             'name' => '',
             'brand' => AttendanceMachineBrand::Zkt->value,
             'location' => '',
+            'machine_type' => ZktMachineType::Attendance->value,
             'ip_address' => '',
             'port' => (int) config('zkt.default_port', 4370),
             'protocol' => config('zkt.default_protocol', 'tcp'),

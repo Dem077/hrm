@@ -5,9 +5,11 @@ namespace App\Models;
 use App\Enums\AttendanceMachineBrand;
 use App\Enums\ZktConnectionProtocol;
 use App\Enums\ZktConnectionStatus;
+use App\Enums\ZktMachineType;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 #[Fillable([
@@ -21,6 +23,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'model_name',
     'firmware_version',
     'location',
+    'machine_type',
     'is_active',
     'auto_sync',
     'sync_interval_minutes',
@@ -40,6 +43,7 @@ class ZktDevice extends Model
         'brand' => 'zkt',
         'protocol' => 'tcp',
         'comm_password' => 0,
+        'machine_type' => 'attendance',
         'is_active' => true,
         'auto_sync' => true,
         'sync_interval_minutes' => 10,
@@ -57,6 +61,7 @@ class ZktDevice extends Model
             'sync_interval_minutes' => 'integer',
             'protocol' => ZktConnectionProtocol::class,
             'brand' => AttendanceMachineBrand::class,
+            'machine_type' => ZktMachineType::class,
             'last_connected_at' => 'datetime',
             'last_synced_at' => 'datetime',
             'tcpmux_enabled' => 'boolean',
@@ -70,6 +75,7 @@ class ZktDevice extends Model
             ['name' => 'Attendance Sheet'],
             [
                 'ip_address' => '0.0.0.0',
+                'machine_type' => ZktMachineType::Attendance->value,
                 'is_active' => false,
                 'auto_sync' => false,
                 'connection_status' => 'unknown',
@@ -86,6 +92,24 @@ class ZktDevice extends Model
     public function syncLogs(): HasMany
     {
         return $this->hasMany(ZktDeviceSyncLog::class);
+    }
+
+    public function locationGroups(): BelongsToMany
+    {
+        return $this->belongsToMany(ZktLocationGroup::class, 'zkt_location_group_device')
+            ->withTimestamps()
+            ->orderBy('zkt_location_groups.sort_order')
+            ->orderBy('zkt_location_groups.name');
+    }
+
+    public function employeeSyncs(): HasMany
+    {
+        return $this->hasMany(ZktDeviceEmployeeSync::class);
+    }
+
+    public function isManagedDevice(): bool
+    {
+        return $this->name !== 'Attendance Sheet' && $this->ip_address !== '0.0.0.0';
     }
 
     public function isDueForSync(): bool

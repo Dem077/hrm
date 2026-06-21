@@ -32,6 +32,14 @@ function syncDeviceTime(id: number) {
     router.post(`/zkt-devices/${id}/sync-time`, {}, { preserveScroll: true });
 }
 
+function syncDeviceUsers(id: number) {
+    router.post(`/zkt-devices/${id}/sync-users`, {}, { preserveScroll: true });
+}
+
+function pullDeviceUsers(id: number) {
+    router.post(`/zkt-devices/${id}/pull-users`, {}, { preserveScroll: true });
+}
+
 function deleteDevice(id: number) {
     if (confirm('Delete this machine and all related punch logs?')) {
         router.delete(`/zkt-devices/${id}`);
@@ -76,6 +84,18 @@ function deleteDevice(id: number) {
                 </div>
 
                 <div class="space-y-2">
+                    <p class="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">User profiles</p>
+                    <div class="flex flex-wrap gap-2">
+                        <UiButton v-if="can('zkt-devices.manage-users')" size="sm" variant="primary" @click="syncDeviceUsers(device.id!)">
+                            Sync assigned users
+                        </UiButton>
+                        <UiButton v-if="can('zkt-devices.manage-users')" size="sm" variant="secondary" @click="pullDeviceUsers(device.id!)">
+                            Pull employee credentials
+                        </UiButton>
+                    </div>
+                </div>
+
+                <div class="space-y-2">
                     <p class="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Attendance</p>
                     <div class="flex flex-wrap gap-2">
                         <UiButton v-if="can('zkt-devices.sync')" size="sm" variant="primary" @click="syncDevice(device.id!)">Sync punches</UiButton>
@@ -98,6 +118,12 @@ function deleteDevice(id: number) {
                     <div class="flex items-center justify-between gap-4 border-b border-slate-100 pb-3 dark:border-slate-800">
                         <dt class="text-slate-500">Brand</dt>
                         <dd class="font-medium text-slate-900 dark:text-slate-100">{{ device.brand_label ?? device.brand }}</dd>
+                    </div>
+                    <div class="flex items-center justify-between gap-4 border-b border-slate-100 pb-3 dark:border-slate-800">
+                        <dt class="text-slate-500">Machine type</dt>
+                        <dd class="font-medium text-slate-900 dark:text-slate-100">
+                            {{ device.machine_type_label ?? device.machine_type }}
+                        </dd>
                     </div>
                     <div class="flex items-center justify-between gap-4 border-b border-slate-100 pb-3 dark:border-slate-800">
                         <dt class="text-slate-500">Serial</dt>
@@ -139,6 +165,44 @@ function deleteDevice(id: number) {
                         </p>
                     </div>
                     <p v-if="!(device.sync_logs ?? []).length" class="text-sm text-slate-500">No sync history yet.</p>
+                </div>
+            </UiCard>
+        </div>
+
+        <div class="mt-6">
+            <UiCard title="Assigned user sync status" padding="none">
+                <div class="overflow-x-auto">
+                    <table class="min-w-full text-sm">
+                        <thead class="border-b border-slate-100 bg-slate-50/80 text-left text-slate-500 dark:border-slate-800 dark:bg-surface-elevated dark:text-slate-400">
+                            <tr>
+                                <th class="px-5 py-3.5 font-medium">Employee</th>
+                                <th class="px-5 py-3.5 font-medium">Status</th>
+                                <th class="px-5 py-3.5 font-medium">Last synced</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+                            <tr v-for="sync in device.employee_syncs ?? []" :key="sync.id">
+                                <td class="px-5 py-4">
+                                    <Link
+                                        v-if="sync.employee"
+                                        :href="`/employees/${sync.employee.id}`"
+                                        class="font-medium text-brand-700 hover:text-brand-600 hover:underline dark:text-brand-400 dark:hover:text-brand-300"
+                                    >
+                                        {{ sync.employee.name }}
+                                    </Link>
+                                    <span v-else class="text-slate-500">—</span>
+                                    <p v-if="sync.last_error" class="text-xs text-red-600 dark:text-red-400">{{ sync.last_error }}</p>
+                                </td>
+                                <td class="px-5 py-4">
+                                    <UiBadge :label="sync.sync_status_label" :color="sync.sync_status_color" />
+                                </td>
+                                <td class="px-5 py-4 text-slate-600 dark:text-slate-400">{{ formatDateTime(sync.last_synced_at) }}</td>
+                            </tr>
+                            <tr v-if="!(device.employee_syncs ?? []).length">
+                                <td colspan="3" class="px-5 py-10 text-center text-slate-500">No assigned user sync records yet.</td>
+                            </tr>
+                        </tbody>
+                    </table>
                 </div>
             </UiCard>
         </div>

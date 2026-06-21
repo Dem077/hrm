@@ -5,12 +5,23 @@ export type BrandOption = {
     label: string;
 };
 
+export type MachineTypeOption = {
+    value: string;
+    label: string;
+};
+
+export type ZktMachineType = 'attendance' | 'access';
+
 export type ZktDevice = {
     id: number | null;
     name: string;
     brand: string;
     brand_label?: string;
     location: string | null;
+    machine_type: ZktMachineType;
+    machine_type_label?: string;
+    machine_type_short_label?: string;
+    machine_type_color?: string;
     ip_address: string;
     port: number;
     protocol: string;
@@ -34,6 +45,22 @@ export type ZktDevice = {
     tcpmux_port: number | null;
     sync_logs?: SyncLog[];
     attendance_logs?: AttendanceLogSummary[];
+    employee_syncs?: DeviceEmployeeSync[];
+};
+
+export type DeviceEmployeeSync = {
+    id: number;
+    device_uid: number | null;
+    sync_status: string;
+    sync_status_label: string;
+    sync_status_color: string;
+    last_synced_at: string | null;
+    last_error: string | null;
+    employee: {
+        id: number;
+        name: string;
+        staff_id: string;
+    } | null;
 };
 
 export type SyncLog = {

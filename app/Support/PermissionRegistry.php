@@ -63,6 +63,14 @@ class PermissionRegistry
                 'zkt-devices.sync-all' => 'Sync all active machines',
                 'zkt-devices.read-time' => 'Read machine clock',
                 'zkt-devices.sync-time' => 'Sync machine clock',
+                'zkt-devices.manage-users' => 'Push and remove user profiles on machines',
+            ],
+            'Machine Location Groups' => [
+                'zkt-location-groups.view' => 'View machine location groups',
+                'zkt-location-groups.create' => 'Create machine location groups',
+                'zkt-location-groups.update' => 'Update machine location groups',
+                'zkt-location-groups.delete' => 'Delete machine location groups',
+                'zkt-location-groups.sync-users' => 'Sync assigned employees to group machines',
             ],
             'Punch Logs' => [
                 'zkt-attendance-logs.view' => 'View punch logs',

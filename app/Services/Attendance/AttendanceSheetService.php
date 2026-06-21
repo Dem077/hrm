@@ -3,7 +3,9 @@
 namespace App\Services\Attendance;
 
 use App\Enums\AttendanceDayStatus;
+use App\Enums\AttendancePunchSource;
 use App\Enums\LeaveRequestStatus;
+use App\Enums\ZktMachineType;
 use App\Models\AttendanceDutyPolicy;
 use App\Models\DutyRoster;
 use App\Models\Employee;
@@ -187,8 +189,13 @@ class AttendanceSheetService
         $index = [];
 
         ZktAttendanceLog::query()
-            ->select(['id', 'device_user_id', 'punch_state', 'punched_at', 'source', 'manual_reason'])
+            ->with('device:id,machine_type')
+            ->select(['id', 'zkt_device_id', 'device_user_id', 'punch_state', 'punched_at', 'source', 'manual_reason'])
             ->whereIn('device_user_id', $staffIds)
+            ->where(function ($query) {
+                $query->where('source', AttendancePunchSource::AttendanceSheet->value)
+                    ->orWhereHas('device', fn ($deviceQuery) => $deviceQuery->where('machine_type', ZktMachineType::Attendance->value));
+            })
             ->whereBetween('punched_at', [
                 $from->copy()->startOfDay(),
                 $to->copy()->endOfDay(),

@@ -2,11 +2,12 @@
 import { Head, router } from '@inertiajs/vue3';
 
 import PageHeader from '@/components/ui/PageHeader.vue';
+import UiBadge from '@/components/ui/UiBadge.vue';
 import UiButton from '@/components/ui/UiButton.vue';
 import UiCard from '@/components/ui/UiCard.vue';
 import { usePermissions } from '@/composables/usePermissions';
 import AppLayout from '@/layouts/AppLayout.vue';
-import { formatDate } from '@/lib/format';
+import { formatDate, formatDateTime } from '@/lib/format';
 import type { Employee } from '@/types/hrm';
 
 defineProps<{
@@ -19,6 +20,14 @@ function deleteEmployee(id: number) {
     if (confirm('Delete this employee record?')) {
         router.delete(`/employees/${id}`);
     }
+}
+
+function syncDevices(id: number) {
+    router.post(`/employees/${id}/sync-devices`, {}, { preserveScroll: true });
+}
+
+function pullDeviceCredentials(id: number) {
+    router.post(`/employees/${id}/pull-device-credentials`, {}, { preserveScroll: true });
 }
 </script>
 
@@ -147,6 +156,84 @@ function deleteEmployee(id: number) {
                     >
                         {{ report.name }} ({{ report.staff_id }})
                     </UiButton>
+                </div>
+            </UiCard>
+        </div>
+
+        <div class="mt-6 grid gap-6 lg:grid-cols-2">
+            <UiCard title="Machine access groups">
+                <dl class="space-y-4 text-sm">
+                    <div class="flex justify-between gap-4 border-b border-slate-100 pb-3 dark:border-slate-800">
+                        <dt class="text-slate-500">Device privilege</dt>
+                        <dd class="font-medium text-slate-900 dark:text-slate-100">
+                            {{ employee.device_privilege_label ?? employee.device_privilege ?? 'Employee' }}
+                        </dd>
+                    </div>
+                    <div class="flex justify-between gap-4 border-b border-slate-100 pb-3 dark:border-slate-800">
+                        <dt class="text-slate-500">Card number</dt>
+                        <dd class="font-medium text-slate-900 dark:text-slate-100">
+                            {{ employee.device_card_number ?? '—' }}
+                        </dd>
+                    </div>
+                    <div class="flex justify-between gap-4 border-b border-slate-100 pb-3 dark:border-slate-800">
+                        <dt class="text-slate-500">Device password</dt>
+                        <dd class="font-medium text-slate-900 dark:text-slate-100">
+                            {{ employee.has_device_password ? 'Set' : '—' }}
+                        </dd>
+                    </div>
+                </dl>
+                <div v-if="(employee.zkt_location_groups ?? []).length" class="mt-4 flex flex-wrap gap-2">
+                    <span
+                        v-for="group in employee.zkt_location_groups"
+                        :key="group.id"
+                        class="rounded-full bg-brand-50 px-3 py-1 text-sm font-medium text-brand-700 dark:bg-brand-950/40 dark:text-brand-300"
+                    >
+                        {{ group.name }}
+                    </span>
+                </div>
+                <p v-else class="text-sm text-slate-500 dark:text-slate-400">
+                    No location groups assigned. Edit the employee to choose which machines they can access.
+                </p>
+                <div v-if="can('zkt-devices.manage-users')" class="mt-4 flex flex-wrap gap-2">
+                    <UiButton size="sm" variant="secondary" @click="pullDeviceCredentials(employee.id!)">
+                        Pull from machine
+                    </UiButton>
+                    <UiButton size="sm" variant="primary" @click="syncDevices(employee.id!)">
+                        Sync to machines
+                    </UiButton>
+                </div>
+            </UiCard>
+
+            <UiCard title="Machine profile sync status" padding="none">
+                <div class="overflow-x-auto">
+                    <table class="min-w-full text-sm">
+                        <thead class="border-b border-slate-100 bg-slate-50/80 text-left text-slate-500 dark:border-slate-800 dark:bg-surface-elevated dark:text-slate-400">
+                            <tr>
+                                <th class="px-5 py-3.5 font-medium">Machine</th>
+                                <th class="px-5 py-3.5 font-medium">Status</th>
+                                <th class="px-5 py-3.5 font-medium">Last synced</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+                            <tr v-for="sync in employee.zkt_device_syncs ?? []" :key="sync.id">
+                                <td class="px-5 py-4">
+                                    <p class="font-medium text-slate-900 dark:text-white">{{ sync.device?.name ?? '—' }}</p>
+                                    <p v-if="sync.last_error" class="text-xs text-red-600 dark:text-red-400">{{ sync.last_error }}</p>
+                                </td>
+                                <td class="px-5 py-4">
+                                    <UiBadge :label="sync.sync_status_label" :color="sync.sync_status_color" />
+                                </td>
+                                <td class="px-5 py-4 text-slate-600 dark:text-slate-400">
+                                    {{ formatDateTime(sync.last_synced_at) }}
+                                </td>
+                            </tr>
+                            <tr v-if="!(employee.zkt_device_syncs ?? []).length">
+                                <td colspan="3" class="px-5 py-8 text-center text-slate-500 dark:text-slate-400">
+                                    No machine sync records yet.
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
                 </div>
             </UiCard>
         </div>

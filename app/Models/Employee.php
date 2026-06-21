@@ -4,10 +4,12 @@ namespace App\Models;
 
 use App\Enums\DutyType;
 use App\Enums\Gender;
+use App\Enums\ZktDevicePrivilege;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 
@@ -21,6 +23,9 @@ use Illuminate\Support\Carbon;
     'gender',
     'department_id',
     'designation_id',
+    'device_privilege',
+    'device_card_number',
+    'device_password',
     'user_id',
     'manager_id',
     'is_active',
@@ -44,6 +49,7 @@ class Employee extends Model
             'is_active' => 'boolean',
             'works_saturday' => 'boolean',
             'duty_type' => DutyType::class,
+            'device_privilege' => ZktDevicePrivilege::class,
             'uses_custom_duty_times' => 'boolean',
             'custom_grace_minutes' => 'integer',
             'custom_saturday_grace_minutes' => 'integer',
@@ -155,5 +161,18 @@ class Employee extends Model
     public function dutyRosters(): HasMany
     {
         return $this->hasMany(DutyRoster::class);
+    }
+
+    public function zktLocationGroups(): BelongsToMany
+    {
+        return $this->belongsToMany(ZktLocationGroup::class, 'employee_zkt_location_group')
+            ->withTimestamps()
+            ->orderBy('zkt_location_groups.sort_order')
+            ->orderBy('zkt_location_groups.name');
+    }
+
+    public function zktDeviceSyncs(): HasMany
+    {
+        return $this->hasMany(ZktDeviceEmployeeSync::class);
     }
 }

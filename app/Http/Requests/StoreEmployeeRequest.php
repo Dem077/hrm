@@ -4,6 +4,7 @@ namespace App\Http\Requests;
 
 use App\Enums\DutyType;
 use App\Enums\Gender;
+use App\Enums\ZktDevicePrivilege;
 use App\Support\PermissionRegistry;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -39,7 +40,16 @@ class StoreEmployeeRequest extends FormRequest
             'uses_custom_duty_times' => $usesCustomDutyTimes,
             'department_id' => $this->input('department_id') ?: null,
             'designation_id' => $this->input('designation_id') ?: null,
+            'device_privilege' => $this->input('device_privilege', ZktDevicePrivilege::Employee->value),
+            'device_card_number' => $this->normalizeDeviceCardNumber($this->input('device_card_number')),
+            'device_password' => $this->normalizeDevicePassword($this->input('device_password')),
             'manager_id' => $this->input('manager_id') ?: null,
+            'zkt_location_group_ids' => collect($this->input('zkt_location_group_ids', []))
+                ->filter(fn ($id) => filled($id))
+                ->map(fn ($id) => (int) $id)
+                ->unique()
+                ->values()
+                ->all(),
         ];
 
         if ($usesCustomDutyTimes) {
@@ -82,6 +92,26 @@ class StoreEmployeeRequest extends FormRequest
         return strlen($time) === 5 ? $time : substr($time, 0, 5);
     }
 
+    protected function normalizeDeviceCardNumber(mixed $value): ?string
+    {
+        if (! filled($value)) {
+            return null;
+        }
+
+        $digits = preg_replace('/\D+/', '', (string) $value);
+
+        return $digits !== '' ? $digits : null;
+    }
+
+    protected function normalizeDevicePassword(mixed $value): ?string
+    {
+        if (! filled($value)) {
+            return null;
+        }
+
+        return substr((string) $value, 0, 8);
+    }
+
     /**
      * @return array<string, mixed>
      */
@@ -97,6 +127,9 @@ class StoreEmployeeRequest extends FormRequest
             'gender' => ['required', Rule::enum(Gender::class)],
             'department_id' => ['nullable', 'exists:departments,id'],
             'designation_id' => ['nullable', 'exists:designations,id'],
+            'device_privilege' => ['nullable', Rule::enum(ZktDevicePrivilege::class)],
+            'device_card_number' => ['nullable', 'string', 'max:10', 'regex:/^\d+$/'],
+            'device_password' => ['nullable', 'string', 'max:8', 'regex:/^\d+$/'],
             'manager_id' => ['nullable', 'exists:employees,id'],
             'password' => ['nullable', 'string', 'min:8'],
             'is_active' => ['boolean'],
@@ -109,6 +142,8 @@ class StoreEmployeeRequest extends FormRequest
             'custom_saturday_duty_start_time' => ['nullable', 'prohibited_if:duty_type,shift', 'date_format:H:i:s'],
             'custom_saturday_duty_end_time' => ['nullable', 'prohibited_if:duty_type,shift', 'date_format:H:i:s', 'after:custom_saturday_duty_start_time'],
             'custom_saturday_grace_minutes' => ['nullable', 'prohibited_if:duty_type,shift', 'integer', 'min:0', 'max:180'],
+            'zkt_location_group_ids' => ['nullable', 'array'],
+            'zkt_location_group_ids.*' => ['integer', 'exists:zkt_location_groups,id'],
         ];
     }
 

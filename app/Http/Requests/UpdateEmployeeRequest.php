@@ -7,6 +7,15 @@ use Illuminate\Validation\Rule;
 
 class UpdateEmployeeRequest extends StoreEmployeeRequest
 {
+    protected function prepareForValidation(): void
+    {
+        parent::prepareForValidation();
+
+        if (! $this->filled('device_password')) {
+            $this->offsetUnset('device_password');
+        }
+    }
+
     /**
      * @return array<string, mixed>
      */
