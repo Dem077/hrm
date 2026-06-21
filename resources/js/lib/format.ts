@@ -1,7 +1,7 @@
-const appTimezone = import.meta.env.VITE_APP_TIMEZONE || 'UTC';
+import { getAppTimezone } from '@/lib/timezone';
 
 function resolveTimezone(timezone?: string): string {
-    return timezone || appTimezone;
+    return timezone || getAppTimezone();
 }
 
 export function formatClockTime(date: Date, timezone?: string): string {
@@ -95,7 +95,7 @@ export function displayToIso(value: string): string | null {
     return iso;
 }
 
-export function formatDate(value: string | null | undefined, timeZone: string = appTimezone): string {
+export function formatDate(value: string | null | undefined, timeZone: string = getAppTimezone()): string {
     if (!value) {
         return '—';
     }
@@ -117,7 +117,7 @@ export function formatDate(value: string | null | undefined, timeZone: string = 
     return formatDateValue(date, timeZone);
 }
 
-export function formatTime(value: string | null | undefined, timeZone: string = appTimezone): string {
+export function formatTime(value: string | null | undefined, timeZone: string = getAppTimezone()): string {
     if (!value) {
         return '—';
     }
@@ -136,7 +136,7 @@ export function formatTime(value: string | null | undefined, timeZone: string = 
     }).format(date);
 }
 
-export function formatDateTime(value: string | null | undefined, timeZone: string = appTimezone): string {
+export function formatDateTime(value: string | null | undefined, timeZone: string = getAppTimezone()): string {
     if (!value) {
         return '—';
     }
@@ -160,7 +160,7 @@ export function formatDateTime(value: string | null | undefined, timeZone: strin
 export function formatDateRange(
     from: string | null | undefined,
     to: string | null | undefined,
-    timeZone: string = appTimezone,
+    timeZone: string = getAppTimezone(),
 ): string {
     return `${formatDate(from, timeZone)} – ${formatDate(to, timeZone)}`;
 }

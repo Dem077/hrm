@@ -2,10 +2,11 @@ import { usePage } from '@inertiajs/vue3';
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 
 import { formatClockDate, formatClockTime, formatClockTimezoneLabel } from '@/lib/format';
+import { getAppTimezone } from '@/lib/timezone';
 
 export function useLiveClock() {
     const page = usePage<{ timezone?: string }>();
-    const timezone = computed(() => page.props.timezone || import.meta.env.VITE_APP_TIMEZONE || 'UTC');
+    const timezone = computed(() => page.props.timezone || getAppTimezone());
     const now = ref(new Date());
 
     let interval: ReturnType<typeof setInterval> | undefined;
