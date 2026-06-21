@@ -2,6 +2,7 @@
 import { Head, Link } from '@inertiajs/vue3';
 
 import EmptyState from '@/components/ui/EmptyState.vue';
+import EmployeeAvatar from '@/components/ui/EmployeeAvatar.vue';
 import PageHeader from '@/components/ui/PageHeader.vue';
 import UiButton from '@/components/ui/UiButton.vue';
 import { usePermissions } from '@/composables/usePermissions';
@@ -51,9 +52,7 @@ const { can } = usePermissions();
                 class="rounded-xl border border-slate-200 bg-surface p-4 shadow-sm transition hover:border-brand-500/30 dark:border-slate-800 dark:hover:border-brand-500/20"
             >
                 <div class="flex items-start gap-3">
-                    <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-600/15 text-sm font-semibold text-brand-700 dark:text-brand-400">
-                        {{ employee.name.charAt(0).toUpperCase() }}
-                    </div>
+                    <EmployeeAvatar :photo-url="employee.profile_photo_url" :name="employee.name" size="sm" />
                     <div class="min-w-0 flex-1">
                         <Link
                             :href="`/employees/${employee.id}`"

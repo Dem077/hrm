@@ -3,7 +3,10 @@
 namespace App\Http\Requests;
 
 use App\Enums\DutyType;
+use App\Enums\EmploymentType;
 use App\Enums\Gender;
+use App\Enums\BloodGroup;
+use App\Enums\MaritalStatus;
 use App\Enums\ZktDevicePrivilege;
 use App\Support\PermissionRegistry;
 use Illuminate\Foundation\Http\FormRequest;
@@ -43,6 +46,7 @@ class StoreEmployeeRequest extends FormRequest
             'device_privilege' => $this->input('device_privilege', ZktDevicePrivilege::Employee->value),
             'device_card_number' => $this->normalizeDeviceCardNumber($this->input('device_card_number')),
             'device_password' => $this->normalizeDevicePassword($this->input('device_password')),
+            'remove_profile_photo' => $this->boolean('remove_profile_photo', false),
             'manager_id' => $this->input('manager_id') ?: null,
             'zkt_location_group_ids' => collect($this->input('zkt_location_group_ids', []))
                 ->filter(fn ($id) => filled($id))
@@ -50,6 +54,21 @@ class StoreEmployeeRequest extends FormRequest
                 ->unique()
                 ->values()
                 ->all(),
+            'current_address' => $this->input('current_address') ?: null,
+            'permanent_address' => $this->input('permanent_address') ?: null,
+            'ext_no' => $this->input('ext_no') ?: null,
+            'personal_email' => $this->input('personal_email') ?: null,
+            'office_email' => $this->input('office_email') ?: null,
+            'emergency_contact_name' => $this->input('emergency_contact_name') ?: null,
+            'emergency_contact_number' => $this->input('emergency_contact_number') ?: null,
+            'marital_status' => $this->input('marital_status') ?: null,
+            'blood_group' => $this->input('blood_group') ?: null,
+            'date_of_birth' => $this->input('date_of_birth') ?: null,
+            'nationality' => $this->input('nationality') ?: null,
+            'religion' => $this->input('religion') ?: null,
+            'work_location' => $this->input('work_location') ?: null,
+            'qualification' => $this->input('qualification') ?: null,
+            'employment_type' => $this->input('employment_type') ?: null,
         ];
 
         if ($usesCustomDutyTimes) {
@@ -130,6 +149,8 @@ class StoreEmployeeRequest extends FormRequest
             'device_privilege' => ['nullable', Rule::enum(ZktDevicePrivilege::class)],
             'device_card_number' => ['nullable', 'string', 'max:10', 'regex:/^\d+$/'],
             'device_password' => ['nullable', 'string', 'max:8', 'regex:/^\d+$/'],
+            'profile_photo' => ['nullable', 'image', 'max:2048'],
+            'remove_profile_photo' => ['nullable', 'boolean'],
             'manager_id' => ['nullable', 'exists:employees,id'],
             'password' => ['nullable', 'string', 'min:8'],
             'is_active' => ['boolean'],
@@ -144,6 +165,24 @@ class StoreEmployeeRequest extends FormRequest
             'custom_saturday_grace_minutes' => ['nullable', 'prohibited_if:duty_type,shift', 'integer', 'min:0', 'max:180'],
             'zkt_location_group_ids' => ['nullable', 'array'],
             'zkt_location_group_ids.*' => ['integer', 'exists:zkt_location_groups,id'],
+            'current_address' => ['nullable', 'string', 'max:1000'],
+            'permanent_address' => ['nullable', 'string', 'max:1000'],
+            'ext_no' => ['nullable', 'string', 'max:30'],
+            'personal_email' => ['nullable', 'email', 'max:255'],
+            'office_email' => ['nullable', 'email', 'max:255'],
+            'emergency_contact_name' => ['nullable', 'string', 'max:255'],
+            'emergency_contact_number' => ['nullable', 'string', 'max:30'],
+            'marital_status' => ['nullable', Rule::enum(MaritalStatus::class)],
+            'blood_group' => ['nullable', Rule::enum(BloodGroup::class)],
+            'date_of_birth' => ['nullable', 'date', 'before_or_equal:today'],
+            'nationality' => ['nullable', 'string', 'max:100'],
+            'religion' => ['nullable', 'string', 'max:100'],
+            'work_location' => ['nullable', 'string', 'max:255'],
+            'qualification' => ['nullable', 'string', 'max:255'],
+            'employment_type' => ['nullable', Rule::enum(EmploymentType::class)],
+            'bank_name' => ['required', 'string', 'max:255'],
+            'account_name' => ['required', 'string', 'max:255'],
+            'account_no' => ['required', 'string', 'max:50'],
         ];
     }
 

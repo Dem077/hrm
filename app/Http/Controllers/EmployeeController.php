@@ -3,7 +3,10 @@
 namespace App\Http\Controllers;
 
 use App\Enums\DutyType;
+use App\Enums\EmploymentType;
 use App\Enums\Gender;
+use App\Enums\BloodGroup;
+use App\Enums\MaritalStatus;
 use App\Enums\ZktDevicePrivilege;
 use App\Http\Requests\StoreEmployeeRequest;
 use App\Http\Requests\UpdateEmployeeRequest;
@@ -16,6 +19,7 @@ use App\Services\Zkt\ZktDeviceUserSyncService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -44,7 +48,7 @@ class EmployeeController extends Controller
 
     public function store(StoreEmployeeRequest $request, ZktDeviceUserSyncService $deviceUserSyncService): RedirectResponse
     {
-        $data = $request->safe()->except('password', 'role_names', 'zkt_location_group_ids');
+        $data = $request->safe()->except('password', 'role_names', 'zkt_location_group_ids', 'profile_photo', 'remove_profile_photo');
         $password = $request->filled('password')
             ? $request->string('password')->value()
             : Str::password(12);
@@ -64,6 +68,7 @@ class EmployeeController extends Controller
             ]);
 
             $this->syncUserRoles($request, $user);
+            $this->syncProfilePhoto($request, $employee);
         });
 
         if ($employee && $request->user()?->can('zkt-devices.manage-users')) {
@@ -110,7 +115,7 @@ class EmployeeController extends Controller
 
     public function update(UpdateEmployeeRequest $request, Employee $employee, ZktDeviceUserSyncService $deviceUserSyncService): RedirectResponse
     {
-        $data = $request->safe()->except('password', 'role_names', 'zkt_location_group_ids');
+        $data = $request->safe()->except('password', 'role_names', 'zkt_location_group_ids', 'profile_photo', 'remove_profile_photo');
         $password = $request->filled('password')
             ? $request->string('password')->value()
             : null;
@@ -119,6 +124,7 @@ class EmployeeController extends Controller
 
         DB::transaction(function () use ($request, $employee, $data, $password, &$message): void {
             $employee->update($data);
+            $this->syncProfilePhoto($request, $employee);
 
             if ($employee->user) {
                 $employee->user->update([
@@ -177,6 +183,7 @@ class EmployeeController extends Controller
         }
 
         $deviceUserSyncService->removeEmployeeFromAllDevices($employee);
+        $this->deleteProfilePhoto($employee);
 
         DB::transaction(function () use ($employee): void {
             $user = $employee->user;
@@ -226,6 +233,7 @@ class EmployeeController extends Controller
             'id' => null,
             'staff_id' => '',
             'name' => '',
+            'profile_photo_url' => null,
             'national_id' => '',
             'email' => '',
             'mobile_number' => '',
@@ -249,6 +257,25 @@ class EmployeeController extends Controller
             'custom_saturday_grace_minutes' => null,
             'role_names' => [],
             'zkt_location_group_ids' => [],
+            'current_address' => '',
+            'permanent_address' => '',
+            'ext_no' => '',
+            'personal_email' => '',
+            'office_email' => '',
+            'emergency_contact_name' => '',
+            'emergency_contact_number' => '',
+            'marital_status' => null,
+            'blood_group' => null,
+            'date_of_birth' => null,
+            'nationality' => '',
+            'religion' => '',
+            'work_location' => '',
+            'qualification' => '',
+            'employment_type' => null,
+            'bank_name' => '',
+            'account_name' => '',
+            'account_no' => '',
+            'length_of_service_label' => null,
         ];
     }
 
@@ -285,6 +312,9 @@ class EmployeeController extends Controller
                     'label' => "{$manager->name} ({$manager->staff_id})",
                 ]),
             'genders' => Gender::options(),
+            'maritalStatuses' => MaritalStatus::options(),
+            'bloodGroups' => BloodGroup::options(),
+            'employmentTypes' => EmploymentType::options(),
             'dutyTypes' => DutyType::options(),
             'devicePrivileges' => ZktDevicePrivilege::options(),
             'roles' => $this->assignableRoles($employee),
@@ -336,6 +366,38 @@ class EmployeeController extends Controller
         $user->syncRoles($request->input('role_names', []));
     }
 
+    protected function syncProfilePhoto(Request $request, Employee $employee): void
+    {
+        if ($request->boolean('remove_profile_photo')) {
+            $this->deleteProfilePhoto($employee);
+
+            return;
+        }
+
+        if (! $request->hasFile('profile_photo')) {
+            return;
+        }
+
+        $this->deleteProfilePhoto($employee);
+
+        $employee->update([
+            'profile_photo_path' => $request->file('profile_photo')->store('employee-photos', 'public'),
+        ]);
+    }
+
+    protected function deleteProfilePhoto(Employee $employee): void
+    {
+        if (! $employee->profile_photo_path) {
+            return;
+        }
+
+        Storage::disk('public')->delete($employee->profile_photo_path);
+
+        if ($employee->exists) {
+            $employee->update(['profile_photo_path' => null]);
+        }
+    }
+
     /**
      * @return array<string, mixed>
      */
@@ -348,6 +410,7 @@ class EmployeeController extends Controller
             'id' => $employee->id,
             'staff_id' => $employee->staff_id,
             'name' => $employee->name,
+            'profile_photo_url' => $employee->profilePhotoUrl(),
             'national_id' => $employee->national_id,
             'email' => $employee->email,
             'mobile_number' => $employee->mobile_number,
@@ -407,6 +470,28 @@ class EmployeeController extends Controller
             'zkt_device_syncs' => $employee->relationLoaded('zktDeviceSyncs')
                 ? $employee->zktDeviceSyncs->map(fn ($sync) => $sync->toPresentationArray())->values()->all()
                 : [],
+            'current_address' => $employee->current_address,
+            'permanent_address' => $employee->permanent_address,
+            'ext_no' => $employee->ext_no,
+            'personal_email' => $employee->personal_email,
+            'office_email' => $employee->office_email,
+            'emergency_contact_name' => $employee->emergency_contact_name,
+            'emergency_contact_number' => $employee->emergency_contact_number,
+            'marital_status' => $employee->marital_status?->value,
+            'marital_status_label' => $employee->marital_status?->label(),
+            'blood_group' => $employee->blood_group?->value,
+            'blood_group_label' => $employee->blood_group?->label(),
+            'date_of_birth' => $employee->date_of_birth?->toDateString(),
+            'nationality' => $employee->nationality,
+            'religion' => $employee->religion,
+            'work_location' => $employee->work_location,
+            'qualification' => $employee->qualification,
+            'employment_type' => $employee->employment_type?->value,
+            'employment_type_label' => $employee->employment_type?->label(),
+            'bank_name' => $employee->bank_name,
+            'account_name' => $employee->account_name,
+            'account_no' => $employee->account_no,
+            'length_of_service_label' => $employee->lengthOfServiceLabel(),
         ];
 
         if ($includeRelations) {

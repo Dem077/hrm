@@ -190,6 +190,7 @@ it('assigns location groups when updating an employee', function () {
         'duty_type' => 'normal',
         'uses_custom_duty_times' => false,
         'zkt_location_group_ids' => [$group->id],
+        ...employeeBankPayload(),
     ]);
 
     $response->assertRedirect();

@@ -2,6 +2,7 @@
 import { Head, router } from '@inertiajs/vue3';
 
 import PageHeader from '@/components/ui/PageHeader.vue';
+import EmployeeAvatar from '@/components/ui/EmployeeAvatar.vue';
 import UiBadge from '@/components/ui/UiBadge.vue';
 import UiButton from '@/components/ui/UiButton.vue';
 import UiCard from '@/components/ui/UiCard.vue';
@@ -44,6 +45,14 @@ function pullDeviceCredentials(id: number) {
 
         <div class="grid gap-6 lg:grid-cols-2">
             <UiCard title="Profile">
+                <div class="mb-5 flex items-center gap-4 border-b border-slate-100 pb-5 dark:border-slate-800">
+                    <EmployeeAvatar :photo-url="employee.profile_photo_url" :name="employee.name" size="md" />
+                    <div>
+                        <p class="font-semibold text-slate-900 dark:text-white">{{ employee.name }}</p>
+                        <p class="text-sm text-slate-500">{{ employee.staff_id }}</p>
+                    </div>
+                </div>
+
                 <dl class="space-y-4 text-sm">
                     <div class="flex justify-between gap-4 border-b border-slate-100 pb-3 dark:border-slate-800">
                         <dt class="text-slate-500">Staff ID</dt>
@@ -141,6 +150,96 @@ function pullDeviceCredentials(id: number) {
                         <dd class="font-medium text-slate-900 dark:text-slate-100">{{ employee.is_active ? 'Active' : 'Inactive' }}</dd>
                     </div>
                 </dl>
+            </UiCard>
+        </div>
+
+        <div class="mt-6">
+            <UiCard title="Profile details" description="Extended employee profile, contact, and banking information.">
+                <div class="grid gap-6 lg:grid-cols-2">
+                    <dl class="space-y-4 text-sm">
+                        <div class="flex justify-between gap-4 border-b border-slate-100 pb-3 dark:border-slate-800">
+                            <dt class="text-slate-500">Current address</dt>
+                            <dd class="max-w-xs text-right font-medium text-slate-900 dark:text-slate-100">{{ employee.current_address ?? '—' }}</dd>
+                        </div>
+                        <div class="flex justify-between gap-4 border-b border-slate-100 pb-3 dark:border-slate-800">
+                            <dt class="text-slate-500">Permanent address</dt>
+                            <dd class="max-w-xs text-right font-medium text-slate-900 dark:text-slate-100">{{ employee.permanent_address ?? '—' }}</dd>
+                        </div>
+                        <div class="flex justify-between gap-4 border-b border-slate-100 pb-3 dark:border-slate-800">
+                            <dt class="text-slate-500">Ext No</dt>
+                            <dd class="font-medium text-slate-900 dark:text-slate-100">{{ employee.ext_no ?? '—' }}</dd>
+                        </div>
+                        <div class="flex justify-between gap-4 border-b border-slate-100 pb-3 dark:border-slate-800">
+                            <dt class="text-slate-500">Personal email</dt>
+                            <dd class="font-medium text-slate-900 dark:text-slate-100">{{ employee.personal_email ?? '—' }}</dd>
+                        </div>
+                        <div class="flex justify-between gap-4 border-b border-slate-100 pb-3 dark:border-slate-800">
+                            <dt class="text-slate-500">Office email</dt>
+                            <dd class="font-medium text-slate-900 dark:text-slate-100">{{ employee.office_email ?? '—' }}</dd>
+                        </div>
+                        <div class="flex justify-between gap-4 border-b border-slate-100 pb-3 dark:border-slate-800">
+                            <dt class="text-slate-500">Emergency contact</dt>
+                            <dd class="text-right font-medium text-slate-900 dark:text-slate-100">
+                                <template v-if="employee.emergency_contact_name || employee.emergency_contact_number">
+                                    {{ employee.emergency_contact_name ?? '—' }}
+                                    <span v-if="employee.emergency_contact_number" class="block text-xs text-slate-500">{{ employee.emergency_contact_number }}</span>
+                                </template>
+                                <span v-else>—</span>
+                            </dd>
+                        </div>
+                        <div class="flex justify-between gap-4">
+                            <dt class="text-slate-500">Length of service</dt>
+                            <dd class="font-medium text-slate-900 dark:text-slate-100">{{ employee.length_of_service_label ?? '—' }}</dd>
+                        </div>
+                    </dl>
+
+                    <dl class="space-y-4 text-sm">
+                        <div class="flex justify-between gap-4 border-b border-slate-100 pb-3 dark:border-slate-800">
+                            <dt class="text-slate-500">Date of birth</dt>
+                            <dd class="font-medium text-slate-900 dark:text-slate-100">{{ formatDate(employee.date_of_birth) }}</dd>
+                        </div>
+                        <div class="flex justify-between gap-4 border-b border-slate-100 pb-3 dark:border-slate-800">
+                            <dt class="text-slate-500">Marital status</dt>
+                            <dd class="font-medium text-slate-900 dark:text-slate-100">{{ employee.marital_status_label ?? '—' }}</dd>
+                        </div>
+                        <div class="flex justify-between gap-4 border-b border-slate-100 pb-3 dark:border-slate-800">
+                            <dt class="text-slate-500">Blood group</dt>
+                            <dd class="font-medium text-slate-900 dark:text-slate-100">{{ employee.blood_group_label ?? '—' }}</dd>
+                        </div>
+                        <div class="flex justify-between gap-4 border-b border-slate-100 pb-3 dark:border-slate-800">
+                            <dt class="text-slate-500">Nationality</dt>
+                            <dd class="font-medium text-slate-900 dark:text-slate-100">{{ employee.nationality ?? '—' }}</dd>
+                        </div>
+                        <div class="flex justify-between gap-4 border-b border-slate-100 pb-3 dark:border-slate-800">
+                            <dt class="text-slate-500">Religion</dt>
+                            <dd class="font-medium text-slate-900 dark:text-slate-100">{{ employee.religion ?? '—' }}</dd>
+                        </div>
+                        <div class="flex justify-between gap-4 border-b border-slate-100 pb-3 dark:border-slate-800">
+                            <dt class="text-slate-500">Work location</dt>
+                            <dd class="font-medium text-slate-900 dark:text-slate-100">{{ employee.work_location ?? '—' }}</dd>
+                        </div>
+                        <div class="flex justify-between gap-4 border-b border-slate-100 pb-3 dark:border-slate-800">
+                            <dt class="text-slate-500">Qualification</dt>
+                            <dd class="font-medium text-slate-900 dark:text-slate-100">{{ employee.qualification ?? '—' }}</dd>
+                        </div>
+                        <div class="flex justify-between gap-4 border-b border-slate-100 pb-3 dark:border-slate-800">
+                            <dt class="text-slate-500">Employment type</dt>
+                            <dd class="font-medium text-slate-900 dark:text-slate-100">{{ employee.employment_type_label ?? '—' }}</dd>
+                        </div>
+                        <div class="flex justify-between gap-4 border-b border-slate-100 pb-3 dark:border-slate-800">
+                            <dt class="text-slate-500">Bank name</dt>
+                            <dd class="font-medium text-slate-900 dark:text-slate-100">{{ employee.bank_name ?? '—' }}</dd>
+                        </div>
+                        <div class="flex justify-between gap-4 border-b border-slate-100 pb-3 dark:border-slate-800">
+                            <dt class="text-slate-500">Account name</dt>
+                            <dd class="font-medium text-slate-900 dark:text-slate-100">{{ employee.account_name ?? '—' }}</dd>
+                        </div>
+                        <div class="flex justify-between gap-4">
+                            <dt class="text-slate-500">Account no</dt>
+                            <dd class="font-medium text-slate-900 dark:text-slate-100">{{ employee.account_no ?? '—' }}</dd>
+                        </div>
+                    </dl>
+                </div>
             </UiCard>
         </div>
 

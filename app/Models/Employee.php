@@ -3,7 +3,10 @@
 namespace App\Models;
 
 use App\Enums\DutyType;
+use App\Enums\EmploymentType;
 use App\Enums\Gender;
+use App\Enums\BloodGroup;
+use App\Enums\MaritalStatus;
 use App\Enums\ZktDevicePrivilege;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -12,10 +15,30 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Storage;
 
 #[Fillable([
     'staff_id',
     'name',
+    'profile_photo_path',
+    'current_address',
+    'permanent_address',
+    'ext_no',
+    'personal_email',
+    'office_email',
+    'emergency_contact_name',
+    'emergency_contact_number',
+    'marital_status',
+    'blood_group',
+    'date_of_birth',
+    'nationality',
+    'religion',
+    'work_location',
+    'qualification',
+    'employment_type',
+    'bank_name',
+    'account_name',
+    'account_no',
     'national_id',
     'email',
     'mobile_number',
@@ -45,7 +68,11 @@ class Employee extends Model
     {
         return [
             'joined_date' => 'date',
+            'date_of_birth' => 'date',
             'gender' => Gender::class,
+            'marital_status' => MaritalStatus::class,
+            'blood_group' => BloodGroup::class,
+            'employment_type' => EmploymentType::class,
             'is_active' => 'boolean',
             'works_saturday' => 'boolean',
             'duty_type' => DutyType::class,
@@ -111,6 +138,54 @@ class Employee extends Model
         }
 
         return substr($time, 0, 5);
+    }
+
+    public function profilePhotoUrl(): ?string
+    {
+        if (! $this->profile_photo_path) {
+            return null;
+        }
+
+        if (! Storage::disk('public')->exists($this->profile_photo_path)) {
+            return null;
+        }
+
+        return Storage::disk('public')->url($this->profile_photo_path);
+    }
+
+    public function lengthOfServiceLabel(): ?string
+    {
+        if (! $this->joined_date) {
+            return null;
+        }
+
+        $start = $this->joined_date->copy()->startOfDay();
+        $end = now()->startOfDay();
+
+        if ($start->greaterThan($end)) {
+            return '0 days';
+        }
+
+        $diff = $start->diff($end);
+        $parts = [];
+
+        if ($diff->y > 0) {
+            $parts[] = $diff->y.' '.($diff->y === 1 ? 'year' : 'years');
+        }
+
+        if ($diff->m > 0) {
+            $parts[] = $diff->m.' '.($diff->m === 1 ? 'month' : 'months');
+        }
+
+        if ($parts === [] && $diff->d > 0) {
+            $parts[] = $diff->d.' '.($diff->d === 1 ? 'day' : 'days');
+        }
+
+        if ($parts === []) {
+            return 'Less than 1 day';
+        }
+
+        return implode(', ', $parts);
     }
 
     public function department(): BelongsTo

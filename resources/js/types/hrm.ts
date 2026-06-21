@@ -4,10 +4,25 @@ export type DutyType = 'normal' | 'shift';
 
 export type ZktDevicePrivilege = 'employee' | 'enroller' | 'administrator';
 
+export type MaritalStatus = 'single' | 'married' | 'divorced' | 'widowed' | 'other';
+
+export type BloodGroup =
+    | 'a_positive'
+    | 'a_negative'
+    | 'b_positive'
+    | 'b_negative'
+    | 'ab_positive'
+    | 'ab_negative'
+    | 'o_positive'
+    | 'o_negative';
+
+export type EmploymentType = 'permanent' | 'contract' | 'probation' | 'temporary' | 'intern';
+
 export type Employee = {
     id: number | null;
     staff_id: string;
     name: string;
+    profile_photo_url?: string | null;
     national_id: string;
     email: string | null;
     mobile_number: string | null;
@@ -44,6 +59,28 @@ export type Employee = {
     zkt_location_group_ids?: number[];
     zkt_location_groups?: Array<{ id: number; name: string; code: string | null; is_active: boolean }>;
     zkt_device_syncs?: ZktDeviceEmployeeSync[];
+    current_address?: string | null;
+    permanent_address?: string | null;
+    ext_no?: string | null;
+    personal_email?: string | null;
+    office_email?: string | null;
+    emergency_contact_name?: string | null;
+    emergency_contact_number?: string | null;
+    marital_status?: MaritalStatus | null;
+    marital_status_label?: string | null;
+    blood_group?: BloodGroup | null;
+    blood_group_label?: string | null;
+    date_of_birth?: string | null;
+    nationality?: string | null;
+    religion?: string | null;
+    work_location?: string | null;
+    qualification?: string | null;
+    employment_type?: EmploymentType | null;
+    employment_type_label?: string | null;
+    bank_name?: string | null;
+    account_name?: string | null;
+    account_no?: string | null;
+    length_of_service_label?: string | null;
 };
 
 export type ZktDeviceEmployeeSync = {
@@ -106,6 +143,11 @@ export type DutyTypeOption = {
 
 export type DevicePrivilegeOption = {
     value: ZktDevicePrivilege;
+    label: string;
+};
+
+export type EnumOption<T extends string = string> = {
+    value: T;
     label: string;
 };
 

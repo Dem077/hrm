@@ -52,3 +52,16 @@ function something()
 {
     // ..
 }
+
+/**
+ * @param  array<string, mixed>  $overrides
+ * @return array<string, mixed>
+ */
+function employeeBankPayload(array $overrides = []): array
+{
+    return array_merge([
+        'bank_name' => 'Test Bank',
+        'account_name' => 'Jane Doe',
+        'account_no' => '1234567890',
+    ], $overrides);
+}
