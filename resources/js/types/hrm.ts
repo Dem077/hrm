@@ -29,10 +29,18 @@ export type Employee = {
     joined_date: string | null;
     gender: Gender;
     gender_label?: string;
-    department_id: number | null;
+    grade_id: number | null;
+    grade?: {
+        id: number;
+        label: string;
+        grade?: string;
+        title?: string;
+        path_label?: string;
+        group?: { id: number; code: string; name: string } | null;
+        node?: { id: number; name: string } | null;
+        level?: { id: number; level_number: number; reference_title: string } | null;
+    } | null;
     department?: { id: number; name: string } | null;
-    designation_id: number | null;
-    designation?: { id: number; name: string } | null;
     device_privilege: ZktDevicePrivilege;
     device_privilege_label?: string;
     device_card_number: string | null;
@@ -78,6 +86,7 @@ export type Employee = {
     employment_type?: EmploymentType | null;
     employment_type_label?: string | null;
     bank_name?: string | null;
+    bank_name_label?: string | null;
     account_name?: string | null;
     account_no?: string | null;
     length_of_service_label?: string | null;
@@ -105,24 +114,6 @@ export type ZktLocationGroup = {
     employees_count?: number;
     device_ids?: number[];
     devices?: Array<{ id: number; name: string; location: string | null; is_active: boolean }>;
-};
-
-export type Department = {
-    id: number | null;
-    name: string;
-    code: string | null;
-    description: string | null;
-    head_employee_id: number | null;
-    head_employee?: { id: number; name: string; staff_id: string } | null;
-    is_active: boolean;
-    sort_order: number;
-    employees_count?: number;
-    employees?: Array<{
-        id: number;
-        staff_id: string;
-        name: string;
-        manager: { id: number; name: string } | null;
-    }>;
 };
 
 export type SelectOption = {

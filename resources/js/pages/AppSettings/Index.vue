@@ -161,21 +161,6 @@ function submit() {
                     </div>
                 </UiCard>
 
-                <UiCard title="Leave settings" description="Control whether leave carry-forward is available in Leave Types.">
-                    <label class="flex items-center gap-3 rounded-xl border border-slate-200 px-4 py-3 text-sm dark:border-slate-700">
-                        <input
-                            v-model="form.leave_carry_forward_enabled"
-                            type="checkbox"
-                            class="rounded border-slate-300 text-brand-600 dark:border-slate-600"
-                            :disabled="!can('app-settings.update')"
-                        />
-                        Enable leave carry-forward
-                    </label>
-                    <p class="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                        Turn this off to hide carry-forward options in Leave Types and ignore carry-forward in leave balance checks.
-                    </p>
-                </UiCard>
-
                 <div v-if="can('app-settings.update')" class="flex justify-end">
                     <UiButton type="submit" :disabled="form.processing">Save settings</UiButton>
                 </div>

@@ -55,7 +55,9 @@ class DutyRoster extends Model
      */
     public function toPresentationArray(): array
     {
-        $this->loadMissing('employee:id,staff_id,name,department_id', 'employee.department:id,name');
+        $this->loadMissing('employee:id,staff_id,name,grade_id', 'employee.grade.level.node.group');
+
+        $path = $this->employee?->grade?->resolvePath();
 
         return [
             'id' => $this->id,
@@ -64,7 +66,7 @@ class DutyRoster extends Model
                 'id' => $this->employee->id,
                 'staff_id' => $this->employee->staff_id,
                 'name' => $this->employee->name,
-                'department' => $this->employee->department?->name,
+                'department' => $path['node']['name'] ?? $path['group']['name'] ?? null,
             ] : null,
             'duty_date' => $this->duty_date->toDateString(),
             'duty_start_time' => $this->formatTimeForInput($this->duty_start_time),

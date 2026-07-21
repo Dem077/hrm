@@ -8,6 +8,7 @@ use App\Enums\PayrollComponentType;
 use App\Models\Employee;
 use App\Services\Attendance\AttendanceSheetService;
 use App\Services\Attendance\PayrollPeriodService;
+use Carbon\CarbonInterface;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -27,20 +28,49 @@ class PayrollProcessingService
         $period = $this->payrollPeriodService->recentPeriodByOffset($periodOffset)
             ?? $this->payrollPeriodService->recentPeriodByOffset(0);
 
-        $from = $period['from'];
-        $to = $period['to'];
+        return $this->buildForDateRange(
+            $period['from'],
+            $period['to'],
+            $period['label'],
+            $departmentId,
+        );
+    }
+
+    /**
+     * @return array{period: array<string, string>, rows: list<array<string, mixed>>}
+     */
+    public function buildForDateRange(
+        CarbonInterface $from,
+        CarbonInterface $to,
+        string $label,
+        ?int $departmentId = null,
+    ): array {
+        if ($to->lt($from)) {
+            [$from, $to] = [$to, $from];
+        }
 
         $employees = Employee::query()
             ->with([
-                'department:id,name',
-                'designation:id,name',
-                'designation.payrollComponents' => fn ($query) => $query->where('is_active', true),
+                'grade.level.group',
+                'grade.level.node.group',
+                'grade.level.node.parent',
+                'grade.payrollComponents' => fn ($query) => $query->where('is_active', true),
             ])
             ->where('is_active', true)
-            ->whereNotNull('designation_id')
-            ->when($departmentId, fn ($query) => $query->where('department_id', $departmentId))
+            ->when($departmentId, function ($query) use ($departmentId) {
+                $query->whereHas('grade.level', fn ($levelQuery) => $levelQuery->where('structure_node_id', $departmentId));
+            })
             ->orderBy('name')
-            ->get();
+            ->get([
+                'id',
+                'staff_id',
+                'name',
+                'national_id',
+                'grade_id',
+                'bank_name',
+                'account_name',
+                'account_no',
+            ]);
 
         $rows = [];
 
@@ -63,7 +93,7 @@ class PayrollProcessingService
             $deductions = 0.0;
             $details = [];
 
-            foreach ($employee->designation?->payrollComponents ?? [] as $component) {
+            foreach ($employee->grade?->payrollComponents ?? [] as $component) {
                 $rate = (float) ($component->pivot->amount ?? 0);
                 $amount = match ($component->calculation_method) {
                     PayrollComponentCalculationMethod::Daily => round($rate * $daysAttended, 2),
@@ -86,12 +116,19 @@ class PayrollProcessingService
                 ];
             }
 
+            $path = $employee->grade?->resolvePath();
+
             $rows[] = [
                 'employee_id' => $employee->id,
                 'staff_id' => $employee->staff_id,
                 'employee_name' => $employee->name,
-                'department' => $employee->department?->name,
-                'designation' => $employee->designation?->name,
+                'national_id' => $employee->national_id,
+                'department' => $path['node']['name'] ?? $path['group']['name'] ?? null,
+                'department_id' => $path['node']['id'] ?? null,
+                'designation' => $employee->grade?->label(),
+                'bank_name' => $employee->bank_name,
+                'account_name' => $employee->account_name,
+                'account_no' => $employee->account_no,
                 'days_attended' => $daysAttended,
                 'hours_worked' => $hoursWorked,
                 'gross' => round($gross, 2),
@@ -105,7 +142,7 @@ class PayrollProcessingService
             'period' => [
                 'from' => $from->toDateString(),
                 'to' => $to->toDateString(),
-                'label' => $period['label'],
+                'label' => $label,
             ],
             'rows' => $rows,
         ];
@@ -121,8 +158,8 @@ class PayrollProcessingService
         $sheet->fromArray([
             'Staff ID',
             'Employee',
-            'Department',
-            'Designation',
+            'Org unit',
+            'Grade',
             'Days Attended',
             'Hours Worked',
             'Gross',

@@ -41,7 +41,7 @@ function closeModal() {
             <div>
                 <h2 class="text-base font-semibold text-slate-900 dark:text-white">Payroll components</h2>
                 <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                    Building blocks for every designation — fixed amounts or daily rates.
+                    Building blocks for every grade package — fixed amounts or daily rates.
                 </p>
             </div>
             <UiButton v-if="canManage" @click="openCreate">Add component</UiButton>
@@ -56,7 +56,7 @@ function closeModal() {
                         <th class="px-5 py-3.5 font-medium">Calculation</th>
                         <th class="px-5 py-3.5 font-medium">Mandatory</th>
                         <th class="px-5 py-3.5 font-medium">Status</th>
-                        <th class="px-5 py-3.5 font-medium">Designations</th>
+                        <th class="px-5 py-3.5 font-medium">Grades</th>
                         <th v-if="canManage" class="px-5 py-3.5 font-medium">Actions</th>
                     </tr>
                 </thead>
@@ -86,7 +86,7 @@ function closeModal() {
                                 {{ component.is_active ? 'Active' : 'Inactive' }}
                             </span>
                         </td>
-                        <td class="px-5 py-4 text-slate-600 dark:text-slate-400">{{ component.designations_count ?? 0 }}</td>
+                        <td class="px-5 py-4 text-slate-600 dark:text-slate-400">{{ component.grades_count ?? 0 }}</td>
                         <td v-if="canManage" class="px-5 py-4">
                             <div v-if="!component.is_system_mandatory" class="flex gap-2">
                                 <UiButton size="sm" variant="ghost" @click="openEdit(component)">Edit</UiButton>

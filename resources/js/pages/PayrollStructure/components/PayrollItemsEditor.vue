@@ -9,7 +9,7 @@ import {
     groupPayrollItems,
     updatePayrollItem,
 } from '@/lib/payroll';
-import type { DesignationPayrollItem, LoanBankOption, PayrollComponent, PayrollLoanBank } from '@/types/payroll';
+import type { DesignationPayrollItem, LoanBankOption, PayrollComponent } from '@/types/payroll';
 
 const props = defineProps<{
     items: DesignationPayrollItem[];
@@ -46,7 +46,7 @@ function updateLoanMonths(item: DesignationPayrollItem, loanMonths: number) {
     emit('update:items', updatePayrollItem(props.items, item, { loan_months: loanMonths }));
 }
 
-function updateLoanBank(item: DesignationPayrollItem, loanBank: PayrollLoanBank) {
+function updateLoanBank(item: DesignationPayrollItem, loanBank: string) {
     const bank = props.loanBanks.find((option) => option.value === loanBank);
 
     emit(
@@ -65,7 +65,9 @@ function addOptionalComponent(componentId: number) {
         return;
     }
 
-    emit('update:items', [...props.items, componentToPayrollItem(component)]);
+    const defaultBank = props.loanBanks[0] ?? null;
+
+    emit('update:items', [...props.items, componentToPayrollItem(component, 0, defaultBank)]);
 }
 
 function removeItem(item: DesignationPayrollItem) {
@@ -224,7 +226,7 @@ function removeItem(item: DesignationPayrollItem) {
                             <select
                                 :value="item.loan_bank ?? ''"
                                 class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20 dark:border-slate-700 dark:bg-surface-elevated dark:text-white"
-                                @change="updateLoanBank(item, ($event.target as HTMLSelectElement).value as PayrollLoanBank)"
+                                @change="updateLoanBank(item, ($event.target as HTMLSelectElement).value)"
                             >
                                 <option value="" disabled>Select bank</option>
                                 <option v-for="bank in loanBanks" :key="bank.value" :value="bank.value">

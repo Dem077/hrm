@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Enums\AttendanceMachineBrand;
+use App\Enums\ZktConnectionMode;
 use App\Enums\ZktConnectionProtocol;
 use App\Enums\ZktConnectionStatus;
 use App\Enums\ZktMachineType;
@@ -11,6 +12,8 @@ use App\Http\Requests\StoreZktDeviceRequest;
 use App\Http\Requests\UpdateZktDeviceRequest;
 use App\Jobs\SyncZktDeviceJob;
 use App\Models\ZktDevice;
+use App\Services\Adms\AdmsCommandQueue;
+use App\Services\Adms\AdmsUserCommandBuilder;
 use App\Services\Zkt\ZktDeviceClient;
 use App\Services\Zkt\ZktDeviceSyncService;
 use App\Services\Zkt\ZktDeviceUserSyncService;
@@ -28,6 +31,7 @@ class ZktDeviceController extends Controller
     {
         return Inertia::render('ZktDevices/Index', [
             'devices' => ZktDevice::query()
+                ->excludeSystemDevices()
                 ->latest()
                 ->get()
                 ->map(fn (ZktDevice $device) => $this->formatDevice($device)),
@@ -39,8 +43,10 @@ class ZktDeviceController extends Controller
         return Inertia::render('ZktDevices/Form', [
             'device' => $this->emptyDevice(),
             'protocols' => $this->protocolOptions(),
+            'connectionModes' => ZktConnectionMode::options(),
             'brands' => AttendanceMachineBrand::options(),
             'machineTypes' => ZktMachineType::options(),
+            'admsCloudUrl' => rtrim((string) config('app.url'), '/').'/iclock',
         ]);
     }
 
@@ -53,8 +59,12 @@ class ZktDeviceController extends Controller
             ->with('success', 'Attendance machine created successfully.');
     }
 
-    public function show(ZktDevice $zktDevice): Response
+    public function show(ZktDevice $zktDevice): Response|RedirectResponse
     {
+        if ($redirect = $this->ensureManagedDevice($zktDevice)) {
+            return $redirect;
+        }
+
         $zktDevice->load([
             'syncLogs' => fn ($query) => $query->latest('started_at')->limit(20),
             'attendanceLogs' => fn ($query) => $query->with('employee:id,staff_id,name')->latest('punched_at')->limit(50),
@@ -66,18 +76,28 @@ class ZktDeviceController extends Controller
         ]);
     }
 
-    public function edit(ZktDevice $zktDevice): Response
+    public function edit(ZktDevice $zktDevice): Response|RedirectResponse
     {
+        if ($redirect = $this->ensureManagedDevice($zktDevice)) {
+            return $redirect;
+        }
+
         return Inertia::render('ZktDevices/Form', [
-            'device' => $this->formatDevice($zktDevice),
+            'device' => $this->formatDevice($zktDevice->loadCount(['locationGroups', 'remoteDoorSites'])),
             'protocols' => $this->protocolOptions(),
+            'connectionModes' => ZktConnectionMode::options(),
             'brands' => AttendanceMachineBrand::options(),
             'machineTypes' => ZktMachineType::options(),
+            'admsCloudUrl' => rtrim((string) config('app.url'), '/').'/iclock',
         ]);
     }
 
     public function update(UpdateZktDeviceRequest $request, ZktDevice $zktDevice): RedirectResponse
     {
+        if ($redirect = $this->ensureManagedDevice($zktDevice)) {
+            return $redirect;
+        }
+
         $zktDevice->update($request->validated());
 
         return redirect()
@@ -87,6 +107,10 @@ class ZktDeviceController extends Controller
 
     public function destroy(ZktDevice $zktDevice): RedirectResponse
     {
+        if ($redirect = $this->ensureManagedDevice($zktDevice)) {
+            return $redirect;
+        }
+
         $zktDevice->delete();
 
         return redirect()
@@ -132,6 +156,10 @@ class ZktDeviceController extends Controller
             return $redirect;
         }
 
+        if ($zktDevice->usesAdms()) {
+            return $this->testAdmsDevice($zktDevice);
+        }
+
         $result = $client->testConnection($zktDevice);
 
         return back()->with(
@@ -140,10 +168,30 @@ class ZktDeviceController extends Controller
         );
     }
 
-    public function sync(ZktDevice $zktDevice, ZktDeviceSyncService $syncService): RedirectResponse
-    {
+    public function sync(
+        ZktDevice $zktDevice,
+        ZktDeviceSyncService $syncService,
+        AdmsCommandQueue $admsCommandQueue,
+        AdmsUserCommandBuilder $admsUserCommandBuilder,
+    ): RedirectResponse {
         if ($redirect = $this->ensureDeviceIsActive($zktDevice)) {
             return $redirect;
+        }
+
+        if ($zktDevice->usesAdms()) {
+            if (! filled($zktDevice->serial_number)) {
+                return back()->with('error', 'ADMS device is missing a serial number.');
+            }
+
+            $admsCommandQueue->enqueue(
+                $zktDevice,
+                $admsUserCommandBuilder->buildQueryAttLogCommand(),
+            );
+
+            return back()->with(
+                'success',
+                'Queued an attendance query. The machine will re-upload recent punches on its next ADMS poll.',
+            );
         }
 
         $syncLog = $syncService->sync($zktDevice);
@@ -158,6 +206,18 @@ class ZktDeviceController extends Controller
     {
         if ($redirect = $this->ensureDeviceIsActive($zktDevice)) {
             return $redirect;
+        }
+
+        if ($zktDevice->usesAdms()) {
+            $lastSeen = $zktDevice->last_adms_seen_at
+                ? DateFormatter::formatDateTime($zktDevice->last_adms_seen_at)
+                : 'never';
+            $serverTime = DateFormatter::formatDateTime(now());
+
+            return back()->with(
+                'success',
+                "ADMS devices do not report clock time on demand. Last ADMS contact: {$lastSeen} · Server: {$serverTime}. Use Sync time to push the server clock to the machine.",
+            );
         }
 
         try {
@@ -183,10 +243,30 @@ class ZktDeviceController extends Controller
         }
     }
 
-    public function syncTime(ZktDevice $zktDevice, ZktDeviceClient $client): RedirectResponse
-    {
+    public function syncTime(
+        ZktDevice $zktDevice,
+        ZktDeviceClient $client,
+        AdmsCommandQueue $admsCommandQueue,
+        AdmsUserCommandBuilder $admsUserCommandBuilder,
+    ): RedirectResponse {
         if ($redirect = $this->ensureDeviceIsActive($zktDevice)) {
             return $redirect;
+        }
+
+        if ($zktDevice->usesAdms()) {
+            if (! filled($zktDevice->serial_number)) {
+                return back()->with('error', 'ADMS device is missing a serial number.');
+            }
+
+            // F18 rejects SET TIME (-1002). Clock is driven by HTTP Date + reload.
+            foreach ($admsUserCommandBuilder->buildTimeSyncOptionCommands() as $payload) {
+                $admsCommandQueue->enqueue($zktDevice, $payload);
+            }
+
+            return back()->with(
+                'success',
+                'Queued clock sync (reload options + SET DATE). SET OPTION alone only saves timezone — it does not change the display. Wait ~30s for the next poll, then check the F18 clock. Server time is '.now()->format('Y-m-d H:i:s').'.',
+            );
         }
 
         try {
@@ -213,13 +293,16 @@ class ZktDeviceController extends Controller
 
     public function syncAll(Request $request): RedirectResponse
     {
-        $devices = ZktDevice::query()->where('is_active', true)->get();
+        $devices = ZktDevice::query()
+            ->where('is_active', true)
+            ->get()
+            ->filter(fn (ZktDevice $device) => $device->usesTcpPull() && $device->isManagedDevice());
 
         foreach ($devices as $device) {
             SyncZktDeviceJob::dispatch($device);
         }
 
-        return back()->with('success', "Queued {$devices->count()} device(s) for sync.");
+        return back()->with('success', "Queued {$devices->count()} TCP device(s) for punch sync. ADMS machines push punches automatically.");
     }
 
     public function syncUsers(ZktDevice $zktDevice, ZktDeviceUserSyncService $userSyncService): RedirectResponse
@@ -243,6 +326,13 @@ class ZktDeviceController extends Controller
             );
         }
 
+        if ($zktDevice->usesAdms()) {
+            return back()->with(
+                'success',
+                "Queued {$synced} user profile command(s). The machine will apply them on its next ADMS poll.",
+            );
+        }
+
         return back()->with('success', "Synced {$synced} assigned user profile(s) to this machine.");
     }
 
@@ -258,6 +348,14 @@ class ZktDeviceController extends Controller
 
         try {
             $results = $userSyncService->pullDeviceCredentials($zktDevice);
+
+            if ($zktDevice->usesAdms()) {
+                return back()->with(
+                    'success',
+                    'Queued a user query. Credentials will import when the machine replies on its next ADMS poll.',
+                );
+            }
+
             $updated = collect($results)->where('status', 'updated')->count();
             $matched = count($results);
 
@@ -284,11 +382,56 @@ class ZktDeviceController extends Controller
         }
     }
 
+    protected function testAdmsDevice(ZktDevice $device): RedirectResponse
+    {
+        if (! filled($device->serial_number)) {
+            return back()->with('error', 'ADMS device is missing a serial number.');
+        }
+
+        $lastSeen = $device->last_adms_seen_at;
+
+        if ($lastSeen === null) {
+            $device->update([
+                'connection_status' => ZktConnectionStatus::Offline,
+                'last_sync_error' => 'Waiting for the machine to contact ADMS.',
+            ]);
+
+            return back()->with(
+                'error',
+                'No ADMS contact yet. Check Cloud Server IP/port on the machine and that it can reach this server.',
+            );
+        }
+
+        if ($lastSeen->greaterThan(now()->subMinutes(5))) {
+            $device->update([
+                'connection_status' => ZktConnectionStatus::Online,
+                'last_sync_error' => null,
+            ]);
+
+            return back()->with(
+                'success',
+                'ADMS connection OK. Last contact '.$lastSeen->diffForHumans().' ('.DateFormatter::formatDateTime($lastSeen).').',
+            );
+        }
+
+        $device->update([
+            'connection_status' => ZktConnectionStatus::Offline,
+            'last_sync_error' => 'No recent ADMS contact.',
+        ]);
+
+        return back()->with(
+            'error',
+            'No recent ADMS contact (last '.DateFormatter::formatDateTime($lastSeen).'). The machine may be offline or misconfigured.',
+        );
+    }
+
     /**
      * @return array<string, mixed>
      */
     protected function formatDevice(ZktDevice $device, bool $includeRelations = false): array
     {
+        $machineTypeLockReason = $device->machineTypeChangeBlockedReason();
+
         $data = [
             'id' => $device->id,
             'name' => $device->name,
@@ -299,10 +442,15 @@ class ZktDeviceController extends Controller
             'machine_type_label' => $device->machine_type->label(),
             'machine_type_short_label' => $device->machine_type->shortLabel(),
             'machine_type_color' => $device->machine_type->color(),
+            'machine_type_locked' => $machineTypeLockReason !== null,
+            'machine_type_lock_reason' => $machineTypeLockReason,
+            'default_access_group' => $device->default_access_group,
             'ip_address' => $device->ip_address,
             'port' => $device->port,
             'protocol' => $device->protocol->value,
             'protocol_label' => $device->protocol->label(),
+            'connection_mode' => $device->connection_mode->value,
+            'connection_mode_label' => $device->connection_mode->label(),
             'comm_password' => $device->comm_password,
             'serial_number' => $device->serial_number,
             'model_name' => $device->model_name,
@@ -313,11 +461,18 @@ class ZktDeviceController extends Controller
             ...$device->connectionStatusPresentation(),
             'last_connected_at' => $device->last_connected_at?->toIso8601String(),
             'last_synced_at' => $device->last_synced_at?->toIso8601String(),
+            'last_adms_seen_at' => $device->last_adms_seen_at?->toIso8601String(),
             'last_sync_error' => $device->last_sync_error,
             'notes' => $device->notes,
             'tcpmux_enabled' => $device->tcpmux_enabled,
             'tcpmux_subdomain' => $device->tcpmux_subdomain,
             'tcpmux_port' => $device->tcpmux_port,
+            'adms_pending_commands' => $includeRelations
+                ? app(AdmsCommandQueue::class)->pendingCount($device)
+                : null,
+            'adms_failed_commands' => $includeRelations
+                ? app(AdmsCommandQueue::class)->failedCount($device)
+                : null,
             'created_at' => $device->created_at?->toIso8601String(),
             'updated_at' => $device->updated_at?->toIso8601String(),
         ];
@@ -347,6 +502,13 @@ class ZktDeviceController extends Controller
                     ] : null,
                 ],
             );
+            $data['adms_commands'] = $device->admsCommands()
+                ->latest('command_no')
+                ->limit(30)
+                ->get()
+                ->map(fn ($command) => $command->toPresentationArray())
+                ->values()
+                ->all();
         }
 
         return $data;
@@ -363,9 +525,14 @@ class ZktDeviceController extends Controller
             'brand' => AttendanceMachineBrand::Zkt->value,
             'location' => '',
             'machine_type' => ZktMachineType::Attendance->value,
+            'machine_type_locked' => false,
+            'machine_type_lock_reason' => null,
+            'default_access_group' => 1,
             'ip_address' => '',
             'port' => (int) config('zkt.default_port', 4370),
             'protocol' => config('zkt.default_protocol', 'tcp'),
+            'connection_mode' => ZktConnectionMode::TcpPull->value,
+            'connection_mode_label' => ZktConnectionMode::TcpPull->label(),
             'comm_password' => 0,
             'serial_number' => null,
             'model_name' => null,
@@ -378,12 +545,24 @@ class ZktDeviceController extends Controller
             'connection_status_color' => ZktConnectionStatus::Unknown->color(),
             'last_connected_at' => null,
             'last_synced_at' => null,
+            'last_adms_seen_at' => null,
             'last_sync_error' => null,
             'notes' => '',
             'tcpmux_enabled' => false,
             'tcpmux_subdomain' => null,
             'tcpmux_port' => null,
         ];
+    }
+
+    protected function ensureManagedDevice(ZktDevice $device): ?RedirectResponse
+    {
+        if ($device->isManagedDevice()) {
+            return null;
+        }
+
+        return redirect()
+            ->route('zkt-devices.index')
+            ->with('error', 'This is a system device and cannot be managed here.');
     }
 
     protected function ensureDeviceIsActive(ZktDevice $device): ?RedirectResponse

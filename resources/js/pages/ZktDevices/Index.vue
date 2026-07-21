@@ -112,7 +112,12 @@ function iconTone(color?: string): string {
 
                 <div class="mt-2.5 space-y-1.5 text-xs">
                     <p class="truncate font-mono text-slate-700 dark:text-slate-300">
-                        {{ device.ip_address }}:{{ device.port }}
+                        <template v-if="device.connection_mode === 'adms_push'">
+                            ADMS · {{ device.serial_number ?? 'No SN' }}
+                        </template>
+                        <template v-else>
+                            {{ device.ip_address }}:{{ device.port }}
+                        </template>
                     </p>
                     <div class="flex items-center justify-between gap-2">
                         <div class="flex flex-wrap gap-1">
@@ -121,12 +126,19 @@ function iconTone(color?: string): string {
                                 :color="device.connection_status_color"
                             />
                             <UiBadge
+                                :label="device.connection_mode === 'adms_push' ? 'ADMS' : 'TCP'"
+                                :color="device.connection_mode === 'adms_push' ? 'info' : 'gray'"
+                            />
+                            <UiBadge
                                 :label="device.machine_type_short_label ?? device.machine_type_label ?? 'Attendance'"
                                 :color="device.machine_type_color ?? 'info'"
                             />
                         </div>
-                        <span class="truncate text-slate-500" :title="formatDateTime(device.last_synced_at)">
-                            {{ formatDateTime(device.last_synced_at) }}
+                        <span
+                            class="truncate text-slate-500"
+                            :title="formatDateTime(device.connection_mode === 'adms_push' ? device.last_adms_seen_at : device.last_synced_at)"
+                        >
+                            {{ formatDateTime(device.connection_mode === 'adms_push' ? device.last_adms_seen_at : device.last_synced_at) }}
                         </span>
                     </div>
                 </div>

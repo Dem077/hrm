@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\DB;
 class PayrollComponentService
 {
     public function __construct(
-        protected DesignationPayrollService $designationPayrollService,
+        protected GradePayrollService $gradePayrollService,
     ) {}
 
     /**
@@ -17,7 +17,7 @@ class PayrollComponentService
     public function listForIndex(): array
     {
         return PayrollComponent::query()
-            ->withCount('designations')
+            ->withCount('grades')
             ->orderBy('sort_order')
             ->orderBy('name')
             ->get()
@@ -32,7 +32,7 @@ class PayrollComponentService
     {
         return DB::transaction(function () use ($data) {
             $component = PayrollComponent::query()->create($data);
-            $this->designationPayrollService->attachMandatoryComponentToAllDesignations($component);
+            $this->gradePayrollService->attachMandatoryComponentToAllGrades($component);
 
             return $component;
         });
@@ -53,7 +53,7 @@ class PayrollComponentService
             $component->update($data);
 
             if (! $wasMandatory && $component->is_mandatory) {
-                $this->designationPayrollService->attachMandatoryComponentToAllDesignations($component);
+                $this->gradePayrollService->attachMandatoryComponentToAllGrades($component);
             }
         });
 
@@ -70,8 +70,8 @@ class PayrollComponentService
             return 'Mandatory payroll components cannot be deleted. Remove the mandatory flag first or deactivate the component.';
         }
 
-        if ($component->designations()->exists()) {
-            return 'This component is assigned to designations and cannot be deleted. Deactivate it instead.';
+        if ($component->grades()->exists()) {
+            return 'This component is assigned to grades and cannot be deleted. Deactivate it instead.';
         }
 
         $component->delete();
@@ -82,7 +82,7 @@ class PayrollComponentService
     public function createSuccessMessage(PayrollComponent $component): string
     {
         if ($component->is_mandatory) {
-            return 'Payroll component created and added to all designations.';
+            return 'Payroll component created and added to all grades.';
         }
 
         return 'Payroll component created successfully.';

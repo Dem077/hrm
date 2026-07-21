@@ -9,11 +9,14 @@ import UiInput from '@/components/ui/UiInput.vue';
 import UiModal from '@/components/ui/UiModal.vue';
 import { usePermissions } from '@/composables/usePermissions';
 import AppLayout from '@/layouts/AppLayout.vue';
+import BanksCard from '@/pages/AttendanceSettings/components/BanksCard.vue';
+import type { BankRow } from '@/pages/AttendanceSettings/components/BanksCard.vue';
 import { formatDate } from '@/lib/format';
 import type { AttendanceDutyPolicy, PayrollPeriodSettings, PublicHoliday } from '@/types/attendance';
 
 const props = defineProps<{
     leaveCarryForwardEnabled: boolean;
+    banks: BankRow[];
     policies: AttendanceDutyPolicy[];
     tempPolicies: AttendanceDutyPolicy[];
     holidays: PublicHoliday[];
@@ -297,7 +300,7 @@ function payrollEndLabel(startDay: number, endDay: number | null): string {
                                     type="radio"
                                     value="1"
                                     class="sr-only"
-                                    :disabled="!can('attendance-settings.payroll-period.update')"
+                                    :disabled="!can('attendance-settings.leave-carry-forward.update')"
                                 />
                                 <span
                                     class="inline-flex rounded-md px-4 py-1.5 text-sm"
@@ -316,7 +319,7 @@ function payrollEndLabel(startDay: number, endDay: number | null): string {
                                     type="radio"
                                     value="0"
                                     class="sr-only"
-                                    :disabled="!can('attendance-settings.payroll-period.update')"
+                                    :disabled="!can('attendance-settings.leave-carry-forward.update')"
                                 />
                                 <span
                                     class="inline-flex rounded-md px-4 py-1.5 text-sm"
@@ -334,13 +337,18 @@ function payrollEndLabel(startDay: number, endDay: number | null): string {
                             Controls whether carry-forward options appear in Leave Types.
                         </p>
                     </div>
-                    <div v-if="can('attendance-settings.payroll-period.update')" class="flex justify-end">
+                    <div v-if="can('attendance-settings.leave-carry-forward.update')" class="flex justify-end">
                         <UiButton type="submit" variant="primary" :disabled="leaveCarryForwardForm.processing">
                             Save
                         </UiButton>
                     </div>
                 </form>
             </UiCard>
+
+            <BanksCard
+                :banks="banks"
+                :can-manage="can('attendance-settings.payroll-period.update')"
+            />
 
             <UiCard
                 title="Duty policies"

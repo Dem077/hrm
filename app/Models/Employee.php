@@ -2,10 +2,10 @@
 
 namespace App\Models;
 
+use App\Enums\BloodGroup;
 use App\Enums\DutyType;
 use App\Enums\EmploymentType;
 use App\Enums\Gender;
-use App\Enums\BloodGroup;
 use App\Enums\MaritalStatus;
 use App\Enums\ZktDevicePrivilege;
 use Carbon\CarbonInterface;
@@ -44,8 +44,7 @@ use Illuminate\Support\Facades\Storage;
     'mobile_number',
     'joined_date',
     'gender',
-    'department_id',
-    'designation_id',
+    'grade_id',
     'device_privilege',
     'device_card_number',
     'device_password',
@@ -188,14 +187,9 @@ class Employee extends Model
         return implode(', ', $parts);
     }
 
-    public function department(): BelongsTo
+    public function grade(): BelongsTo
     {
-        return $this->belongsTo(Department::class);
-    }
-
-    public function designation(): BelongsTo
-    {
-        return $this->belongsTo(Designation::class);
+        return $this->belongsTo(StructureGrade::class, 'grade_id');
     }
 
     public function user(): BelongsTo
@@ -211,11 +205,6 @@ class Employee extends Model
     public function directReports(): HasMany
     {
         return $this->hasMany(self::class, 'manager_id');
-    }
-
-    public function headedDepartments(): HasMany
-    {
-        return $this->hasMany(Department::class, 'head_employee_id');
     }
 
     public function attendanceLogs(): HasMany
@@ -246,8 +235,34 @@ class Employee extends Model
             ->orderBy('zkt_location_groups.name');
     }
 
+    public function selfPunchSites(): BelongsToMany
+    {
+        return $this->belongsToMany(SelfPunchSite::class, 'employee_self_punch_site')
+            ->withTimestamps()
+            ->orderBy('self_punch_sites.sort_order')
+            ->orderBy('self_punch_sites.name');
+    }
+
+    public function remoteDoorSites(): BelongsToMany
+    {
+        return $this->belongsToMany(RemoteDoorSite::class, 'employee_remote_door_site')
+            ->withTimestamps()
+            ->orderBy('remote_door_sites.sort_order')
+            ->orderBy('remote_door_sites.name');
+    }
+
     public function zktDeviceSyncs(): HasMany
     {
         return $this->hasMany(ZktDeviceEmployeeSync::class);
+    }
+
+    public function payrollRunItems(): HasMany
+    {
+        return $this->hasMany(PayrollRunItem::class);
+    }
+
+    public function payrollRunAdjustments(): HasMany
+    {
+        return $this->hasMany(PayrollRunAdjustment::class);
     }
 }

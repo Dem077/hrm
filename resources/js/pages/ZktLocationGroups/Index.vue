@@ -12,7 +12,15 @@ import type { ZktLocationGroup } from '@/types/hrm';
 
 const props = defineProps<{
     locationGroups: ZktLocationGroup[];
-    devices: Array<{ id: number; name: string; location: string | null; machine_type?: string; machine_type_label?: string }>;
+    devices: Array<{
+        id: number;
+        name: string;
+        location: string | null;
+        machine_type?: string;
+        machine_type_label?: string;
+        connection_mode?: string;
+        connection_mode_label?: string;
+    }>;
     emptyLocationGroup: ZktLocationGroup;
 }>();
 
@@ -208,6 +216,9 @@ function syncGroupUsers(id: number) {
                                     <span class="block text-xs text-slate-500">
                                         {{ device.location ?? 'No location' }}
                                         · {{ device.machine_type_label ?? device.machine_type_short_label ?? 'Attendance machine' }}
+                                        <template v-if="device.connection_mode_label">
+                                            · {{ device.connection_mode_label }}
+                                        </template>
                                     </span>
                                 </span>
                             </label>

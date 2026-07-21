@@ -30,8 +30,7 @@ it('requires bank details when creating an employee', function () {
         'mobile_number' => '',
         'joined_date' => '2024-01-01',
         'gender' => 'female',
-        'department_id' => '',
-        'designation_id' => '',
+        'grade_id' => '',
         'manager_id' => '',
         'is_active' => true,
         'works_saturday' => false,
@@ -52,8 +51,7 @@ it('stores profile details when creating an employee', function () {
         'mobile_number' => '7700000',
         'joined_date' => '2020-06-01',
         'gender' => 'female',
-        'department_id' => '',
-        'designation_id' => '',
+        'grade_id' => '',
         'manager_id' => '',
         'is_active' => true,
         'works_saturday' => false,
@@ -67,7 +65,7 @@ it('stores profile details when creating an employee', function () {
         'date_of_birth' => '1990-05-15',
         'employment_type' => 'permanent',
         ...employeeBankPayload([
-            'bank_name' => 'Commercial Bank',
+            'bank_name' => 'CBM',
             'account_name' => 'Jane Doe',
             'account_no' => '9876543210',
         ]),
@@ -82,7 +80,7 @@ it('stores profile details when creating an employee', function () {
         ->and($employee->marital_status?->value)->toBe('married')
         ->and($employee->blood_group?->value)->toBe('a_positive')
         ->and($employee->employment_type?->value)->toBe('permanent')
-        ->and($employee->bank_name)->toBe('Commercial Bank')
+        ->and($employee->bank_name)->toBe('CBM')
         ->and($employee->lengthOfServiceLabel())->not->toBeNull();
 });
 

@@ -1,93 +1,78 @@
 <script setup lang="ts">
-import { Head, router } from '@inertiajs/vue3';
-import { computed, reactive, watch } from 'vue';
+import { Head, router, usePage } from '@inertiajs/vue3';
+import { reactive, ref } from 'vue';
 
 import PageHeader from '@/components/ui/PageHeader.vue';
+import UiBadge from '@/components/ui/UiBadge.vue';
 import UiButton from '@/components/ui/UiButton.vue';
 import UiCard from '@/components/ui/UiCard.vue';
+import UiDateInput from '@/components/ui/UiDateInput.vue';
+import UiModal from '@/components/ui/UiModal.vue';
 import UiSelect from '@/components/ui/UiSelect.vue';
+import { usePermissions } from '@/composables/usePermissions';
 import AppLayout from '@/layouts/AppLayout.vue';
 
-type PayrollRow = {
-    employee_id: number;
-    staff_id: string;
-    employee_name: string;
-    department: string | null;
-    designation: string | null;
-    days_attended: number;
-    hours_worked: number;
-    gross: number;
-    deductions: number;
-    net: number;
-    details: Array<{
-        component: string;
-        method: string;
-        rate: number;
-        amount: number;
-        type: string;
-    }>;
+type Run = {
+    id: number;
+    reference_no: string;
+    period_label: string;
+    period_from: string;
+    period_to: string;
+    period_source: string;
+    status: 'draft' | 'processed' | 'finalised';
+    status_label: string;
+    created_by: string | null;
+    processed_by: string | null;
+    finalised_by: string | null;
+    created_at: string | null;
+    processed_at: string | null;
+    finalised_at: string | null;
 };
 
-const props = defineProps<{
-    rows: PayrollRow[];
-    period: { from: string; to: string; label: string };
-    periodOptions: Array<{ offset: number; label: string }>;
-    departments: Array<{ id: number; name: string }>;
-    filters: { period_offset: number; department_id: number | null };
+defineProps<{
+    runs: Run[];
+    periodPresentation: {
+        current: { from: string; to: string; label: string };
+    };
 }>();
 
-const filters = reactive({
-    period_offset: props.filters.period_offset ?? 0,
-    department_id: props.filters.department_id ?? '',
+const { can } = usePermissions();
+const page = usePage<{ errors: Record<string, string> }>();
+const showStartModal = ref(false);
+
+const startForm = reactive({
+    period_source: 'global',
+    from: '',
+    to: '',
 });
 
-watch(
-    () => props.filters,
-    (value) => {
-        filters.period_offset = value.period_offset ?? 0;
-        filters.department_id = value.department_id ?? '';
-    },
-    { deep: true },
-);
-
-const totals = computed(() => {
-    return props.rows.reduce(
-        (carry, row) => ({
-            gross: carry.gross + row.gross,
-            deductions: carry.deductions + row.deductions,
-            net: carry.net + row.net,
-        }),
-        { gross: 0, deductions: 0, net: 0 },
-    );
-});
-
-const exportUrl = computed(() => {
-    const params = new URLSearchParams();
-    params.set('period_offset', String(filters.period_offset));
-
-    if (filters.department_id) {
-        params.set('department_id', String(filters.department_id));
-    }
-
-    return `/payroll/export?${params.toString()}`;
-});
-
-function applyFilters() {
-    router.get(
-        '/payroll',
-        {
-            period_offset: filters.period_offset,
-            department_id: filters.department_id || undefined,
-        },
-        {
-            preserveState: true,
-            replace: true,
-        },
-    );
+function statusColor(status: Run['status']): string {
+    if (status === 'draft') return 'warning';
+    if (status === 'processed') return 'info';
+    return 'success';
 }
 
-function formatMoney(value: number): string {
-    return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+function openRun(runId: number): void {
+    router.visit(`/payroll/${runId}`);
+}
+
+function deleteRun(run: Run): void {
+    if (!confirm(`Delete draft payroll ${run.reference_no}? This cannot be undone.`)) {
+        return;
+    }
+
+    router.delete(`/payroll/${run.id}`, { preserveScroll: true });
+}
+
+function createRun(): void {
+    router.post('/payroll', startForm, {
+        onSuccess: () => {
+            showStartModal.value = false;
+            startForm.period_source = 'global';
+            startForm.from = '';
+            startForm.to = '';
+        },
+    });
 }
 </script>
 
@@ -95,85 +80,88 @@ function formatMoney(value: number): string {
     <Head title="Payroll" />
 
     <AppLayout>
-        <PageHeader
-            title="Payroll"
-            description="Process staff payroll for a payroll period and export an Excel sheet with calculated details."
-        >
+        <PageHeader title="Payroll" description="View and manage payroll runs. Open a run to process, adjust, or export.">
             <template #actions>
-                <UiButton :href="exportUrl" external variant="primary">
-                    Export Excel
+                <UiButton v-if="can('payroll.create')" variant="primary" @click="showStartModal = true">
+                    Start New Payroll
                 </UiButton>
             </template>
         </PageHeader>
 
-        <UiCard title="Payroll filters" description="Choose the payroll period and optional department scope.">
-            <div class="grid gap-4 md:grid-cols-3">
-                <UiSelect v-model="filters.period_offset" label="Payroll period">
-                    <option v-for="option in periodOptions" :key="option.offset" :value="option.offset">
-                        {{ option.label }}
-                    </option>
-                </UiSelect>
-
-                <UiSelect v-model="filters.department_id" label="Department">
-                    <option value="">All departments</option>
-                    <option v-for="department in departments" :key="department.id" :value="department.id">
-                        {{ department.name }}
-                    </option>
-                </UiSelect>
-
-                <div class="flex items-end">
-                    <UiButton variant="secondary" class="w-full md:w-auto" @click="applyFilters">
-                        Process payroll
-                    </UiButton>
-                </div>
-            </div>
-            <p class="mt-3 text-sm text-slate-500 dark:text-slate-400">
-                Selected period: {{ period.label }} ({{ period.from }} to {{ period.to }})
+        <UiCard title="Payroll runs" description="Select a payroll run to open its details.">
+            <p v-if="runs.length === 0" class="py-8 text-center text-sm text-slate-500 dark:text-slate-400">
+                No payroll runs yet. Start a new payroll to create a draft.
             </p>
-        </UiCard>
 
-        <UiCard
-            title="Payroll result"
-            :description="`${rows.length} staff processed. Gross ${formatMoney(totals.gross)}, deductions ${formatMoney(totals.deductions)}, net ${formatMoney(totals.net)}.`"
-        >
-            <div class="overflow-x-auto">
+            <div v-else class="overflow-x-auto">
                 <table class="min-w-full divide-y divide-slate-200 text-sm dark:divide-slate-700">
                     <thead>
                         <tr class="text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                            <th class="px-3 py-2">Staff</th>
-                            <th class="px-3 py-2">Department</th>
-                            <th class="px-3 py-2">Designation</th>
-                            <th class="px-3 py-2">Days</th>
-                            <th class="px-3 py-2">Hours</th>
-                            <th class="px-3 py-2">Gross</th>
-                            <th class="px-3 py-2">Deductions</th>
-                            <th class="px-3 py-2">Net</th>
+                            <th class="px-3 py-2">Reference</th>
+                            <th class="px-3 py-2">Period</th>
+                            <th class="px-3 py-2">Status</th>
+                            <th class="px-3 py-2">Created by</th>
+                            <th class="px-3 py-2 text-right">Action</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
-                        <tr v-for="row in rows" :key="row.employee_id">
+                        <tr
+                            v-for="run in runs"
+                            :key="run.id"
+                            class="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-900/30"
+                            @click="openRun(run.id)"
+                        >
+                            <td class="px-3 py-2 font-medium">{{ run.reference_no }}</td>
+                            <td class="px-3 py-2">{{ run.period_label }}</td>
                             <td class="px-3 py-2">
-                                <p class="font-medium text-slate-800 dark:text-slate-100">{{ row.employee_name }}</p>
-                                <p class="text-xs text-slate-500 dark:text-slate-400">{{ row.staff_id }}</p>
+                                <UiBadge :label="run.status_label" :color="statusColor(run.status)" />
                             </td>
-                            <td class="px-3 py-2">{{ row.department ?? '—' }}</td>
-                            <td class="px-3 py-2">{{ row.designation ?? '—' }}</td>
-                            <td class="px-3 py-2">{{ row.days_attended }}</td>
-                            <td class="px-3 py-2">{{ row.hours_worked }}</td>
-                            <td class="px-3 py-2">{{ formatMoney(row.gross) }}</td>
-                            <td class="px-3 py-2">{{ formatMoney(row.deductions) }}</td>
-                            <td class="px-3 py-2 font-semibold text-brand-700 dark:text-brand-300">
-                                {{ formatMoney(row.net) }}
-                            </td>
-                        </tr>
-                        <tr v-if="rows.length === 0">
-                            <td colspan="8" class="px-3 py-6 text-center text-slate-500 dark:text-slate-400">
-                                No staff matched the selected filters. Assign designations to employees to include them in payroll.
+                            <td class="px-3 py-2">{{ run.created_by ?? '—' }}</td>
+                            <td class="px-3 py-2 text-right">
+                                <div class="flex items-center justify-end gap-2">
+                                    <UiButton size="sm" variant="ghost" @click.stop="openRun(run.id)">Open</UiButton>
+                                    <UiButton
+                                        v-if="can('payroll.delete') && run.status === 'draft'"
+                                        size="sm"
+                                        variant="danger"
+                                        @click.stop="deleteRun(run)"
+                                    >
+                                        Delete
+                                    </UiButton>
+                                </div>
                             </td>
                         </tr>
                     </tbody>
                 </table>
             </div>
         </UiCard>
+
+        <UiModal
+            :open="showStartModal"
+            title="Start New Payroll"
+            description="Choose global payroll period or enter a custom date range."
+            max-width="md"
+            @close="showStartModal = false"
+        >
+            <div class="space-y-4">
+                <UiSelect v-model="startForm.period_source" label="Period source">
+                    <option value="global">Global payroll period ({{ periodPresentation.current.label }})</option>
+                    <option value="custom">Custom date range</option>
+                </UiSelect>
+
+                <div v-if="startForm.period_source === 'custom'" class="grid gap-3 md:grid-cols-2">
+                    <UiDateInput v-model="startForm.from" label="From" />
+                    <UiDateInput v-model="startForm.to" label="To" />
+                </div>
+
+                <p v-if="page.props.errors.period" class="text-xs text-red-600 dark:text-red-400">
+                    {{ page.props.errors.period }}
+                </p>
+            </div>
+            <template #footer>
+                <UiButton variant="ghost" @click="showStartModal = false">Cancel</UiButton>
+                <UiButton variant="primary" @click="createRun">Create Draft</UiButton>
+            </template>
+        </UiModal>
     </AppLayout>
 </template>

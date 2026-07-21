@@ -1,19 +1,18 @@
 <script setup lang="ts">
-import { Head, router } from '@inertiajs/vue3';
+import { Head } from '@inertiajs/vue3';
+import { router } from '@inertiajs/vue3';
 
 import PageHeader from '@/components/ui/PageHeader.vue';
 import { usePermissions } from '@/composables/usePermissions';
 import AppLayout from '@/layouts/AppLayout.vue';
-import DesignationsCard from '@/pages/PayrollStructure/components/DesignationsCard.vue';
+import GradesCard from '@/pages/PayrollStructure/components/GradesCard.vue';
 import PayrollComponentsCard from '@/pages/PayrollStructure/components/PayrollComponentsCard.vue';
-import type { Designation, DesignationPayrollItem, LoanBankOption, PayrollComponent } from '@/types/payroll';
+import type { LoanBankOption, PayrollComponent, StructureGradePackage } from '@/types/payroll';
 
 defineProps<{
     components: PayrollComponent[];
-    designations: Designation[];
+    grades: StructureGradePackage[];
     emptyComponent: PayrollComponent;
-    emptyDesignation: Designation;
-    defaultDesignationItems: DesignationPayrollItem[];
     loanBanks: LoanBankOption[];
 }>();
 
@@ -26,12 +25,6 @@ function destroyComponent(id: number, name: string) {
         router.delete(`/payroll-structure/components/${id}`, { preserveScroll: true });
     }
 }
-
-function destroyDesignation(id: number, name: string) {
-    if (confirm(`Delete designation "${name}"?`)) {
-        router.delete(`/payroll-structure/designations/${id}`, { preserveScroll: true });
-    }
-}
 </script>
 
 <template>
@@ -40,7 +33,7 @@ function destroyDesignation(id: number, name: string) {
     <AppLayout>
         <PageHeader
             title="Payroll structure"
-            description="Define payroll components, then build salary packages per designation with fixed amounts and daily rates."
+            description="Define payroll components, then build salary packages per grade with fixed amounts and daily rates."
         />
 
         <div class="space-y-8">
@@ -51,14 +44,11 @@ function destroyDesignation(id: number, name: string) {
                 @delete="destroyComponent"
             />
 
-            <DesignationsCard
-                :designations="designations"
+            <GradesCard
+                :grades="grades"
                 :components="components"
-                :empty-designation="emptyDesignation"
-                :default-designation-items="defaultDesignationItems"
                 :loan-banks="loanBanks"
                 :can-manage="canManage"
-                @delete="destroyDesignation"
             />
         </div>
     </AppLayout>

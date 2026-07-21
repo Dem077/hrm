@@ -2,27 +2,30 @@
 
 namespace App\Services\Payroll;
 
-use App\Enums\PayrollLoanBank;
+use App\Models\Bank;
 
 class PayrollStructureService
 {
     public function __construct(
         protected PayrollComponentService $payrollComponentService,
-        protected DesignationPayrollService $designationPayrollService,
+        protected GradePayrollService $gradePayrollService,
     ) {}
 
     /**
-     * @return array<string, mixed>
+     * @return array{
+     *     components: list<array<string, mixed>>,
+     *     grades: list<array<string, mixed>>,
+     *     emptyComponent: array<string, mixed>,
+     *     loanBanks: list<array{value: string, label: string}>
+     * }
      */
     public function indexPayload(): array
     {
         return [
             'components' => $this->payrollComponentService->listForIndex(),
-            'designations' => $this->designationPayrollService->listForIndex(),
+            'grades' => $this->gradePayrollService->listForIndex(),
             'emptyComponent' => $this->payrollComponentService->emptyAttributes(),
-            'emptyDesignation' => $this->designationPayrollService->emptyAttributes(),
-            'defaultDesignationItems' => $this->designationPayrollService->defaultItemsForNewDesignation(),
-            'loanBanks' => PayrollLoanBank::options(),
+            'loanBanks' => Bank::options(),
         ];
     }
 }

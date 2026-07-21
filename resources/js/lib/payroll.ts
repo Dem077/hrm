@@ -1,9 +1,9 @@
 import type {
     DesignationPayrollItem,
     DesignationTotals,
+    LoanBankOption,
     PayrollComponent,
     PayrollComponentCalculationMethod,
-    PayrollLoanBank,
 } from '@/types/payroll';
 
 export function formatPayrollMoney(amount: number): string {
@@ -49,7 +49,11 @@ export function amountFieldLabel(item: DesignationPayrollItem): string {
     return 'Amount';
 }
 
-export function componentToPayrollItem(component: PayrollComponent, amount = 0): DesignationPayrollItem {
+export function componentToPayrollItem(
+    component: PayrollComponent,
+    amount = 0,
+    defaultBank: LoanBankOption | null = null,
+): DesignationPayrollItem {
     return {
         payroll_component_id: component.id!,
         name: component.name,
@@ -61,8 +65,10 @@ export function componentToPayrollItem(component: PayrollComponent, amount = 0):
         is_mandatory: component.is_mandatory,
         amount,
         loan_months: isLoanType(component.type) ? 12 : null,
-        loan_bank: isLoanType(component.type) ? 'BML' : null,
-        loan_bank_label: isLoanType(component.type) ? 'BML' : null,
+        loan_bank: isLoanType(component.type) ? (defaultBank?.value ?? defaultLoanBank) : null,
+        loan_bank_label: isLoanType(component.type)
+            ? (defaultBank?.label ?? defaultBank?.value ?? defaultLoanBank)
+            : null,
     };
 }
 
@@ -76,7 +82,12 @@ export type PayrollItemGroups = {
 
 export function groupPayrollItems(items: DesignationPayrollItem[]): PayrollItemGroups {
     return {
-        mandatory: items.filter((item) => item.is_mandatory),
+        mandatory: items.filter(
+            (item) =>
+                item.is_mandatory &&
+                !isAttendanceAllowanceCalculation(item.calculation_method) &&
+                !isLoanType(item.type),
+        ),
         fixed_additions: items.filter(
             (item) => !item.is_mandatory && item.calculation_method === 'fixed' && item.type === 'addition',
         ),
@@ -133,4 +144,4 @@ export function updatePayrollItem(
     );
 }
 
-export const defaultLoanBank: PayrollLoanBank = 'BML';
+export const defaultLoanBank = 'BML';

@@ -1,5 +1,9 @@
 import type { AppBranding } from '@/types/branding';
 
+function canUseDom(): boolean {
+    return typeof document !== 'undefined';
+}
+
 export function hexToRgba(hex: string, alpha: number): string {
     const normalized = hex.replace('#', '');
 
@@ -25,6 +29,10 @@ export function loginPanelGradient(branding: AppBranding, isDark: boolean): stri
 }
 
 export function applyAppBranding(branding: AppBranding): void {
+    if (!canUseDom()) {
+        return;
+    }
+
     const root = document.documentElement;
 
     root.style.setProperty('--color-brand-400', branding.brand_color_400);

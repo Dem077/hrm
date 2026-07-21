@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use App\Services\AppBrandingService;
+use App\Support\PermissionRegistry;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -51,7 +52,9 @@ class HandleInertiaRequests extends Middleware
                     'email' => $user->email,
                 ] : null,
                 'roles' => $user?->getRoleNames()->values()->all() ?? [],
-                'permissions' => $user?->getAllPermissions()->pluck('name')->values()->all() ?? [],
+                'permissions' => $user?->hasRole(PermissionRegistry::superAdminRole())
+                    ? PermissionRegistry::all()
+                    : ($user?->getAllPermissions()->pluck('name')->values()->all() ?? []),
             ],
             'flash' => [
                 'success' => fn () => $request->session()->get('success'),

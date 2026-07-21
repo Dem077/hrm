@@ -1,11 +1,15 @@
 <?php
 
 use App\Enums\DutyType;
+use App\Enums\StructureGroupCode;
 use App\Models\AttendanceDutyPolicy;
-use App\Models\Department;
 use App\Models\DutyRoster;
 use App\Models\DutyShiftTemplate;
 use App\Models\Employee;
+use App\Models\StructureGrade;
+use App\Models\StructureGroup;
+use App\Models\StructureLevel;
+use App\Models\StructureNode;
 use App\Models\User;
 use App\Services\Attendance\AttendanceSheetService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -254,8 +258,40 @@ it('bulk assigns duty using specific dates', function () {
 it('limits roster creation to the auth user department without view-all permission', function () {
     Permission::findOrCreate('duty-rosters.view-all');
 
-    $operations = Department::query()->create(['name' => 'Operations', 'is_active' => true]);
-    $finance = Department::query()->create(['name' => 'Finance', 'is_active' => true]);
+    $group = StructureGroup::query()->where('code', StructureGroupCode::Department)->firstOrFail();
+    $operations = StructureNode::query()->create([
+        'structure_group_id' => $group->id,
+        'name' => 'Operations',
+        'is_active' => true,
+    ]);
+    $finance = StructureNode::query()->create([
+        'structure_group_id' => $group->id,
+        'name' => 'Finance',
+        'is_active' => true,
+    ]);
+
+    $opsLevel = StructureLevel::query()->create([
+        'structure_node_id' => $operations->id,
+        'level_number' => 1,
+        'reference_title' => 'Staff',
+    ]);
+    $finLevel = StructureLevel::query()->create([
+        'structure_node_id' => $finance->id,
+        'level_number' => 1,
+        'reference_title' => 'Staff',
+    ]);
+    $opsGrade = StructureGrade::query()->create([
+        'structure_level_id' => $opsLevel->id,
+        'grade' => 'A',
+        'title' => 'Ops Role',
+        'is_active' => true,
+    ]);
+    $finGrade = StructureGrade::query()->create([
+        'structure_level_id' => $finLevel->id,
+        'grade' => 'A',
+        'title' => 'Finance Role',
+        'is_active' => true,
+    ]);
 
     $manager = Employee::query()->create([
         'staff_id' => 'MGR-01',
@@ -263,7 +299,7 @@ it('limits roster creation to the auth user department without view-all permissi
         'national_id' => 'NID-MGR-01',
         'joined_date' => '2024-01-01',
         'gender' => 'male',
-        'department_id' => $operations->id,
+        'grade_id' => $opsGrade->id,
         'duty_type' => DutyType::Normal,
         'is_active' => true,
     ]);
@@ -274,7 +310,7 @@ it('limits roster creation to the auth user department without view-all permissi
         'national_id' => 'NID-SHIFT-OPS',
         'joined_date' => '2024-01-01',
         'gender' => 'male',
-        'department_id' => $operations->id,
+        'grade_id' => $opsGrade->id,
         'duty_type' => DutyType::Shift,
         'is_active' => true,
     ]);
@@ -285,7 +321,7 @@ it('limits roster creation to the auth user department without view-all permissi
         'national_id' => 'NID-SHIFT-FIN',
         'joined_date' => '2024-01-01',
         'gender' => 'male',
-        'department_id' => $finance->id,
+        'grade_id' => $finGrade->id,
         'duty_type' => DutyType::Shift,
         'is_active' => true,
     ]);

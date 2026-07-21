@@ -5,12 +5,12 @@ namespace App\Http\Controllers;
 use App\Http\Requests\BulkAssignDutyRosterRequest;
 use App\Http\Requests\StoreDutyRosterRequest;
 use App\Http\Requests\UpdateDutyRosterRequest;
-use App\Models\Department;
 use App\Models\DutyRoster;
 use App\Models\DutyShiftTemplate;
 use App\Models\Employee;
 use App\Services\Attendance\DutyRosterAssignmentService;
 use App\Services\Attendance\DutyRosterScopeService;
+use App\Support\StructureNodeOptions;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -41,12 +41,12 @@ class DutyRosterController extends Controller
         }
 
         $entries = DutyRoster::query()
-            ->with(['employee.department:id,name'])
+            ->with(['employee.grade.level.node.group'])
             ->whereHas('employee', function ($query) use ($departmentId, $employeeId, $scope) {
                 $scope->applyShiftEmployeeScope($query);
 
                 if ($departmentId) {
-                    $query->where('department_id', $departmentId);
+                    $query->whereHas('grade.level', fn ($levelQuery) => $levelQuery->where('structure_node_id', $departmentId));
                 }
 
                 if ($employeeId) {
@@ -75,13 +75,8 @@ class DutyRosterController extends Controller
                 'employee_id' => $employeeId,
             ],
             'departments' => $canViewAll
-                ? Department::query()
-                    ->where('is_active', true)
-                    ->orderBy('name')
-                    ->get(['id', 'name'])
-                : ($scopedDepartmentId
-                    ? Department::query()->whereKey($scopedDepartmentId)->get(['id', 'name'])
-                    : []),
+                ? StructureNodeOptions::active()
+                : ($scopedDepartmentId ? StructureNodeOptions::active($scopedDepartmentId) : []),
             'shiftEmployees' => $this->shiftEmployees($scope, $departmentId),
             'allShiftEmployees' => $this->shiftEmployees($scope),
             'dutyShiftTemplates' => DutyShiftTemplate::query()
@@ -205,13 +200,16 @@ class DutyRosterController extends Controller
     protected function shiftEmployees(DutyRosterScopeService $scope, ?int $departmentId = null): array
     {
         return $scope->shiftEmployeeQuery()
-            ->when($departmentId, fn ($query) => $query->where('department_id', $departmentId))
+            ->when($departmentId, function ($query) use ($departmentId) {
+                $query->whereHas('grade.level', fn ($levelQuery) => $levelQuery->where('structure_node_id', $departmentId));
+            })
+            ->with('grade.level')
             ->orderBy('name')
-            ->get(['id', 'staff_id', 'name', 'department_id'])
+            ->get(['id', 'staff_id', 'name', 'grade_id'])
             ->map(fn (Employee $employee) => [
                 'id' => $employee->id,
                 'label' => "{$employee->name} ({$employee->staff_id})",
-                'department_id' => $employee->department_id,
+                'department_id' => $employee->grade?->level?->structure_node_id,
             ])
             ->all();
     }

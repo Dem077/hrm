@@ -25,12 +25,14 @@ class LeaveBalanceExportService
         ?int $leaveTypeId = null,
     ): array {
         $employees = Employee::query()
-            ->with('department:id,name')
+            ->with(['grade.level.group', 'grade.level.node.group'])
             ->where('is_active', true)
-            ->when($departmentId, fn ($query) => $query->where('department_id', $departmentId))
+            ->when($departmentId, function ($query) use ($departmentId) {
+                $query->whereHas('grade.level', fn ($levelQuery) => $levelQuery->where('structure_node_id', $departmentId));
+            })
             ->when($employeeId, fn ($query) => $query->whereKey($employeeId))
             ->orderBy('name')
-            ->get(['id', 'name', 'staff_id', 'joined_date', 'department_id']);
+            ->get(['id', 'name', 'staff_id', 'joined_date', 'grade_id']);
 
         $rows = [];
 
@@ -74,21 +76,24 @@ class LeaveBalanceExportService
             ->get(['id', 'name']);
 
         $employees = Employee::query()
-            ->with('department:id,name')
+            ->with(['grade.level.group', 'grade.level.node.group'])
             ->where('is_active', true)
-            ->when($departmentId, fn ($query) => $query->where('department_id', $departmentId))
+            ->when($departmentId, function ($query) use ($departmentId) {
+                $query->whereHas('grade.level', fn ($levelQuery) => $levelQuery->where('structure_node_id', $departmentId));
+            })
             ->orderBy('name')
-            ->get(['id', 'name', 'staff_id', 'joined_date', 'department_id']);
+            ->get(['id', 'name', 'staff_id', 'joined_date', 'grade_id']);
 
         $rows = [];
 
         foreach ($employees as $employee) {
             [$periodStart, $periodEnd] = $this->leaveRequestService->leaveYearBoundsByOffset($employee, 0);
+            $path = $employee->grade?->resolvePath();
 
             $row = [
                 $employee->staff_id,
                 $employee->name,
-                $employee->department?->name ?? '—',
+                $path['node']['name'] ?? $path['group']['name'] ?? '—',
                 DateFormatter::formatDateRange($periodStart, $periodEnd),
             ];
 

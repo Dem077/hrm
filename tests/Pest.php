@@ -60,7 +60,7 @@ function something()
 function employeeBankPayload(array $overrides = []): array
 {
     return array_merge([
-        'bank_name' => 'Test Bank',
+        'bank_name' => 'BML',
         'account_name' => 'Jane Doe',
         'account_no' => '1234567890',
     ], $overrides);

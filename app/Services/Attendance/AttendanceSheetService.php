@@ -52,16 +52,18 @@ class AttendanceSheetService
             ->keyBy(fn (PublicHoliday $holiday) => $holiday->date->toDateString());
 
         $employees = Employee::query()
-            ->with('department:id,name')
+            ->with(['grade.level.group', 'grade.level.node.group'])
             ->where('is_active', true)
-            ->when($departmentId, fn ($query) => $query->where('department_id', $departmentId))
+            ->when($departmentId, function ($query) use ($departmentId) {
+                $query->whereHas('grade.level', fn ($levelQuery) => $levelQuery->where('structure_node_id', $departmentId));
+            })
             ->when($employeeId, fn ($query) => $query->where('id', $employeeId))
             ->orderBy('name')
             ->get([
                 'id',
                 'staff_id',
                 'name',
-                'department_id',
+                'grade_id',
                 'works_saturday',
                 'duty_type',
                 'uses_custom_duty_times',
@@ -193,8 +195,10 @@ class AttendanceSheetService
             ->select(['id', 'zkt_device_id', 'device_user_id', 'punch_state', 'punched_at', 'source', 'manual_reason'])
             ->whereIn('device_user_id', $staffIds)
             ->where(function ($query) {
-                $query->where('source', AttendancePunchSource::AttendanceSheet->value)
-                    ->orWhereHas('device', fn ($deviceQuery) => $deviceQuery->where('machine_type', ZktMachineType::Attendance->value));
+                $query->whereIn('source', [
+                    AttendancePunchSource::AttendanceSheet->value,
+                    AttendancePunchSource::SelfApp->value,
+                ])->orWhereHas('device', fn ($deviceQuery) => $deviceQuery->where('machine_type', ZktMachineType::Attendance->value));
             })
             ->whereBetween('punched_at', [
                 $from->copy()->startOfDay(),
@@ -542,7 +546,9 @@ class AttendanceSheetService
             'employee_id' => $employee->id,
             'staff_id' => $employee->staff_id,
             'employee_name' => $employee->name,
-            'department' => $employee->department?->name,
+            'department' => $employee->grade?->resolvePath()['node']['name']
+                ?? $employee->grade?->resolvePath()['group']['name']
+                ?? null,
             'check_in' => $values['check_in'],
             'check_out' => $values['check_out'],
             'working_minutes' => $values['working_minutes'],

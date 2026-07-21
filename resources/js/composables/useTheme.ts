@@ -4,8 +4,12 @@ const STORAGE_KEY = 'hrm-theme';
 
 export type Theme = 'light' | 'dark';
 
+function canUseDom(): boolean {
+    return typeof window !== 'undefined' && typeof document !== 'undefined';
+}
+
 function getStoredTheme(): Theme {
-    if (typeof window === 'undefined') {
+    if (!canUseDom()) {
         return 'dark';
     }
 
@@ -15,6 +19,10 @@ function getStoredTheme(): Theme {
 }
 
 function applyTheme(theme: Theme): void {
+    if (!canUseDom()) {
+        return;
+    }
+
     const root = document.documentElement;
 
     root.classList.toggle('dark', theme === 'dark');
@@ -33,7 +41,9 @@ export function useTheme() {
     watch(
         theme,
         (value) => {
-            localStorage.setItem(STORAGE_KEY, value);
+            if (canUseDom()) {
+                localStorage.setItem(STORAGE_KEY, value);
+            }
             applyTheme(value);
         },
         { immediate: true },
@@ -58,5 +68,9 @@ export function useTheme() {
 }
 
 export function initTheme(): void {
+    if (!canUseDom()) {
+        return;
+    }
+
     applyTheme(getStoredTheme());
 }

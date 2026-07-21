@@ -2,6 +2,7 @@
 
 use App\Enums\ZktDevicePrivilege;
 use App\Enums\ZktDeviceUserSyncStatus;
+use App\Enums\ZktMachineType;
 use App\Models\Employee;
 use App\Models\User;
 use App\Models\ZktDevice;
@@ -81,6 +82,30 @@ it('creates a location group with assigned machines', function () {
         ->and($group->devices->first()->id)->toBe($this->device->id);
 });
 
+it('lists adms machines with placeholder ip in the location group picker', function () {
+    $admsDevice = ZktDevice::query()->create([
+        'name' => 'Cloud Gate',
+        'ip_address' => '0.0.0.0',
+        'port' => 4370,
+        'protocol' => 'tcp',
+        'connection_mode' => 'adms_push',
+        'serial_number' => 'AIOR194560005',
+        'is_active' => true,
+        'auto_sync' => false,
+        'machine_type' => 'attendance',
+    ]);
+
+    $response = $this->actingAs($this->user)->get('/zkt-location-groups');
+
+    $response->assertOk();
+    $response->assertInertia(fn ($page) => $page
+        ->component('ZktLocationGroups/Index')
+        ->has('devices', 2)
+        ->where('devices', fn ($devices) => collect($devices)->contains(
+            fn ($device) => $device['id'] === $admsDevice->id && $device['connection_mode'] === 'adms_push'
+        )));
+});
+
 it('syncs an employee profile to devices in assigned location groups', function () {
     $group = ZktLocationGroup::query()->create([
         'name' => 'Head Office',
@@ -106,7 +131,8 @@ it('syncs an employee profile to devices in assigned location groups', function 
         )
         ->andReturn(['uid' => 1, 'user_id' => 'EMP001']);
 
-    $service = new ZktDeviceUserSyncService($client);
+    $this->app->instance(ZktDeviceClient::class, $client);
+    $service = app(ZktDeviceUserSyncService::class);
     $results = $service->syncEmployee($this->employee->fresh(['zktLocationGroups', 'zktDeviceSyncs.device']));
 
     expect($results)->toHaveCount(1)
@@ -120,6 +146,48 @@ it('syncs an employee profile to devices in assigned location groups', function 
     expect($sync)->not->toBeNull()
         ->and($sync->sync_status)->toBe(ZktDeviceUserSyncStatus::Synced)
         ->and($sync->device_uid)->toBe(1);
+});
+
+it('sets tcp access group when syncing users to access machines', function () {
+    $accessDevice = ZktDevice::query()->create([
+        'name' => 'F35 Main Gate',
+        'ip_address' => '192.168.1.60',
+        'port' => 4370,
+        'protocol' => 'tcp',
+        'is_active' => true,
+        'auto_sync' => false,
+        'machine_type' => ZktMachineType::Access,
+        'default_access_group' => 7,
+    ]);
+
+    $group = ZktLocationGroup::query()->create([
+        'name' => 'Main Gate Group',
+        'is_active' => true,
+    ]);
+    $group->devices()->attach($accessDevice->id);
+    $group->employees()->attach($this->employee->id);
+
+    $client = Mockery::mock(ZktDeviceClient::class);
+    $client->shouldReceive('fetchUsers')
+        ->once()
+        ->andReturn([]);
+    $client->shouldReceive('pushUser')
+        ->once()
+        ->andReturn(['uid' => 1, 'user_id' => 'EMP001']);
+    $client->shouldReceive('setUserAccessGroup')
+        ->once()
+        ->with(
+            Mockery::on(fn ($device) => $device->id === $accessDevice->id),
+            1,
+            7,
+        );
+
+    $this->app->instance(ZktDeviceClient::class, $client);
+    $service = app(ZktDeviceUserSyncService::class);
+    $results = $service->syncEmployee($this->employee->fresh(['zktLocationGroups', 'zktDeviceSyncs.device']));
+
+    expect($results)->toHaveCount(1)
+        ->and($results[0]['status'])->toBe('synced');
 });
 
 it('removes an employee from devices when location group access is removed', function () {
@@ -153,7 +221,8 @@ it('removes an employee from devices when location group access is removed', fun
             1,
         );
 
-    $service = new ZktDeviceUserSyncService($client);
+    $this->app->instance(ZktDeviceClient::class, $client);
+    $service = app(ZktDeviceUserSyncService::class);
     $results = $service->syncEmployee($this->employee->fresh(['zktLocationGroups', 'zktDeviceSyncs.device']));
 
     expect($results)->toHaveCount(1)
@@ -182,8 +251,7 @@ it('assigns location groups when updating an employee', function () {
         'mobile_number' => '',
         'joined_date' => '2024-01-01',
         'gender' => 'female',
-        'department_id' => '',
-        'designation_id' => '',
+        'grade_id' => '',
         'manager_id' => '',
         'is_active' => true,
         'works_saturday' => false,
@@ -220,7 +288,8 @@ it('pulls card number password and privilege from a machine into an employee rec
             ],
         ]);
 
-    $service = new ZktDeviceUserSyncService($client);
+    $this->app->instance(ZktDeviceClient::class, $client);
+    $service = app(ZktDeviceUserSyncService::class);
     $result = $service->pullEmployeeCredentialsFromDevices($this->employee);
 
     $employee = $this->employee->fresh();
@@ -246,7 +315,8 @@ it('pulls matching employee credentials from a device in bulk', function () {
             ],
         ]);
 
-    $service = new ZktDeviceUserSyncService($client);
+    $this->app->instance(ZktDeviceClient::class, $client);
+    $service = app(ZktDeviceUserSyncService::class);
     $results = $service->pullDeviceCredentials($this->device);
 
     expect($results)->toHaveCount(1)

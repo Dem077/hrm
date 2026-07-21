@@ -17,6 +17,13 @@ use Illuminate\Database\Eloquent\SoftDeletes;
     'punch_type',
     'punched_at',
     'source',
+    'self_punch_site_id',
+    'latitude',
+    'longitude',
+    'accuracy_meters',
+    'client_ip',
+    'request_ip',
+    'client_device_id',
     'manual_reason',
     'added_by_user_id',
     'removal_reason',
@@ -25,6 +32,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 class ZktAttendanceLog extends Model
 {
     use SoftDeletes;
+
     protected function casts(): array
     {
         return [
@@ -33,6 +41,9 @@ class ZktAttendanceLog extends Model
             'punch_type' => 'integer',
             'punched_at' => 'datetime',
             'source' => AttendancePunchSource::class,
+            'latitude' => 'float',
+            'longitude' => 'float',
+            'accuracy_meters' => 'integer',
         ];
     }
 
@@ -56,9 +67,19 @@ class ZktAttendanceLog extends Model
         return $this->belongsTo(User::class, 'removed_by_user_id');
     }
 
+    public function selfPunchSite(): BelongsTo
+    {
+        return $this->belongsTo(SelfPunchSite::class);
+    }
+
     public function isFromAttendanceSheet(): bool
     {
         return $this->source === AttendancePunchSource::AttendanceSheet;
+    }
+
+    public function isSelfPunch(): bool
+    {
+        return $this->source === AttendancePunchSource::SelfApp;
     }
 
     /**
@@ -115,10 +136,46 @@ class ZktAttendanceLog extends Model
             'punched_at' => $this->punched_at?->toIso8601String(),
             'source' => $this->sourceValue(),
             'source_label' => ($this->source instanceof AttendancePunchSource ? $this->source : AttendancePunchSource::tryFrom($this->sourceValue()))?->label() ?? 'Device',
+            'self_punch_site_id' => $this->self_punch_site_id,
             'manual_reason' => $this->manual_reason,
             'is_manual' => $this->isFromAttendanceSheet(),
+            'is_self_punch' => $this->isSelfPunch(),
             'is_removed' => $this->trashed(),
             'removal_reason' => $this->removal_reason,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function toMobilePunchAuditArray(): array
+    {
+        $this->loadMissing('employee:id,staff_id,name', 'selfPunchSite:id,name,code');
+
+        return [
+            'id' => $this->id,
+            'event_type' => 'punch',
+            'occurred_at' => $this->punched_at?->toIso8601String(),
+            'punch_state' => $this->punch_state,
+            'punch_state_label' => $this->punchStateLabel(),
+            'employee' => $this->employee ? [
+                'id' => $this->employee->id,
+                'name' => $this->employee->name,
+                'staff_id' => $this->employee->staff_id,
+            ] : null,
+            'device_user_id' => $this->device_user_id,
+            'site' => $this->selfPunchSite ? [
+                'id' => $this->selfPunchSite->id,
+                'name' => $this->selfPunchSite->name,
+                'code' => $this->selfPunchSite->code,
+            ] : null,
+            'client_ip' => $this->client_ip,
+            'request_ip' => $this->request_ip,
+            'client_device_id' => $this->client_device_id,
+            'latitude' => $this->latitude,
+            'longitude' => $this->longitude,
+            'accuracy_meters' => $this->accuracy_meters,
+            'created_at' => $this->created_at?->toIso8601String(),
         ];
     }
 }

@@ -53,7 +53,11 @@ function deleteDevice(id: number) {
     <AppLayout>
         <PageHeader
             :title="device.name"
-            :description="`${device.brand_label ?? device.brand} · ${device.ip_address}:${device.port} · ${device.protocol_label ?? device.protocol}`"
+            :description="
+                device.connection_mode === 'adms_push'
+                    ? `${device.brand_label ?? device.brand} · ADMS · SN ${device.serial_number ?? '—'}`
+                    : `${device.brand_label ?? device.brand} · ${device.ip_address}:${device.port} · ${device.protocol_label ?? device.protocol}`
+            "
         >
             <template #actions>
                 <UiBadge
@@ -98,8 +102,13 @@ function deleteDevice(id: number) {
                 <div class="space-y-2">
                     <p class="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Attendance</p>
                     <div class="flex flex-wrap gap-2">
-                        <UiButton v-if="can('zkt-devices.sync')" size="sm" variant="primary" @click="syncDevice(device.id!)">Sync punches</UiButton>
+                        <UiButton v-if="can('zkt-devices.sync')" size="sm" variant="primary" @click="syncDevice(device.id!)">
+                            Sync punches
+                        </UiButton>
                     </div>
+                    <p v-if="device.connection_mode === 'adms_push'" class="text-xs text-slate-500 dark:text-slate-400">
+                        ADMS actions queue commands until the machine polls.
+                    </p>
                 </div>
 
                 <div class="space-y-2 sm:col-span-2 xl:col-span-1">
@@ -126,8 +135,31 @@ function deleteDevice(id: number) {
                         </dd>
                     </div>
                     <div class="flex items-center justify-between gap-4 border-b border-slate-100 pb-3 dark:border-slate-800">
+                        <dt class="text-slate-500">Connection mode</dt>
+                        <dd class="font-medium text-slate-900 dark:text-slate-100">{{ device.connection_mode_label ?? device.connection_mode }}</dd>
+                    </div>
+                    <div class="flex items-center justify-between gap-4 border-b border-slate-100 pb-3 dark:border-slate-800">
                         <dt class="text-slate-500">Serial</dt>
                         <dd class="font-medium text-slate-900 dark:text-slate-100">{{ device.serial_number ?? '—' }}</dd>
+                    </div>
+                    <div
+                        v-if="device.connection_mode === 'adms_push'"
+                        class="flex items-center justify-between gap-4 border-b border-slate-100 pb-3 dark:border-slate-800"
+                    >
+                        <dt class="text-slate-500">Last ADMS contact</dt>
+                        <dd class="font-medium text-slate-900 dark:text-slate-100">{{ formatDateTime(device.last_adms_seen_at) }}</dd>
+                    </div>
+                    <div
+                        v-if="device.connection_mode === 'adms_push'"
+                        class="flex items-center justify-between gap-4 border-b border-slate-100 pb-3 dark:border-slate-800"
+                    >
+                        <dt class="text-slate-500">ADMS commands</dt>
+                        <dd class="font-medium text-slate-900 dark:text-slate-100">
+                            {{ device.adms_pending_commands ?? 0 }} pending
+                            <span v-if="(device.adms_failed_commands ?? 0) > 0" class="text-red-600 dark:text-red-400">
+                                · {{ device.adms_failed_commands }} failed
+                            </span>
+                        </dd>
                     </div>
                     <div class="flex items-center justify-between gap-4 border-b border-slate-100 pb-3 dark:border-slate-800">
                         <dt class="text-slate-500">Model</dt>
@@ -200,6 +232,36 @@ function deleteDevice(id: number) {
                             </tr>
                             <tr v-if="!(device.employee_syncs ?? []).length">
                                 <td colspan="3" class="px-5 py-10 text-center text-slate-500">No assigned user sync records yet.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </UiCard>
+        </div>
+
+        <div v-if="device.connection_mode === 'adms_push'" class="mt-6">
+            <UiCard title="ADMS command queue" padding="none">
+                <div class="overflow-x-auto">
+                    <table class="min-w-full text-sm">
+                        <thead class="border-b border-slate-100 bg-slate-50/80 text-left text-slate-500 dark:border-slate-800 dark:bg-surface-elevated dark:text-slate-400">
+                            <tr>
+                                <th class="px-5 py-3.5 font-medium">#</th>
+                                <th class="px-5 py-3.5 font-medium">Command</th>
+                                <th class="px-5 py-3.5 font-medium">Status</th>
+                                <th class="px-5 py-3.5 font-medium">Created</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+                            <tr v-for="command in device.adms_commands ?? []" :key="command.id">
+                                <td class="px-5 py-4 font-mono text-xs">{{ command.command_no }}</td>
+                                <td class="px-5 py-4 font-mono text-xs text-slate-700 dark:text-slate-300">{{ command.payload }}</td>
+                                <td class="px-5 py-4">
+                                    <UiBadge :label="command.status_label" :color="command.status_color" />
+                                </td>
+                                <td class="px-5 py-4 text-slate-600 dark:text-slate-400">{{ formatDateTime(command.created_at) }}</td>
+                            </tr>
+                            <tr v-if="!(device.adms_commands ?? []).length">
+                                <td colspan="4" class="px-5 py-10 text-center text-slate-500">No ADMS commands queued yet.</td>
                             </tr>
                         </tbody>
                     </table>

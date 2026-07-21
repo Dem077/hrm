@@ -43,7 +43,7 @@ class ZktAttendanceLogController extends Controller
         return Inertia::render('ZktAttendanceLogs/Index', [
             'logs' => $logs,
             'devices' => ZktDevice::query()
-                ->where('name', '!=', 'Attendance Sheet')
+                ->excludeSystemDevices()
                 ->orderBy('name')
                 ->get(['id', 'name']),
             'filters' => [

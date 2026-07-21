@@ -4,7 +4,7 @@ namespace App\Models;
 
 use App\Enums\PayrollComponentCalculationMethod;
 use App\Enums\PayrollComponentType;
-use App\Enums\PayrollLoanBank;
+use App\Models\Bank;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -33,9 +33,9 @@ class PayrollComponent extends Model
         ];
     }
 
-    public function designations(): BelongsToMany
+    public function grades(): BelongsToMany
     {
-        return $this->belongsToMany(Designation::class, 'designation_payroll_component')
+        return $this->belongsToMany(StructureGrade::class, 'grade_payroll_component')
             ->withPivot(['amount', 'loan_months', 'loan_bank'])
             ->withTimestamps();
     }
@@ -53,7 +53,7 @@ class PayrollComponent extends Model
     /**
      * @return array<string, mixed>
      */
-    public function toPayrollItem(float $amount = 0, ?int $loanMonths = null, ?PayrollLoanBank $loanBank = null): array
+    public function toPayrollItem(float $amount = 0, ?int $loanMonths = null, ?string $loanBank = null, ?string $loanBankLabel = null): array
     {
         $item = [
             'payroll_component_id' => $this->id,
@@ -74,8 +74,8 @@ class PayrollComponent extends Model
 
         if ($this->isLoan()) {
             $item['loan_months'] = $loanMonths;
-            $item['loan_bank'] = $loanBank?->value;
-            $item['loan_bank_label'] = $loanBank?->label();
+            $item['loan_bank'] = $loanBank;
+            $item['loan_bank_label'] = $loanBankLabel ?? ($loanBank ? Bank::labelFor($loanBank) : null);
         }
 
         return $item;
@@ -99,7 +99,7 @@ class PayrollComponent extends Model
             'is_system_mandatory' => $this->isSystemMandatory(),
             'sort_order' => $this->sort_order,
             'is_active' => $this->is_active,
-            'designations_count' => $this->designations_count ?? $this->designations()->count(),
+            'grades_count' => $this->grades_count ?? $this->grades()->count(),
         ];
     }
 }
