@@ -73,6 +73,8 @@ Route::middleware('auth')->group(function () {
     Route::middleware('permission:company-structure.view')->group(function () {
         Route::get('company-structure', [CompanyStructureController::class, 'index'])
             ->name('company-structure.index');
+        Route::get('company-structure/chart', [CompanyStructureController::class, 'chart'])
+            ->name('company-structure.chart');
 
         Route::get('company-structure/sample-csv', [CompanyStructureController::class, 'downloadSample'])
             ->name('company-structure.sample-csv');

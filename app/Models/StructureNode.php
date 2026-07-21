@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 #[Fillable([
@@ -13,7 +14,6 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'name',
     'code',
     'description',
-    'head_employee_id',
     'is_active',
     'sort_order',
 ])]
@@ -42,9 +42,12 @@ class StructureNode extends Model
         return $this->hasMany(self::class, 'parent_id')->orderBy('sort_order')->orderBy('name');
     }
 
-    public function headEmployee(): BelongsTo
+    public function headGrades(): BelongsToMany
     {
-        return $this->belongsTo(Employee::class, 'head_employee_id');
+        return $this->belongsToMany(StructureGrade::class, 'structure_node_head_grade')
+            ->withTimestamps()
+            ->orderBy('structure_grades.sort_order')
+            ->orderBy('structure_grades.grade');
     }
 
     public function levels(): HasMany

@@ -222,10 +222,6 @@ class EmployeeController extends Controller
             return back()->with('error', 'Cannot delete an employee who manages other employees.');
         }
 
-        if ($employee->headedStructureNodes()->exists()) {
-            return back()->with('error', 'Cannot delete an employee assigned as a structure head.');
-        }
-
         $deviceUserSyncService->removeEmployeeFromAllDevices($employee);
         $this->deleteProfilePhoto($employee);
 

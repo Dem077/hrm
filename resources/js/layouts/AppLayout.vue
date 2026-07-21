@@ -90,7 +90,7 @@ const humanResourcesNavItems: NavItem[] = [
         href: '/payroll',
         permission: 'payroll.view',
         icon: 'M3 10h18M7 15h1m4 0h1m4 0h1M5 6h14a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2z',
-        match: (url: string) => url.startsWith('/payroll'),
+        match: (url: string) => url === '/payroll' || url.startsWith('/payroll/'),
     },
     {
         label: 'Employees',
@@ -104,7 +104,15 @@ const humanResourcesNavItems: NavItem[] = [
         href: '/company-structure',
         permission: 'company-structure.view',
         icon: 'M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4',
-        match: (url: string) => url.startsWith('/company-structure'),
+        match: (url: string) =>
+            url.startsWith('/company-structure') && !url.startsWith('/company-structure/chart'),
+    },
+    {
+        label: 'Org Chart',
+        href: '/company-structure/chart',
+        permission: 'company-structure.view',
+        icon: 'M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z',
+        match: (url: string) => url.startsWith('/company-structure/chart'),
     },
     {
         label: 'Leave Types',

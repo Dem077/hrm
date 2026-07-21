@@ -98,7 +98,7 @@ class CompanyStructureCsvService
                     $nodeAction = 'update';
                 } else {
                     $nodeAction = 'create';
-                    $pendingNodeNames[$group->id][$nodeName] = true;
+                    $pendingNodeNames[mb_strtolower($nodeName)] = $group->code;
                 }
 
                 if (! isset($seenNodeActions[$nodeKey])) {
@@ -228,9 +228,16 @@ class CompanyStructureCsvService
                     $existing = $this->findExistingNode($group->id, $parentId, $nodeName, $nodeCode);
 
                     if ($existing) {
+                        $parent = $parentId
+                            ? StructureNode::query()->with('group')->find($parentId)
+                            : null;
+
+                        app(CompanyStructureService::class)->assertParentLadder($group->code, $parent);
+
                         $existing->update([
                             'name' => $nodeName,
                             'code' => $nodeCode,
+                            'parent_id' => $parentId,
                             'sort_order' => $nodeSort,
                             'is_active' => true,
                         ]);
@@ -240,6 +247,12 @@ class CompanyStructureCsvService
                             $stats['updated_nodes']++;
                         }
                     } else {
+                        $parent = $parentId
+                            ? StructureNode::query()->with('group')->find($parentId)
+                            : null;
+
+                        app(CompanyStructureService::class)->assertParentLadder($group->code, $parent);
+
                         $node = StructureNode::query()->create([
                             'structure_group_id' => $group->id,
                             'parent_id' => $parentId,
@@ -252,7 +265,7 @@ class CompanyStructureCsvService
                         $stats['created_nodes']++;
                     }
 
-                    $pendingNodeNames[$group->id][$nodeName] = true;
+                    $pendingNodeNames[mb_strtolower($nodeName)] = $group->code;
                 }
 
                 $levelQuery = StructureLevel::query()->where('level_number', $levelNumber);
@@ -334,7 +347,7 @@ class CompanyStructureCsvService
     /**
      * @param  array<string, string>  $row
      * @param  \Illuminate\Support\Collection<string, StructureGroup>  $groups
-     * @param  array<int, array<string, true>>  $pendingNodeNames
+     * @param  array<string, StructureGroupCode>  $pendingNodeNames lowercase name => group code
      * @param  array{
      *     nodes: array<string, int>,
      *     node_next: array<string, int>,
@@ -404,6 +417,7 @@ class CompanyStructureCsvService
         $nodeName = trim((string) ($row['node_name'] ?? ''));
         $nodeCode = trim((string) ($row['node_code'] ?? '')) ?: null;
         $parentName = trim((string) ($row['parent_node_name'] ?? ''));
+        $parentGroupCodeHint = strtolower(trim((string) ($row['parent_group_code'] ?? ''))) ?: null;
         $parentId = null;
 
         if ($group->code === StructureGroupCode::StrategicLeadership) {
@@ -419,21 +433,31 @@ class CompanyStructureCsvService
                 ]);
             }
 
+            $allowedParents = $group->code->allowedParentCodes();
+
+            if ($group->code->requiresParent() && $parentName === '') {
+                $labels = implode(' or ', array_map(fn (StructureGroupCode $code) => $code->label(), $allowedParents));
+
+                throw ValidationException::withMessages([
+                    'file' => "Row {$line}: parent_node_name is required for {$group->name} (must be a {$labels}).",
+                ]);
+            }
+
+            if (! $group->code->requiresParent() && $parentName !== '') {
+                throw ValidationException::withMessages([
+                    'file' => "Row {$line}: Divisions must leave parent_node_name empty (they sit under Strategic Leadership).",
+                ]);
+            }
+
             if ($parentName !== '') {
-                $parent = StructureNode::query()
-                    ->where('structure_group_id', $group->id)
-                    ->where('name', $parentName)
-                    ->first();
-
-                $parentPending = isset($pendingNodeNames[$group->id][$parentName]);
-
-                if (! $parent && ! $parentPending) {
-                    throw ValidationException::withMessages([
-                        'file' => "Row {$line}: parent_node_name \"{$parentName}\" was not found in {$group->name}. Import parent rows first.",
-                    ]);
-                }
-
-                $parentId = $parent?->id;
+                $resolved = $this->resolveParentNode(
+                    $line,
+                    $parentName,
+                    $allowedParents,
+                    $pendingNodeNames,
+                    $parentGroupCodeHint,
+                );
+                $parentId = $resolved;
             }
         }
 
@@ -480,6 +504,67 @@ class CompanyStructureCsvService
             'level_sort_order' => $sortState['levels'][$levelKey],
             'grade_sort_order' => $sortState['grades'][$gradeKey],
         ];
+    }
+
+    /**
+     * @param  list<StructureGroupCode>  $allowedParents
+     * @param  array<string, StructureGroupCode>  $pendingNodeNames
+     */
+    protected function resolveParentNode(
+        int $line,
+        string $parentName,
+        array $allowedParents,
+        array $pendingNodeNames,
+        ?string $parentGroupCodeHint,
+    ): ?int {
+        $allowedValues = array_map(fn (StructureGroupCode $code) => $code->value, $allowedParents);
+        $allowedLabels = implode(' or ', array_map(fn (StructureGroupCode $code) => $code->label(), $allowedParents));
+
+        if ($parentGroupCodeHint !== null && ! in_array($parentGroupCodeHint, $allowedValues, true)) {
+            throw ValidationException::withMessages([
+                'file' => "Row {$line}: parent_group_code \"{$parentGroupCodeHint}\" is not valid for this row (expected {$allowedLabels}).",
+            ]);
+        }
+
+        $query = StructureNode::query()
+            ->with('group')
+            ->where('name', $parentName)
+            ->whereHas('group', function ($groupQuery) use ($allowedValues, $parentGroupCodeHint): void {
+                $groupQuery->whereIn('code', $allowedValues);
+
+                if ($parentGroupCodeHint !== null) {
+                    $groupQuery->where('code', $parentGroupCodeHint);
+                }
+            });
+
+        $matches = $query->get();
+
+        if ($matches->count() > 1) {
+            throw ValidationException::withMessages([
+                'file' => "Row {$line}: parent_node_name \"{$parentName}\" matches multiple subgroups. Add an optional parent_group_code column (division, department, or unit_section) to disambiguate.",
+            ]);
+        }
+
+        if ($matches->count() === 1) {
+            return $matches->first()?->id;
+        }
+
+        $pendingKey = mb_strtolower($parentName);
+        $pendingCode = $pendingNodeNames[$pendingKey] ?? null;
+
+        if ($pendingCode instanceof StructureGroupCode && in_array($pendingCode->value, $allowedValues, true)) {
+            if ($parentGroupCodeHint !== null && $pendingCode->value !== $parentGroupCodeHint) {
+                throw ValidationException::withMessages([
+                    'file' => "Row {$line}: pending parent \"{$parentName}\" is a {$pendingCode->label()}, not {$parentGroupCodeHint}.",
+                ]);
+            }
+
+            return null;
+        }
+
+        throw ValidationException::withMessages([
+            'file' => "Row {$line}: parent_node_name \"{$parentName}\" was not found among {$allowedLabels}. Import parent rows first.",
+        ]);
     }
 
     /**
@@ -534,11 +619,11 @@ class CompanyStructureCsvService
             ['division', 'Corporate Affairs Division', 'CAD', '', 9, 'General Manager', '2', 'Acting Chief Operating Officer (COO)'],
             ['division', 'Corporate Affairs Division', 'CAD', '', 9, 'General Manager', '1', 'Corporate Affairs Director'],
             ['division', 'Finance & Accounts Division', 'FAD', '', 9, 'Manager', '3', 'Chief Financial Officer (CFO)'],
-            ['department', 'HR Department', 'HR', '', 8, 'Asst. General Manager', '3', 'Head Of Department'],
-            ['department', 'HR Department', 'HR', '', 8, 'Asst. General Manager', '2', 'Acting Head Of Department'],
-            ['department', 'HR Department', 'HR', '', 8, 'Asst. General Manager', '1', 'Asst Head Of Department'],
-            ['unit_section', 'Production Department', 'PROD', '', 1, 'Support Staff', '2', 'Support Executive'],
-            ['unit_section', 'Production Department', 'PROD', '', 1, 'Support Staff', '1', 'Support Staff'],
+            ['department', 'HR Department', 'HR', 'Corporate Affairs Division', 8, 'Asst. General Manager', '3', 'Head Of Department'],
+            ['department', 'HR Department', 'HR', 'Corporate Affairs Division', 8, 'Asst. General Manager', '2', 'Acting Head Of Department'],
+            ['department', 'HR Department', 'HR', 'Corporate Affairs Division', 8, 'Asst. General Manager', '1', 'Asst Head Of Department'],
+            ['unit_section', 'Production Section', 'PROD', 'HR Department', 1, 'Support Staff', '2', 'Support Executive'],
+            ['unit_section', 'Production Section', 'PROD', 'HR Department', 1, 'Support Staff', '1', 'Support Staff'],
         ];
     }
 

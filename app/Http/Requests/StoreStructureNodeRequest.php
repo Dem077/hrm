@@ -21,12 +21,21 @@ class StoreStructureNodeRequest extends FormRequest
 
     protected function prepareForValidation(): void
     {
+        $headGradeIds = $this->input('head_grade_ids', []);
+
+        if (! is_array($headGradeIds)) {
+            $headGradeIds = $headGradeIds !== null && $headGradeIds !== '' ? [$headGradeIds] : [];
+        }
+
         $this->merge([
             'is_active' => $this->boolean('is_active', true),
             'code' => $this->input('code') ?: null,
             'description' => $this->input('description') ?: null,
             'parent_id' => $this->input('parent_id') ?: null,
-            'head_employee_id' => $this->input('head_employee_id') ?: null,
+            'head_grade_ids' => array_values(array_filter(
+                array_map('intval', $headGradeIds),
+                fn (int $id) => $id > 0,
+            )),
         ]);
     }
 
@@ -40,7 +49,8 @@ class StoreStructureNodeRequest extends FormRequest
             'code' => ['nullable', 'string', 'max:50'],
             'description' => ['nullable', 'string'],
             'parent_id' => ['nullable', 'exists:structure_nodes,id'],
-            'head_employee_id' => ['nullable', 'exists:employees,id'],
+            'head_grade_ids' => ['nullable', 'array'],
+            'head_grade_ids.*' => ['integer', 'exists:structure_grades,id'],
             'is_active' => ['boolean'],
             'sort_order' => ['nullable', 'integer', 'min:0'],
         ];

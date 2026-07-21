@@ -43,8 +43,8 @@ class LeaveRequestService
     {
         $employee->loadMissing([
             'manager',
-            'grade.level.node.headEmployee',
-            'grade.level.node.parent.headEmployee',
+            'grade.level.node.headGrades',
+            'grade.level.node.parent.headGrades',
         ]);
 
         if ($employee->manager_id) {
@@ -58,10 +58,23 @@ class LeaveRequestService
         $node = $employee->grade?->level?->node;
 
         while ($node) {
-            $head = $node->headEmployee;
-            if ($head && $head->id !== $employee->id) {
-                return $head;
+            $node->loadMissing(['headGrades', 'parent']);
+
+            $headGradeIds = $node->headGrades->pluck('id')->all();
+
+            if ($headGradeIds !== []) {
+                $head = Employee::query()
+                    ->whereIn('grade_id', $headGradeIds)
+                    ->where('is_active', true)
+                    ->where('id', '!=', $employee->id)
+                    ->orderBy('name')
+                    ->first();
+
+                if ($head) {
+                    return $head;
+                }
             }
+
             $node = $node->parent;
         }
 
@@ -74,7 +87,7 @@ class LeaveRequestService
             return $leaveRequest;
         }
 
-        $leaveRequest->loadMissing(['employee.manager', 'employee.grade.level.node.headEmployee', 'employee.grade.level.node.parent.headEmployee']);
+        $leaveRequest->loadMissing(['employee.manager', 'employee.grade.level.node.headGrades', 'employee.grade.level.node.parent.headGrades']);
 
         if (! $leaveRequest->employee) {
             return $leaveRequest;
@@ -94,7 +107,7 @@ class LeaveRequestService
     {
         LeaveRequest::query()
             ->where('status', LeaveRequestStatus::Pending)
-            ->with(['employee.manager', 'employee.grade.level.node.headEmployee', 'employee.grade.level.node.parent.headEmployee'])
+            ->with(['employee.manager', 'employee.grade.level.node.headGrades', 'employee.grade.level.node.parent.headGrades'])
             ->chunkById(100, function ($leaveRequests): void {
                 foreach ($leaveRequests as $leaveRequest) {
                     $this->syncApprover($leaveRequest);
@@ -837,7 +850,39 @@ class LeaveRequestService
                             $managerQuery->whereNull('manager_id')
                                 ->orWhereColumn('manager_id', 'employees.id');
                         })
-                        ->whereHas('grade.level.node', fn (Builder $nodeQuery) => $nodeQuery->where('head_employee_id', $approver->id));
+                        ->whereNotNull('grade_id')
+                        ->when(
+                            $approver->grade_id,
+                            function (Builder $query) use ($approver): void {
+                                $headedNodeIds = \App\Models\StructureNode::query()
+                                    ->whereHas(
+                                        'headGrades',
+                                        fn (Builder $gradeQuery) => $gradeQuery->where('structure_grades.id', $approver->grade_id),
+                                    )
+                                    ->pluck('id');
+
+                                if ($headedNodeIds->isEmpty()) {
+                                    $query->whereRaw('0 = 1');
+
+                                    return;
+                                }
+
+                                $coveredNodeIds = $headedNodeIds->all();
+
+                                foreach ($headedNodeIds as $headedNodeId) {
+                                    $headedNode = \App\Models\StructureNode::query()->find($headedNodeId);
+                                    if ($headedNode) {
+                                        $coveredNodeIds = array_merge($coveredNodeIds, $headedNode->descendantIds());
+                                    }
+                                }
+
+                                $query->whereHas(
+                                    'grade.level',
+                                    fn (Builder $levelQuery) => $levelQuery->whereIn('structure_node_id', array_values(array_unique($coveredNodeIds))),
+                                );
+                            },
+                            fn (Builder $query) => $query->whereRaw('0 = 1'),
+                        );
                 });
             });
     }
@@ -859,7 +904,7 @@ class LeaveRequestService
             return false;
         }
 
-        $leaveRequest->loadMissing(['employee.manager', 'employee.grade.level.node.headEmployee', 'employee.grade.level.node.parent.headEmployee']);
+        $leaveRequest->loadMissing(['employee.manager', 'employee.grade.level.node.headGrades', 'employee.grade.level.node.parent.headGrades']);
 
         if (! $leaveRequest->employee) {
             return false;

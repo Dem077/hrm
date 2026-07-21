@@ -27,7 +27,7 @@ it('groups payroll items by calculation and type', function () {
             'name' => 'Attendance Pay',
             'type' => 'addition',
             'calculation_method' => 'daily',
-            'is_mandatory' => false,
+            'is_mandatory' => true,
             'amount' => 250,
         ],
         [
@@ -48,8 +48,10 @@ it('groups payroll items by calculation and type', function () {
         ],
     ]));
 
-    expect($groups['mandatory'])->toHaveCount(1);
-    expect($groups['attendance_allowance'])->toHaveCount(1);
+    expect($groups['mandatory'])->toHaveCount(1)
+        ->and($groups['mandatory'][0]['name'])->toBe('Basic Salary');
+    expect($groups['attendance_allowance'])->toHaveCount(1)
+        ->and($groups['attendance_allowance'][0]['name'])->toBe('Attendance Pay');
     expect($groups['fixed_additions'])->toHaveCount(1);
     expect($groups['fixed_deductions'])->toHaveCount(1);
 });

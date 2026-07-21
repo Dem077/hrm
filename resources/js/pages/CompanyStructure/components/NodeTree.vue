@@ -4,11 +4,16 @@ import { ref } from 'vue';
 
 import UiButton from '@/components/ui/UiButton.vue';
 import LevelsPanel from '@/pages/CompanyStructure/components/LevelsPanel.vue';
-import type { StructureGrade, StructureLevel, StructureNode } from '@/types/companyStructure';
+import type {
+    StructureGrade,
+    StructureGroupOption,
+    StructureLevel,
+    StructureNode,
+} from '@/types/companyStructure';
 
 const props = defineProps<{
     nodes: StructureNode[];
-    groupId: number;
+    groupOptions: StructureGroupOption[];
     depth?: number;
     canCreate: boolean;
     canUpdate: boolean;
@@ -16,7 +21,7 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-    addNode: [parentId: number | null];
+    addNode: [payload: { parentId: number | null; structureGroupId: number }];
     editNode: [node: StructureNode];
     moveNode: [node: StructureNode];
     addLevel: [node: StructureNode];
@@ -29,6 +34,20 @@ const expanded = ref<Record<number, boolean>>({});
 
 function toggle(id: number) {
     expanded.value[id] = !expanded.value[id];
+}
+
+function groupOptionForCode(code: string): StructureGroupOption | undefined {
+    return props.groupOptions.find((option) => option.code === code);
+}
+
+function childAddActions(node: StructureNode): StructureGroupOption[] {
+    return (node.allowed_child_codes ?? [])
+        .map((code) => groupOptionForCode(code))
+        .filter((option): option is StructureGroupOption => Boolean(option));
+}
+
+function typeBadge(node: StructureNode): string {
+    return node.group_name ?? node.group_code ?? 'Node';
 }
 
 function deleteNode(node: StructureNode) {
@@ -51,7 +70,6 @@ function moveSibling(index: number, direction: -1 | 1) {
         {
             ordered_ids: ordered,
             parent_id: props.nodes[0]?.parent_id ?? null,
-            structure_group_id: props.groupId,
         },
         { preserveScroll: true },
     );
@@ -67,13 +85,22 @@ function moveSibling(index: number, direction: -1 | 1) {
         >
             <div class="flex flex-wrap items-start justify-between gap-2">
                 <button type="button" class="min-w-0 text-left" @click="toggle(node.id)">
-                    <div class="font-semibold text-slate-900 dark:text-white">
-                        <span class="mr-1 text-slate-400">{{ expanded[node.id] ? '▾' : '▸' }}</span>
-                        {{ node.name }}
+                    <div class="flex flex-wrap items-center gap-2 font-semibold text-slate-900 dark:text-white">
+                        <span class="text-slate-400">{{ expanded[node.id] ? '▾' : '▸' }}</span>
+                        <span>{{ node.name }}</span>
+                        <span
+                            class="rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                        >
+                            {{ typeBadge(node) }}
+                        </span>
                     </div>
                     <p class="mt-0.5 text-xs text-slate-500">
                         <span v-if="node.code">{{ node.code }} · </span>
-                        Head: {{ node.head_employee?.name ?? '—' }}
+                        Head grades:
+                        <template v-if="node.head_grades?.length">
+                            {{ node.head_grades.map((grade) => grade.label).join(', ') }}
+                        </template>
+                        <template v-else>—</template>
                         · {{ node.is_active ? 'Active' : 'Inactive' }}
                     </p>
                 </button>
@@ -90,7 +117,17 @@ function moveSibling(index: number, direction: -1 | 1) {
                     </UiButton>
                     <UiButton v-if="canUpdate" size="sm" variant="ghost" @click="emit('editNode', node)">Edit</UiButton>
                     <UiButton v-if="canUpdate" size="sm" variant="ghost" @click="emit('moveNode', node)">Move</UiButton>
-                    <UiButton v-if="canCreate" size="sm" variant="ghost" @click="emit('addNode', node.id)">Add child</UiButton>
+                    <template v-if="canCreate">
+                        <UiButton
+                            v-for="childGroup in childAddActions(node)"
+                            :key="`${node.id}-${childGroup.code}`"
+                            size="sm"
+                            variant="ghost"
+                            @click="emit('addNode', { parentId: node.id, structureGroupId: childGroup.id })"
+                        >
+                            Add {{ childGroup.name }}
+                        </UiButton>
+                    </template>
                     <UiButton v-if="canCreate" size="sm" variant="ghost" @click="emit('addLevel', node)">Add level</UiButton>
                     <UiButton v-if="canDelete" size="sm" variant="ghost" @click="deleteNode(node)">Delete</UiButton>
                 </div>
@@ -111,7 +148,7 @@ function moveSibling(index: number, direction: -1 | 1) {
                 <NodeTree
                     v-if="node.children.length"
                     :nodes="node.children"
-                    :group-id="groupId"
+                    :group-options="groupOptions"
                     :depth="(depth ?? 0) + 1"
                     :can-create="canCreate"
                     :can-update="canUpdate"

@@ -28,9 +28,15 @@ class CompanyStructureController extends Controller
 
         return Inertia::render('CompanyStructure/Index', [
             'groups' => $this->companyStructureService->treePayload(),
-            'headOptions' => $this->companyStructureService->headOptions(),
             'importPreview' => is_array($pending) ? ($pending['preview'] ?? null) : null,
             'importFileName' => is_array($pending) ? ($pending['original_name'] ?? null) : null,
+        ]);
+    }
+
+    public function chart(): Response
+    {
+        return Inertia::render('CompanyStructure/Chart', [
+            'groups' => $this->companyStructureService->treePayload(),
         ]);
     }
 

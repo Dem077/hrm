@@ -207,11 +207,6 @@ class Employee extends Model
         return $this->hasMany(self::class, 'manager_id');
     }
 
-    public function headedStructureNodes(): HasMany
-    {
-        return $this->hasMany(StructureNode::class, 'head_employee_id');
-    }
-
     public function attendanceLogs(): HasMany
     {
         return $this->hasMany(ZktAttendanceLog::class, 'device_user_id', 'staff_id');

@@ -18,36 +18,63 @@ const emit = defineEmits<{
 }>();
 
 const form = useForm({
-    structure_group_id: '' as number | string,
     parent_id: '' as number | string,
 });
 
 type ParentOption = {
     id: number;
     label: string;
-    groupId: number;
 };
 
-const movableGroups = computed(() => props.groups.filter((group) => group.allows_nodes));
+const orgTree = computed(() => props.groups.find((group) => group.is_org_tree || group.code === 'organization') ?? null);
+
+const treeNode = computed(() => {
+    if (!props.node || !orgTree.value) {
+        return props.node;
+    }
+
+    return findNode(orgTree.value.nodes, props.node.id) ?? props.node;
+});
+
+const allowedParentCodes = computed(() => {
+    const code = treeNode.value?.group_code;
+    if (code === 'department') {
+        return ['division', 'department'];
+    }
+    if (code === 'unit_section') {
+        return ['department', 'unit_section'];
+    }
+    return [] as string[];
+});
+
+const requiresParent = computed(() => allowedParentCodes.value.length > 0);
 
 const parentOptions = computed(() => {
-    if (!props.node) {
+    if (!treeNode.value || !orgTree.value) {
         return [] as ParentOption[];
     }
 
-    const excluded = new Set<number>([props.node.id, ...collectDescendantIds(props.node)]);
+    const excluded = new Set<number>([treeNode.value.id, ...collectDescendantIds(treeNode.value)]);
     const options: ParentOption[] = [];
+    const allowed = new Set(allowedParentCodes.value);
 
-    for (const group of movableGroups.value) {
-        collectParentOptions(group.nodes, [], group, excluded, options);
-    }
+    collectParentOptions(orgTree.value.nodes, [], excluded, allowed, options);
 
     return options;
 });
 
-const parentsInSelectedGroup = computed(() =>
-    parentOptions.value.filter((option) => String(option.groupId) === String(form.structure_group_id)),
-);
+function findNode(nodes: StructureNode[], id: number): StructureNode | null {
+    for (const node of nodes) {
+        if (node.id === id) {
+            return node;
+        }
+        const nested = findNode(node.children ?? [], id);
+        if (nested) {
+            return nested;
+        }
+    }
+    return null;
+}
 
 watch(
     () => [props.open, props.node] as const,
@@ -57,19 +84,9 @@ watch(
         }
 
         form.clearErrors();
-        form.structure_group_id = node.structure_group_id;
         form.parent_id = node.parent_id ?? '';
     },
     { immediate: true },
-);
-
-watch(
-    () => form.structure_group_id,
-    () => {
-        if (!parentsInSelectedGroup.value.some((option) => String(option.id) === String(form.parent_id))) {
-            form.parent_id = '';
-        }
-    },
 );
 
 function collectDescendantIds(node: StructureNode): number[] {
@@ -83,8 +100,8 @@ function collectDescendantIds(node: StructureNode): number[] {
 function collectParentOptions(
     nodes: StructureNode[],
     ancestors: string[],
-    group: StructureGroup,
     excluded: Set<number>,
+    allowed: Set<string>,
     options: ParentOption[],
 ): void {
     for (const node of nodes) {
@@ -93,14 +110,17 @@ function collectParentOptions(
         }
 
         const path = [...ancestors, node.name];
-        options.push({
-            id: node.id,
-            label: `${group.name} › ${path.join(' › ')}`,
-            groupId: group.id,
-        });
+        const typeLabel = node.group_name ?? node.group_code ?? '';
+
+        if (node.group_code && allowed.has(node.group_code)) {
+            options.push({
+                id: node.id,
+                label: `${path.join(' › ')}${typeLabel ? ` (${typeLabel})` : ''}`,
+            });
+        }
 
         if (node.children?.length) {
-            collectParentOptions(node.children, path, group, excluded, options);
+            collectParentOptions(node.children, path, excluded, allowed, options);
         }
     }
 }
@@ -112,7 +132,6 @@ function submit() {
 
     form
         .transform((data) => ({
-            structure_group_id: Number(data.structure_group_id),
             parent_id: data.parent_id === '' || data.parent_id === null ? null : Number(data.parent_id),
         }))
         .post(`/company-structure/nodes/${props.node.id}/move`, {
@@ -126,31 +145,27 @@ function submit() {
     <UiModal
         :open="open"
         title="Move subgroup"
-        :description="node ? `Move “${node.name}” to another group or parent.` : undefined"
+        :description="node ? `Re-parent “${node.name}” within the organization ladder.` : undefined"
         @close="emit('close')"
     >
         <form v-if="node" class="space-y-4" @submit.prevent="submit">
-            <UiSelect
-                v-model="form.structure_group_id"
-                label="Destination group"
-                :error="form.errors.structure_group_id"
-                required
-            >
-                <option v-for="group in movableGroups" :key="group.id" :value="group.id">
-                    {{ group.name }}
-                </option>
-            </UiSelect>
+            <p class="text-sm text-slate-600 dark:text-slate-300">
+                Type stays <span class="font-medium">{{ node.group_name ?? node.group_code }}</span>.
+                Only valid parents for this type are listed.
+            </p>
 
-            <UiSelect v-model="form.parent_id" label="Parent subgroup" :error="form.errors.parent_id">
-                <option value="">Top level of selected group</option>
-                <option v-for="option in parentsInSelectedGroup" :key="option.id" :value="option.id">
+            <UiSelect
+                v-model="form.parent_id"
+                label="Parent subgroup"
+                :error="form.errors.parent_id"
+                :required="requiresParent"
+            >
+                <option v-if="!requiresParent" value="">Top level (under Strategic Leadership)</option>
+                <option v-else value="" disabled>Select a parent…</option>
+                <option v-for="option in parentOptions" :key="option.id" :value="option.id">
                     {{ option.label }}
                 </option>
             </UiSelect>
-
-            <p class="text-xs text-slate-500">
-                Strategic Leadership cannot receive subgroups. Child subgroups move with this node.
-            </p>
 
             <div class="flex justify-end gap-2 pt-2">
                 <UiButton type="button" variant="ghost" @click="emit('close')">Cancel</UiButton>

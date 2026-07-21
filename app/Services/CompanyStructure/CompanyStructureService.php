@@ -21,16 +21,64 @@ class CompanyStructureService
     {
         $groups = StructureGroup::query()
             ->orderBy('sort_order')
+            ->with(['levels.grades'])
+            ->get()
+            ->keyBy(fn (StructureGroup $group) => $group->code->value);
+
+        $allNodes = StructureNode::query()
             ->with([
+                'group',
+                'headGrades',
                 'levels.grades',
-                'allNodes' => fn ($query) => $query
-                    ->with(['headEmployee:id,name,staff_id', 'levels.grades', 'children'])
-                    ->orderBy('sort_order')
-                    ->orderBy('name'),
             ])
+            ->orderBy('sort_order')
+            ->orderBy('name')
             ->get();
 
-        return $groups->map(fn (StructureGroup $group) => $this->formatGroup($group))->all();
+        $nodesByParent = $allNodes->groupBy(fn (StructureNode $node) => $node->parent_id ?? 0);
+
+        $payload = [];
+
+        $strategic = $groups->get(StructureGroupCode::StrategicLeadership->value);
+
+        if ($strategic) {
+            $payload[] = [
+                'id' => $strategic->id,
+                'code' => $strategic->code->value,
+                'name' => $strategic->name,
+                'sort_order' => $strategic->sort_order,
+                'allows_nodes' => false,
+                'is_org_tree' => false,
+                'levels' => $strategic->levels
+                    ->map(fn (StructureLevel $level) => $this->formatLevel($level))
+                    ->values()
+                    ->all(),
+                'nodes' => [],
+                'group_options' => [],
+            ];
+        }
+
+        $payload[] = [
+            'id' => $groups->get(StructureGroupCode::Division->value)?->id ?? 0,
+            'code' => 'organization',
+            'name' => 'Organization',
+            'sort_order' => 1,
+            'allows_nodes' => true,
+            'is_org_tree' => true,
+            'levels' => [],
+            'nodes' => $this->formatNodeTree($nodesByParent, 0),
+            'group_options' => $groups
+                ->filter(fn (StructureGroup $group) => $group->allowsNodes())
+                ->map(fn (StructureGroup $group) => [
+                    'id' => $group->id,
+                    'code' => $group->code->value,
+                    'name' => $group->name,
+                ])
+                ->values()
+                ->all(),
+        ];
+
+        return $payload;
     }
 
     /**
@@ -59,7 +107,7 @@ class CompanyStructureService
         ];
 
         $query = StructureGrade::query()
-            ->with(['level.group', 'level.node.group', 'level.node.parent'])
+            ->with(['level.group', 'level.node.group', 'level.node.parent.group'])
             ->orderBy('sort_order')
             ->orderBy('grade');
 
@@ -87,6 +135,7 @@ class CompanyStructureService
                     $chain = [];
                     $current = $node;
                     while ($current) {
+                        $current->loadMissing(['parent.group']);
                         array_unshift($chain, $current->name);
                         $current = $current->parent;
                     }
@@ -143,21 +192,24 @@ class CompanyStructureService
             ]);
         }
 
-        $parentId = $attributes['parent_id'] ?? null;
+        $parentId = isset($attributes['parent_id']) ? (int) $attributes['parent_id'] : null;
+        $parent = $parentId ? StructureNode::query()->with('group')->findOrFail($parentId) : null;
 
-        if ($parentId) {
-            $parent = StructureNode::query()->findOrFail($parentId);
-            if ($parent->structure_group_id !== $group->id) {
-                throw ValidationException::withMessages([
-                    'parent_id' => 'Parent must belong to the same group.',
-                ]);
-            }
-        }
+        $this->assertParentLadder($group->code, $parent);
+
+        $headGradeIds = $this->extractHeadGradeIds($attributes);
 
         $attributes['structure_group_id'] = $group->id;
-        $attributes['sort_order'] ??= $this->nextNodeSortOrder($group->id, $parentId);
+        $attributes['parent_id'] = $parentId;
+        $attributes['sort_order'] ??= $this->nextNodeSortOrder($parentId);
 
-        return StructureNode::query()->create($attributes);
+        $node = StructureNode::query()->create($attributes);
+
+        if ($headGradeIds !== null) {
+            $this->syncHeadGrades($node, $headGradeIds, $parentId);
+        }
+
+        return $node->load(['headGrades']);
     }
 
     /**
@@ -166,10 +218,22 @@ class CompanyStructureService
     public function updateNode(StructureNode $node, array $attributes): void
     {
         if (array_key_exists('parent_id', $attributes)) {
-            $this->assertValidParent($node, $attributes['parent_id']);
+            $parentId = $attributes['parent_id'] !== null ? (int) $attributes['parent_id'] : null;
+            $this->assertValidParent($node, $parentId);
+            $attributes['parent_id'] = $parentId;
         }
 
+        $headGradeIds = $this->extractHeadGradeIds($attributes);
+
         $node->update($attributes);
+
+        if ($headGradeIds !== null) {
+            $parentId = array_key_exists('parent_id', $attributes)
+                ? ($attributes['parent_id'] !== null ? (int) $attributes['parent_id'] : null)
+                : $node->parent_id;
+
+            $this->syncHeadGrades($node, $headGradeIds, $parentId);
+        }
     }
 
     public function deleteNode(StructureNode $node): void
@@ -195,61 +259,22 @@ class CompanyStructureService
         $node->delete();
     }
 
-    public function moveNode(StructureNode $node, int $targetGroupId, ?int $parentId = null): void
+    public function moveNode(StructureNode $node, ?int $parentId = null): void
     {
-        $targetGroup = StructureGroup::query()->findOrFail($targetGroupId);
+        $this->assertValidParent($node, $parentId);
 
-        if (! $targetGroup->allowsNodes()) {
-            throw ValidationException::withMessages([
-                'structure_group_id' => 'Subgroups cannot be moved into Strategic Leadership.',
-            ]);
-        }
-
-        $sourceGroup = $node->group()->first();
-        if ($sourceGroup && ! $sourceGroup->allowsNodes()) {
-            throw ValidationException::withMessages([
-                'structure_group_id' => 'Strategic Leadership does not contain movable subgroups.',
-            ]);
-        }
-
-        $this->assertValidParentForMove($node, $targetGroupId, $parentId);
-
-        if (
-            $node->code
-            && StructureNode::query()
-                ->where('structure_group_id', $targetGroupId)
-                ->where('code', $node->code)
-                ->whereKeyNot($node->id)
-                ->exists()
-        ) {
-            throw ValidationException::withMessages([
-                'structure_group_id' => "A subgroup with code \"{$node->code}\" already exists in {$targetGroup->name}.",
-            ]);
-        }
-
-        DB::transaction(function () use ($node, $targetGroupId, $parentId): void {
-            $descendantIds = $this->collectDescendantIds($node);
-            $allIds = array_merge([$node->id], $descendantIds);
-
-            StructureNode::query()
-                ->whereIn('id', $allIds)
-                ->update(['structure_group_id' => $targetGroupId]);
-
-            $node->refresh();
-            $node->update([
-                'parent_id' => $parentId,
-                'sort_order' => $this->nextNodeSortOrder($targetGroupId, $parentId),
-            ]);
-        });
+        $node->update([
+            'parent_id' => $parentId,
+            'sort_order' => $this->nextNodeSortOrder($parentId),
+        ]);
     }
 
     /**
      * @param  list<int>  $orderedIds
      */
-    public function reorderNodes(?int $parentId, int $groupId, array $orderedIds): void
+    public function reorderNodes(?int $parentId, array $orderedIds): void
     {
         $nodes = StructureNode::query()
-            ->where('structure_group_id', $groupId)
             ->where('parent_id', $parentId)
             ->whereIn('id', $orderedIds)
             ->get()
@@ -385,42 +410,166 @@ class CompanyStructureService
     }
 
     /**
-     * @return list<array{id: int, name: string, staff_id: string}>
+     * Grades eligible as a node head: grades on the current node and on its parent
+     * (or Strategic Leadership when the node is a top-level division).
+     *
+     * @return list<array{id: int, label: string, source: string, source_label: string}>
      */
-    public function headOptions(): array
+    public function headGradeOptions(?StructureNode $node = null, ?int $parentId = null): array
     {
-        return Employee::query()
-            ->where('is_active', true)
-            ->orderBy('name')
-            ->get(['id', 'name', 'staff_id'])
-            ->map(fn (Employee $employee) => [
-                'id' => $employee->id,
-                'name' => $employee->name,
-                'staff_id' => $employee->staff_id,
-            ])
-            ->all();
+        $options = [];
+        $seen = [];
+
+        $appendGrades = function (iterable $grades, string $source, string $sourceLabel) use (&$options, &$seen): void {
+            foreach ($grades as $grade) {
+                if (! $grade instanceof StructureGrade || isset($seen[$grade->id])) {
+                    continue;
+                }
+
+                if (! $grade->is_active) {
+                    continue;
+                }
+
+                $seen[$grade->id] = true;
+                $options[] = [
+                    'id' => $grade->id,
+                    'label' => $grade->label(),
+                    'source' => $source,
+                    'source_label' => $sourceLabel,
+                ];
+            }
+        };
+
+        if ($node) {
+            $node->loadMissing(['levels.grades']);
+            $appendGrades(
+                $node->levels->flatMap(fn (StructureLevel $level) => $level->grades),
+                'current',
+                $node->name,
+            );
+            $parentId ??= $node->parent_id;
+        }
+
+        if ($parentId) {
+            $parent = StructureNode::query()->with(['levels.grades'])->find($parentId);
+            if ($parent) {
+                $appendGrades(
+                    $parent->levels->flatMap(fn (StructureLevel $level) => $level->grades),
+                    'parent',
+                    $parent->name,
+                );
+            }
+        } else {
+            $strategic = StructureGroup::query()
+                ->where('code', StructureGroupCode::StrategicLeadership)
+                ->with(['levels.grades'])
+                ->first();
+
+            if ($strategic) {
+                $appendGrades(
+                    $strategic->levels->flatMap(fn (StructureLevel $level) => $level->grades),
+                    'parent',
+                    $strategic->name,
+                );
+            }
+        }
+
+        return $options;
     }
 
     /**
-     * @return array<string, mixed>
+     * @param  array<string, mixed>  $attributes
+     * @return list<int>|null null when the request did not include head grades
      */
-    protected function formatGroup(StructureGroup $group): array
+    protected function extractHeadGradeIds(array &$attributes): ?array
     {
-        $nodesByParent = $group->allNodes->groupBy(fn (StructureNode $node) => $node->parent_id ?? 0);
+        if (! array_key_exists('head_grade_ids', $attributes)) {
+            return null;
+        }
 
-        return [
-            'id' => $group->id,
-            'code' => $group->code->value,
-            'name' => $group->name,
-            'sort_order' => $group->sort_order,
-            'allows_nodes' => $group->allowsNodes(),
-            'levels' => $group->allowsNodes()
-                ? []
-                : $group->levels->map(fn (StructureLevel $level) => $this->formatLevel($level))->all(),
-            'nodes' => $group->allowsNodes()
-                ? $this->formatNodeTree($nodesByParent, 0)
-                : [],
-        ];
+        $raw = $attributes['head_grade_ids'];
+        unset($attributes['head_grade_ids']);
+
+        if (! is_array($raw)) {
+            return [];
+        }
+
+        return array_values(array_unique(array_map('intval', $raw)));
+    }
+
+    /**
+     * @param  list<int>  $headGradeIds
+     */
+    public function syncHeadGrades(StructureNode $node, array $headGradeIds, ?int $parentId = null): void
+    {
+        $this->assertValidHeadGrades($headGradeIds, $node, $parentId ?? $node->parent_id);
+        $node->headGrades()->sync($headGradeIds);
+    }
+
+    /**
+     * @param  list<int>  $headGradeIds
+     */
+    public function assertValidHeadGrades(array $headGradeIds, ?StructureNode $node, ?int $parentId): void
+    {
+        if ($headGradeIds === []) {
+            return;
+        }
+
+        $allowedIds = collect($this->headGradeOptions($node, $parentId))->pluck('id')->all();
+
+        foreach ($headGradeIds as $headGradeId) {
+            if (! in_array($headGradeId, $allowedIds, true)) {
+                throw ValidationException::withMessages([
+                    'head_grade_ids' => 'Each head must be a grade from this subgroup or its parent.',
+                ]);
+            }
+        }
+    }
+
+    public function assertParentLadder(StructureGroupCode $childCode, ?StructureNode $parent): void
+    {
+        if (! $childCode->allowsNodes()) {
+            throw ValidationException::withMessages([
+                'structure_group_id' => 'Strategic Leadership cannot contain subgroups.',
+            ]);
+        }
+
+        $allowed = $childCode->allowedParentCodes();
+
+        if ($parent === null) {
+            if ($childCode->requiresParent()) {
+                throw ValidationException::withMessages([
+                    'parent_id' => "{$childCode->label()} must belong under a parent in the organization tree.",
+                ]);
+            }
+
+            return;
+        }
+
+        $parent->loadMissing('group');
+        $parentCode = $parent->group?->code;
+
+        if (! $parentCode instanceof StructureGroupCode) {
+            throw ValidationException::withMessages([
+                'parent_id' => 'Parent subgroup is missing a group type.',
+            ]);
+        }
+
+        if ($allowed === []) {
+            throw ValidationException::withMessages([
+                'parent_id' => 'Divisions must sit at the top of the organization tree (under Strategic Leadership).',
+            ]);
+        }
+
+        $allowedValues = array_map(fn (StructureGroupCode $code) => $code->value, $allowed);
+
+        if (! in_array($parentCode->value, $allowedValues, true)) {
+            $allowedLabels = implode(' or ', array_map(fn (StructureGroupCode $code) => $code->label(), $allowed));
+
+            throw ValidationException::withMessages([
+                'parent_id' => "{$childCode->label()} can only sit under {$allowedLabels}.",
+            ]);
+        }
     }
 
     /**
@@ -431,21 +580,27 @@ class CompanyStructureService
     {
         return ($nodesByParent->get($parentKey) ?? collect())
             ->map(function (StructureNode $node) use ($nodesByParent) {
+                $groupCode = $node->group?->code;
+
                 return [
                     'id' => $node->id,
                     'structure_group_id' => $node->structure_group_id,
+                    'group_code' => $groupCode?->value,
+                    'group_name' => $node->group?->name,
                     'parent_id' => $node->parent_id,
                     'name' => $node->name,
                     'code' => $node->code,
                     'description' => $node->description,
-                    'head_employee_id' => $node->head_employee_id,
-                    'head_employee' => $node->headEmployee ? [
-                        'id' => $node->headEmployee->id,
-                        'name' => $node->headEmployee->name,
-                        'staff_id' => $node->headEmployee->staff_id,
-                    ] : null,
+                    'head_grade_ids' => $node->headGrades->pluck('id')->values()->all(),
+                    'head_grades' => $node->headGrades->map(fn (StructureGrade $grade) => [
+                        'id' => $grade->id,
+                        'label' => $grade->label(),
+                    ])->values()->all(),
                     'is_active' => $node->is_active,
                     'sort_order' => $node->sort_order,
+                    'allowed_child_codes' => $groupCode
+                        ? array_map(fn (StructureGroupCode $code) => $code->value, $groupCode->allowedChildCodes())
+                        : [],
                     'levels' => $node->levels->map(fn (StructureLevel $level) => $this->formatLevel($level))->all(),
                     'children' => $this->formatNodeTree($nodesByParent, $node->id),
                 ];
@@ -512,12 +667,11 @@ class CompanyStructureService
 
     protected function assertValidParent(StructureNode $node, ?int $parentId): void
     {
-        $this->assertValidParentForMove($node, $node->structure_group_id, $parentId);
-    }
+        $node->loadMissing('group');
 
-    protected function assertValidParentForMove(StructureNode $node, int $targetGroupId, ?int $parentId): void
-    {
         if ($parentId === null) {
+            $this->assertParentLadder($node->group->code, null);
+
             return;
         }
 
@@ -527,13 +681,7 @@ class CompanyStructureService
             ]);
         }
 
-        $parent = StructureNode::query()->findOrFail($parentId);
-
-        if ($parent->structure_group_id !== $targetGroupId) {
-            throw ValidationException::withMessages([
-                'parent_id' => 'Parent must belong to the selected destination group.',
-            ]);
-        }
+        $parent = StructureNode::query()->with('group')->findOrFail($parentId);
 
         $descendantIds = $this->collectDescendantIds($node);
         if (in_array($parentId, $descendantIds, true)) {
@@ -541,6 +689,8 @@ class CompanyStructureService
                 'parent_id' => 'Cannot move a subgroup under one of its descendants.',
             ]);
         }
+
+        $this->assertParentLadder($node->group->code, $parent);
     }
 
     /**
@@ -574,10 +724,9 @@ class CompanyStructureService
             ->pluck('id');
     }
 
-    protected function nextNodeSortOrder(int $groupId, ?int $parentId): int
+    protected function nextNodeSortOrder(?int $parentId): int
     {
         return (int) StructureNode::query()
-            ->where('structure_group_id', $groupId)
             ->where('parent_id', $parentId)
             ->max('sort_order') + 1;
     }

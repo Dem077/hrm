@@ -40,13 +40,11 @@ class StructureNodeController extends Controller
     public function move(Request $request, StructureNode $structure_node): RedirectResponse
     {
         $validated = $request->validate([
-            'structure_group_id' => ['required', 'integer', 'exists:structure_groups,id'],
             'parent_id' => ['nullable', 'integer', 'exists:structure_nodes,id'],
         ]);
 
         $this->companyStructureService->moveNode(
             $structure_node,
-            (int) $validated['structure_group_id'],
             isset($validated['parent_id']) ? (int) $validated['parent_id'] : null,
         );
 
@@ -59,12 +57,10 @@ class StructureNodeController extends Controller
             'ordered_ids' => ['required', 'array', 'min:1'],
             'ordered_ids.*' => ['integer', 'exists:structure_nodes,id'],
             'parent_id' => ['nullable', 'integer', 'exists:structure_nodes,id'],
-            'structure_group_id' => ['required', 'integer', 'exists:structure_groups,id'],
         ]);
 
         $this->companyStructureService->reorderNodes(
             isset($validated['parent_id']) ? (int) $validated['parent_id'] : null,
-            (int) $validated['structure_group_id'],
             array_map('intval', $validated['ordered_ids']),
         );
 

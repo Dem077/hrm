@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\StructureGroupCode;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -35,6 +36,12 @@ class StructureGrade extends Model
         return $this->hasMany(Employee::class, 'grade_id');
     }
 
+    public function headedNodes(): BelongsToMany
+    {
+        return $this->belongsToMany(StructureNode::class, 'structure_node_head_grade')
+            ->withTimestamps();
+    }
+
     public function payrollComponents(): BelongsToMany
     {
         return $this->belongsToMany(PayrollComponent::class, 'grade_payroll_component')
@@ -57,27 +64,31 @@ class StructureGrade extends Model
         $this->loadMissing([
             'level.group',
             'level.node.group',
-            'level.node.parent',
+            'level.node.parent.group',
         ]);
 
         $level = $this->level;
-        $group = $level?->group ?? $level?->node?->group;
+        $owningGroup = $level?->group ?? $level?->node?->group;
         $node = $level?->node;
 
         $segments = [];
-
-        if ($group) {
-            $segments[] = $group->name;
-        }
+        $strategicName = StructureGroup::query()
+            ->where('code', StructureGroupCode::StrategicLeadership)
+            ->value('name') ?? 'Strategic Leadership';
 
         if ($node) {
+            $segments[] = $strategicName;
+
             $chain = [];
             $current = $node;
             while ($current) {
+                $current->loadMissing(['parent.group']);
                 array_unshift($chain, $current->name);
                 $current = $current->parent;
             }
             $segments = array_merge($segments, $chain);
+        } elseif ($owningGroup) {
+            $segments[] = $owningGroup->name;
         }
 
         if ($level) {
@@ -90,10 +101,10 @@ class StructureGrade extends Model
         $segments[] = $this->label();
 
         return [
-            'group' => $group ? [
-                'id' => $group->id,
-                'code' => $group->code->value,
-                'name' => $group->name,
+            'group' => $owningGroup ? [
+                'id' => $owningGroup->id,
+                'code' => $owningGroup->code->value,
+                'name' => $owningGroup->name,
             ] : null,
             'node' => $node ? [
                 'id' => $node->id,

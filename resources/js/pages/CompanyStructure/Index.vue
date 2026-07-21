@@ -16,14 +16,12 @@ import StructureFormModal from '@/pages/CompanyStructure/components/StructureFor
 import type {
     StructureGrade,
     StructureGroup,
-    StructureHeadOption,
     StructureLevel,
     StructureNode,
 } from '@/types/companyStructure';
 
 const props = defineProps<{
     groups: StructureGroup[];
-    headOptions: StructureHeadOption[];
     importPreview?: ImportPreview | null;
     importFileName?: string | null;
 }>();
@@ -39,6 +37,16 @@ const importForm = useForm<{ file: File | null }>({
 });
 
 const previewOpen = computed(() => Boolean(props.importPreview));
+
+const strategicGroup = computed(() => props.groups.find((group) => group.code === 'strategic_leadership') ?? null);
+const organizationGroup = computed(
+    () => props.groups.find((group) => group.is_org_tree || group.code === 'organization') ?? null,
+);
+
+const divisionGroupId = computed(() => {
+    const options = organizationGroup.value?.group_options ?? [];
+    return options.find((option) => option.code === 'division')?.id ?? organizationGroup.value?.id ?? null;
+});
 
 function openImportPicker() {
     fileInput.value?.click();
@@ -91,10 +99,10 @@ function closeMoveModal() {
     movingNode.value = null;
 }
 
-function openAddNode(groupId: number, parentId: number | null = null) {
+function openAddNode(structureGroupId: number, parentId: number | null = null) {
     modalMode.value = 'node';
-    modalTitle.value = parentId ? 'Add child subgroup' : 'Add subgroup';
-    modalGroupId.value = groupId;
+    modalTitle.value = parentId ? 'Add child subgroup' : 'Add division';
+    modalGroupId.value = structureGroupId;
     modalParentId.value = parentId;
     modalNode.value = null;
     modalOpen.value = true;
@@ -154,9 +162,12 @@ function openEditGrade(grade: StructureGrade, level: StructureLevel) {
     <AppLayout>
         <PageHeader
             title="Company Structure"
-            description="Manage Strategic Leadership, Divisions, Departments, and Units with levels and grades."
+            description="Strategic Leadership at the top, then Divisions → Departments → Units / Sections with levels and grades."
         >
             <template #actions>
+                <UiButton href="/company-structure/chart" variant="secondary" size="sm">
+                    View org chart
+                </UiButton>
                 <UiButton href="/company-structure/sample-csv" external variant="secondary" size="sm">
                     Download sample CSV
                 </UiButton>
@@ -183,57 +194,60 @@ function openEditGrade(grade: StructureGrade, level: StructureLevel) {
         <p v-if="importForm.errors.file" class="mb-4 text-sm text-red-600">{{ importForm.errors.file }}</p>
 
         <div class="space-y-6">
-            <UiCard v-for="group in groups" :key="group.id" :title="group.name" padding="md">
+            <UiCard v-if="strategicGroup" :title="strategicGroup.name" padding="md">
                 <template #actions>
                     <UiButton
-                        v-if="canCreate && group.allows_nodes"
+                        v-if="canCreate"
                         size="sm"
                         variant="secondary"
-                        @click="openAddNode(group.id)"
-                    >
-                        Add subgroup
-                    </UiButton>
-                    <UiButton
-                        v-else-if="canCreate && !group.allows_nodes"
-                        size="sm"
-                        variant="secondary"
-                        @click="openAddLevel({ groupId: group.id })"
+                        @click="openAddLevel({ groupId: strategicGroup.id })"
                     >
                         Add level
                     </UiButton>
                 </template>
 
-                <div v-if="!group.allows_nodes">
-                    <LevelsPanel
-                        :levels="group.levels"
-                        :can-create="canCreate"
-                        :can-update="canUpdate"
-                        :can-delete="canDelete"
-                        @add-level="openAddLevel({ groupId: group.id })"
-                        @edit-level="openEditLevel"
-                        @add-grade="openAddGrade"
-                        @edit-grade="openEditGrade"
-                    />
-                </div>
+                <LevelsPanel
+                    :levels="strategicGroup.levels"
+                    :can-create="canCreate"
+                    :can-update="canUpdate"
+                    :can-delete="canDelete"
+                    @add-level="openAddLevel({ groupId: strategicGroup.id })"
+                    @edit-level="openEditLevel"
+                    @add-grade="openAddGrade"
+                    @edit-grade="openEditGrade"
+                />
+            </UiCard>
 
-                <div v-else>
-                    <p v-if="group.nodes.length === 0" class="text-sm text-slate-500">No subgroups yet.</p>
-                    <NodeTree
-                        v-else
-                        :nodes="group.nodes"
-                        :group-id="group.id"
-                        :can-create="canCreate"
-                        :can-update="canUpdate"
-                        :can-delete="canDelete"
-                        @add-node="(parentId) => openAddNode(group.id, parentId)"
-                        @edit-node="openEditNode"
-                        @move-node="openMoveNode"
-                        @add-level="(node) => openAddLevel({ node })"
-                        @edit-level="openEditLevel"
-                        @add-grade="openAddGrade"
-                        @edit-grade="openEditGrade"
-                    />
-                </div>
+            <UiCard v-if="organizationGroup" title="Organization" padding="md">
+                <template #actions>
+                    <UiButton
+                        v-if="canCreate && divisionGroupId"
+                        size="sm"
+                        variant="secondary"
+                        @click="openAddNode(divisionGroupId)"
+                    >
+                        Add division
+                    </UiButton>
+                </template>
+
+                <p v-if="organizationGroup.nodes.length === 0" class="text-sm text-slate-500">
+                    No divisions yet. Add a division, then nest departments and units under it.
+                </p>
+                <NodeTree
+                    v-else
+                    :nodes="organizationGroup.nodes"
+                    :group-options="organizationGroup.group_options ?? []"
+                    :can-create="canCreate"
+                    :can-update="canUpdate"
+                    :can-delete="canDelete"
+                    @add-node="({ parentId, structureGroupId }) => openAddNode(structureGroupId, parentId)"
+                    @edit-node="openEditNode"
+                    @move-node="openMoveNode"
+                    @add-level="(node) => openAddLevel({ node })"
+                    @edit-level="openEditLevel"
+                    @add-grade="openAddGrade"
+                    @edit-grade="openEditGrade"
+                />
             </UiCard>
         </div>
 
@@ -248,7 +262,7 @@ function openEditGrade(grade: StructureGrade, level: StructureLevel) {
             :node="modalNode"
             :level="modalLevel"
             :grade="modalGrade"
-            :head-options="headOptions"
+            :groups="props.groups"
             @close="closeModal"
         />
 

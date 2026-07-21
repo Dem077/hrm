@@ -82,7 +82,12 @@ export type PayrollItemGroups = {
 
 export function groupPayrollItems(items: DesignationPayrollItem[]): PayrollItemGroups {
     return {
-        mandatory: items.filter((item) => item.is_mandatory),
+        mandatory: items.filter(
+            (item) =>
+                item.is_mandatory &&
+                !isAttendanceAllowanceCalculation(item.calculation_method) &&
+                !isLoanType(item.type),
+        ),
         fixed_additions: items.filter(
             (item) => !item.is_mandatory && item.calculation_method === 'fixed' && item.type === 'addition',
         ),

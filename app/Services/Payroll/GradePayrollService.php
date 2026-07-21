@@ -273,8 +273,21 @@ class GradePayrollService
      */
     public function groupPayrollItems(Collection $items): array
     {
+        $isAttendanceAllowance = fn (array $item): bool => in_array(
+            $item['calculation_method'],
+            [
+                PayrollComponentCalculationMethod::Daily->value,
+                PayrollComponentCalculationMethod::Hourly->value,
+            ],
+            true,
+        );
+
         return [
-            'mandatory' => $items->where('is_mandatory', true)->values()->all(),
+            'mandatory' => $items
+                ->where('is_mandatory', true)
+                ->reject(fn (array $item) => $isAttendanceAllowance($item) || $item['type'] === PayrollComponentType::Loan->value)
+                ->values()
+                ->all(),
             'fixed_additions' => $items
                 ->where('is_mandatory', false)
                 ->where('type', PayrollComponentType::Addition->value)
@@ -288,14 +301,7 @@ class GradePayrollService
                 ->values()
                 ->all(),
             'attendance_allowance' => $items
-                ->filter(fn (array $item) => in_array(
-                    $item['calculation_method'],
-                    [
-                        PayrollComponentCalculationMethod::Daily->value,
-                        PayrollComponentCalculationMethod::Hourly->value,
-                    ],
-                    true
-                ))
+                ->filter($isAttendanceAllowance)
                 ->values()
                 ->all(),
             'loans' => $items

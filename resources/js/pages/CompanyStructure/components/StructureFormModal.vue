@@ -1,12 +1,17 @@
 <script setup lang="ts">
 import { useForm } from '@inertiajs/vue3';
-import { watch } from 'vue';
+import { computed, watch } from 'vue';
 
 import UiButton from '@/components/ui/UiButton.vue';
 import UiInput from '@/components/ui/UiInput.vue';
 import UiModal from '@/components/ui/UiModal.vue';
-import UiSelect from '@/components/ui/UiSelect.vue';
-import type { StructureGrade, StructureHeadOption, StructureLevel, StructureNode } from '@/types/companyStructure';
+import type {
+    StructureGrade,
+    StructureGroup,
+    StructureHeadGradeOption,
+    StructureLevel,
+    StructureNode,
+} from '@/types/companyStructure';
 
 const props = defineProps<{
     open: boolean;
@@ -19,7 +24,7 @@ const props = defineProps<{
     node?: StructureNode | null;
     level?: StructureLevel | null;
     grade?: StructureGrade | null;
-    headOptions: StructureHeadOption[];
+    groups: StructureGroup[];
 }>();
 
 const emit = defineEmits<{
@@ -31,7 +36,7 @@ const nodeForm = useForm({
     code: '',
     description: '',
     parent_id: null as number | null,
-    head_employee_id: '' as number | string,
+    head_grade_ids: [] as number[],
     is_active: true,
 });
 
@@ -48,6 +53,103 @@ const gradeForm = useForm({
     is_active: true,
 });
 
+const strategicGroup = computed(
+    () => props.groups.find((group) => group.code === 'strategic_leadership') ?? null,
+);
+
+const organizationGroup = computed(
+    () => props.groups.find((group) => group.is_org_tree || group.code === 'organization') ?? null,
+);
+
+function findNode(nodes: StructureNode[], id: number): StructureNode | null {
+    for (const node of nodes) {
+        if (node.id === id) {
+            return node;
+        }
+        const nested = findNode(node.children ?? [], id);
+        if (nested) {
+            return nested;
+        }
+    }
+    return null;
+}
+
+function gradesFromLevels(
+    levels: StructureLevel[],
+    source: 'current' | 'parent',
+    sourceLabel: string,
+): StructureHeadGradeOption[] {
+    const options: StructureHeadGradeOption[] = [];
+    for (const level of levels) {
+        for (const grade of level.grades ?? []) {
+            if (!grade.is_active) {
+                continue;
+            }
+            options.push({
+                id: grade.id,
+                label: grade.label,
+                source,
+                source_label: sourceLabel,
+            });
+        }
+    }
+    return options;
+}
+
+const headGradeOptions = computed(() => {
+    if (props.mode !== 'node') {
+        return [] as StructureHeadGradeOption[];
+    }
+
+    const seen = new Set<number>();
+    const options: StructureHeadGradeOption[] = [];
+
+    const pushUnique = (items: StructureHeadGradeOption[]) => {
+        for (const item of items) {
+            if (seen.has(item.id)) {
+                continue;
+            }
+            seen.add(item.id);
+            options.push(item);
+        }
+    };
+
+    const currentNode = props.node ?? null;
+    if (currentNode) {
+        pushUnique(gradesFromLevels(currentNode.levels ?? [], 'current', currentNode.name));
+    }
+
+    const parentId = currentNode?.parent_id ?? props.parentId ?? null;
+    if (parentId && organizationGroup.value) {
+        const parent = findNode(organizationGroup.value.nodes, parentId);
+        if (parent) {
+            pushUnique(gradesFromLevels(parent.levels ?? [], 'parent', parent.name));
+        }
+    } else if (strategicGroup.value) {
+        pushUnique(gradesFromLevels(strategicGroup.value.levels ?? [], 'parent', strategicGroup.value.name));
+    }
+
+    return options;
+});
+
+const headGradesBySource = computed(() => {
+    const current = headGradeOptions.value.filter((option) => option.source === 'current');
+    const parent = headGradeOptions.value.filter((option) => option.source === 'parent');
+    return { current, parent };
+});
+
+function isHeadSelected(gradeId: number): boolean {
+    return nodeForm.head_grade_ids.includes(gradeId);
+}
+
+function toggleHeadGrade(gradeId: number) {
+    if (isHeadSelected(gradeId)) {
+        nodeForm.head_grade_ids = nodeForm.head_grade_ids.filter((id) => id !== gradeId);
+    } else {
+        nodeForm.head_grade_ids = [...nodeForm.head_grade_ids, gradeId];
+    }
+}
+
 watch(
     () => [props.open, props.mode, props.node, props.level, props.grade] as const,
     ([open]) => {
@@ -62,11 +164,12 @@ watch(
                 nodeForm.code = props.node.code ?? '';
                 nodeForm.description = props.node.description ?? '';
                 nodeForm.parent_id = props.node.parent_id;
-                nodeForm.head_employee_id = props.node.head_employee_id ?? '';
+                nodeForm.head_grade_ids = [...(props.node.head_grade_ids ?? [])];
                 nodeForm.is_active = props.node.is_active;
             } else {
                 nodeForm.reset();
                 nodeForm.parent_id = props.parentId ?? null;
+                nodeForm.head_grade_ids = [];
                 nodeForm.is_active = true;
             }
         }
@@ -153,12 +256,65 @@ function submit() {
                 <UiInput v-model="nodeForm.name" label="Name" :error="nodeForm.errors.name" required />
                 <UiInput v-model="nodeForm.code" label="Code" :error="nodeForm.errors.code" />
                 <UiInput v-model="nodeForm.description" label="Description" :error="nodeForm.errors.description" />
-                <UiSelect v-model="nodeForm.head_employee_id" label="Head" :error="nodeForm.errors.head_employee_id">
-                    <option value="">No head</option>
-                    <option v-for="head in headOptions" :key="head.id" :value="head.id">
-                        {{ head.name }} ({{ head.staff_id }})
-                    </option>
-                </UiSelect>
+
+                <div>
+                    <p class="mb-1.5 text-sm font-medium text-slate-700 dark:text-slate-200">Head grades</p>
+                    <p v-if="nodeForm.errors.head_grade_ids" class="mb-2 text-sm text-red-600">
+                        {{ nodeForm.errors.head_grade_ids }}
+                    </p>
+                    <div
+                        v-if="headGradeOptions.length === 0"
+                        class="rounded-lg border border-dashed border-slate-300 px-3 py-4 text-sm text-slate-500 dark:border-slate-700"
+                    >
+                        No eligible grades yet. Add grades on this subgroup or its parent first.
+                    </div>
+                    <div v-else class="max-h-56 space-y-3 overflow-y-auto rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+                        <div v-if="headGradesBySource.current.length">
+                            <p class="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                This subgroup · {{ headGradesBySource.current[0]?.source_label }}
+                            </p>
+                            <div class="space-y-1.5">
+                                <label
+                                    v-for="option in headGradesBySource.current"
+                                    :key="`c-${option.id}`"
+                                    class="flex cursor-pointer items-start gap-2 rounded-md px-1 py-1 text-sm text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800/60"
+                                >
+                                    <input
+                                        type="checkbox"
+                                        class="mt-0.5 rounded border-slate-300"
+                                        :checked="isHeadSelected(option.id)"
+                                        @change="toggleHeadGrade(option.id)"
+                                    />
+                                    <span>{{ option.label }}</span>
+                                </label>
+                            </div>
+                        </div>
+                        <div v-if="headGradesBySource.parent.length">
+                            <p class="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                Parent · {{ headGradesBySource.parent[0]?.source_label }}
+                            </p>
+                            <div class="space-y-1.5">
+                                <label
+                                    v-for="option in headGradesBySource.parent"
+                                    :key="`p-${option.id}`"
+                                    class="flex cursor-pointer items-start gap-2 rounded-md px-1 py-1 text-sm text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800/60"
+                                >
+                                    <input
+                                        type="checkbox"
+                                        class="mt-0.5 rounded border-slate-300"
+                                        :checked="isHeadSelected(option.id)"
+                                        @change="toggleHeadGrade(option.id)"
+                                    />
+                                    <span>{{ option.label }}</span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                    <p class="mt-1.5 text-xs text-slate-500">
+                        Select one or more grades. Leave approvals use employees in those grades.
+                    </p>
+                </div>
+
                 <label class="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
                     <input v-model="nodeForm.is_active" type="checkbox" class="rounded border-slate-300" />
                     Active
