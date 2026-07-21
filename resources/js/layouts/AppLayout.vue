@@ -62,6 +62,13 @@ const primaryNavItems: NavItem[] = [
         match: (url: string) => url.startsWith('/attendance-sheet'),
     },
     {
+        label: 'Mobile Punch',
+        href: '/self-punch',
+        permission: 'self-punch.use',
+        icon: 'M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z M15 11a3 3 0 11-6 0 3 3 0 016 0z',
+        match: (url: string) => url.startsWith('/self-punch') && !url.startsWith('/self-punch-sites'),
+    },
+    {
         label: 'Duty Roster',
         href: '/duty-rosters',
         permission: 'duty-rosters.view',
@@ -147,6 +154,13 @@ const configurationNavItems: NavItem[] = [
         match: (url: string) => url.startsWith('/zkt-location-groups'),
     },
     {
+        label: 'Remote Access Sites',
+        href: '/self-punch-sites',
+        permission: 'self-punch-sites.view',
+        icon: 'M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7',
+        match: (url: string) => url.startsWith('/self-punch-sites'),
+    },
+    {
         label: 'Attendance Machines',
         href: '/zkt-devices',
         permission: 'zkt-devices.view',
@@ -166,6 +180,13 @@ const configurationNavItems: NavItem[] = [
         permission: 'zkt-attendance-logs.view',
         icon: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z',
         match: (url: string) => url.startsWith('/zkt-attendance-logs'),
+    },
+    {
+        label: 'Mobile Punch Logs',
+        href: '/mobile-punch-logs',
+        permission: 'mobile-punch-logs.view',
+        icon: 'M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z',
+        match: (url: string) => url.startsWith('/mobile-punch-logs'),
     },
 ];
 

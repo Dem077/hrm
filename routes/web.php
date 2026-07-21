@@ -6,17 +6,21 @@ use App\Http\Controllers\AttendanceSheetController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DepartmentController;
+use App\Http\Controllers\DesignationController;
 use App\Http\Controllers\DutyRosterController;
 use App\Http\Controllers\DutyShiftTemplateController;
 use App\Http\Controllers\EmployeeController;
 use App\Http\Controllers\LeaveBalanceController;
 use App\Http\Controllers\LeaveRequestController;
 use App\Http\Controllers\LeaveTypeController;
-use App\Http\Controllers\DesignationController;
+use App\Http\Controllers\MobilePunchAccessLogController;
 use App\Http\Controllers\PayrollComponentController;
 use App\Http\Controllers\PayrollController;
 use App\Http\Controllers\PayrollStructureController;
+use App\Http\Controllers\RemoteDoorSiteController;
 use App\Http\Controllers\RoleController;
+use App\Http\Controllers\SelfPunchController;
+use App\Http\Controllers\SelfPunchSiteController;
 use App\Http\Controllers\ZktAttendanceLogController;
 use App\Http\Controllers\ZktDeviceController;
 use App\Http\Controllers\ZktLocationGroupController;
@@ -135,6 +139,34 @@ Route::middleware('auth')->group(function () {
         Route::delete('attendance-sheet/manual-punches', [AttendanceSheetController::class, 'destroyManualPunches'])
             ->middleware('permission:attendance-sheet.remove-punch')
             ->name('attendance-sheet.manual-punches.destroy');
+    });
+
+    Route::middleware('permission:self-punch.use')->group(function () {
+        Route::get('self-punch', [SelfPunchController::class, 'index'])->name('self-punch.index');
+        Route::post('self-punch', [SelfPunchController::class, 'store'])->name('self-punch.store');
+        Route::post('self-punch/open-door', [SelfPunchController::class, 'openDoor'])->name('self-punch.open-door');
+    });
+
+    Route::middleware('permission:self-punch-sites.view')->group(function () {
+        Route::get('self-punch-sites', [SelfPunchSiteController::class, 'index'])->name('self-punch-sites.index');
+        Route::post('self-punch-sites', [SelfPunchSiteController::class, 'store'])
+            ->middleware('permission:self-punch-sites.create')
+            ->name('self-punch-sites.store');
+        Route::put('self-punch-sites/{self_punch_site}', [SelfPunchSiteController::class, 'update'])
+            ->middleware('permission:self-punch-sites.update')
+            ->name('self-punch-sites.update');
+        Route::delete('self-punch-sites/{self_punch_site}', [SelfPunchSiteController::class, 'destroy'])
+            ->middleware('permission:self-punch-sites.delete')
+            ->name('self-punch-sites.destroy');
+        Route::post('remote-door-sites', [RemoteDoorSiteController::class, 'store'])
+            ->middleware('permission:self-punch-sites.create')
+            ->name('remote-door-sites.store');
+        Route::put('remote-door-sites/{remote_door_site}', [RemoteDoorSiteController::class, 'update'])
+            ->middleware('permission:self-punch-sites.update')
+            ->name('remote-door-sites.update');
+        Route::delete('remote-door-sites/{remote_door_site}', [RemoteDoorSiteController::class, 'destroy'])
+            ->middleware('permission:self-punch-sites.delete')
+            ->name('remote-door-sites.destroy');
     });
 
     Route::middleware('permission:duty-rosters.view')->group(function () {
@@ -288,6 +320,10 @@ Route::middleware('auth')->group(function () {
     Route::get('zkt-attendance-logs', [ZktAttendanceLogController::class, 'index'])
         ->middleware('permission:zkt-attendance-logs.view')
         ->name('zkt-attendance-logs.index');
+
+    Route::get('mobile-punch-logs', [MobilePunchAccessLogController::class, 'index'])
+        ->middleware('permission:mobile-punch-logs.view')
+        ->name('mobile-punch-logs.index');
 
     Route::middleware('permission:roles.view')->group(function () {
         Route::get('roles', [RoleController::class, 'index'])->name('roles.index');

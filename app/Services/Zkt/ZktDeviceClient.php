@@ -4,6 +4,7 @@ namespace App\Services\Zkt;
 
 use App\Enums\ZktConnectionStatus;
 use App\Models\ZktDevice;
+use App\Support\ZktProtocol;
 use Mithun\PhpZkteco\Libs\ZKTeco;
 use Throwable;
 
@@ -282,6 +283,29 @@ class ZktDeviceClient
             $this->markOnline($device);
 
             return $records;
+        } finally {
+            $zk->disconnect();
+        }
+    }
+
+    public function unlockDoor(ZktDevice $device, ?int $seconds = null): void
+    {
+        $zk = $this->makeConnection($device);
+
+        if (! $zk->connect()) {
+            throw new ZktDeviceException('Unable to connect to the access machine.');
+        }
+
+        try {
+            $duration = max(1, min($seconds ?? (int) config('zkt.door_unlock_seconds', 5), 255));
+            $commandString = pack('I', $duration * 10);
+            $result = $zk->_command((string) ZktProtocol::CMD_UNLOCK, $commandString);
+
+            if ($result === false) {
+                throw new ZktDeviceException('The access machine rejected the door unlock command.');
+            }
+
+            $this->markOnline($device);
         } finally {
             $zk->disconnect();
         }

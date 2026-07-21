@@ -2,10 +2,10 @@
 
 namespace App\Models;
 
+use App\Enums\BloodGroup;
 use App\Enums\DutyType;
 use App\Enums\EmploymentType;
 use App\Enums\Gender;
-use App\Enums\BloodGroup;
 use App\Enums\MaritalStatus;
 use App\Enums\ZktDevicePrivilege;
 use Carbon\CarbonInterface;
@@ -244,6 +244,22 @@ class Employee extends Model
             ->withTimestamps()
             ->orderBy('zkt_location_groups.sort_order')
             ->orderBy('zkt_location_groups.name');
+    }
+
+    public function selfPunchSites(): BelongsToMany
+    {
+        return $this->belongsToMany(SelfPunchSite::class, 'employee_self_punch_site')
+            ->withTimestamps()
+            ->orderBy('self_punch_sites.sort_order')
+            ->orderBy('self_punch_sites.name');
+    }
+
+    public function remoteDoorSites(): BelongsToMany
+    {
+        return $this->belongsToMany(RemoteDoorSite::class, 'employee_remote_door_site')
+            ->withTimestamps()
+            ->orderBy('remote_door_sites.sort_order')
+            ->orderBy('remote_door_sites.name');
     }
 
     public function zktDeviceSyncs(): HasMany

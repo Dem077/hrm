@@ -180,7 +180,14 @@ function submit() {
                             {{ option.label }}
                         </option>
                     </UiSelect>
-                    <UiSelect v-model="form.machine_type" label="Machine type" required :error="form.errors.machine_type">
+                    <UiSelect
+                        v-model="form.machine_type"
+                        label="Machine type"
+                        required
+                        :disabled="device.machine_type_locked"
+                        :hint="device.machine_type_lock_reason ?? undefined"
+                        :error="form.errors.machine_type"
+                    >
                         <option v-for="option in machineTypes" :key="option.value" :value="option.value">
                             {{ option.label }}
                         </option>

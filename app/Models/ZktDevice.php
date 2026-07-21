@@ -8,6 +8,7 @@ use App\Enums\ZktConnectionProtocol;
 use App\Enums\ZktConnectionStatus;
 use App\Enums\ZktMachineType;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -41,6 +42,12 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 ])]
 class ZktDevice extends Model
 {
+    /** @var list<string> */
+    public const SYSTEM_DEVICE_NAMES = ['Attendance Sheet', 'Mobile Punch'];
+
+    /** @var list<string> */
+    public const LEGACY_SYSTEM_DEVICE_NAMES = ['Self Punch'];
+
     protected $attributes = [
         'port' => 4370,
         'brand' => 'zkt',
@@ -90,6 +97,21 @@ class ZktDevice extends Model
         );
     }
 
+    public static function selfPunchDevice(): self
+    {
+        return static::query()->firstOrCreate(
+            ['name' => 'Mobile Punch'],
+            [
+                'ip_address' => '0.0.0.0',
+                'machine_type' => ZktMachineType::Attendance->value,
+                'is_active' => false,
+                'auto_sync' => false,
+                'connection_status' => 'unknown',
+                'notes' => 'System device for employee mobile punches from the web app.',
+            ],
+        );
+    }
+
     public function attendanceLogs(): HasMany
     {
         return $this->hasMany(ZktAttendanceLog::class);
@@ -118,9 +140,70 @@ class ZktDevice extends Model
         return $this->hasMany(ZktAdmsCommand::class);
     }
 
+    public function remoteDoorSites(): HasMany
+    {
+        return $this->hasMany(RemoteDoorSite::class);
+    }
+
+    public function isAssignedToLocationGroup(): bool
+    {
+        if (array_key_exists('location_groups_count', $this->attributes)) {
+            return (int) $this->attributes['location_groups_count'] > 0;
+        }
+
+        if ($this->relationLoaded('locationGroups')) {
+            return $this->locationGroups->isNotEmpty();
+        }
+
+        return $this->locationGroups()->exists();
+    }
+
+    public function isUsedInRemoteDoorSites(): bool
+    {
+        if (array_key_exists('remote_door_sites_count', $this->attributes)) {
+            return (int) $this->attributes['remote_door_sites_count'] > 0;
+        }
+
+        if ($this->relationLoaded('remoteDoorSites')) {
+            return $this->remoteDoorSites->isNotEmpty();
+        }
+
+        return $this->remoteDoorSites()->exists();
+    }
+
+    public function machineTypeChangeBlockedReason(): ?string
+    {
+        $reasons = [];
+
+        if ($this->isAssignedToLocationGroup()) {
+            $reasons[] = 'it is assigned to a machine location group';
+        }
+
+        if ($this->isUsedInRemoteDoorSites()) {
+            $reasons[] = 'it is linked to remote access door sites';
+        }
+
+        if ($reasons === []) {
+            return null;
+        }
+
+        return 'Machine type cannot be changed because '.implode(' and ', $reasons).'.';
+    }
+
+    public function isSystemDevice(): bool
+    {
+        return in_array($this->name, self::SYSTEM_DEVICE_NAMES, true)
+            || in_array($this->name, self::LEGACY_SYSTEM_DEVICE_NAMES, true);
+    }
+
+    public function scopeExcludeSystemDevices(Builder $query): Builder
+    {
+        return $query->whereNotIn('name', array_merge(self::SYSTEM_DEVICE_NAMES, self::LEGACY_SYSTEM_DEVICE_NAMES));
+    }
+
     public function isManagedDevice(): bool
     {
-        if ($this->name === 'Attendance Sheet') {
+        if ($this->isSystemDevice()) {
             return false;
         }
 

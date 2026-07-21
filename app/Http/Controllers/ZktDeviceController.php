@@ -31,6 +31,7 @@ class ZktDeviceController extends Controller
     {
         return Inertia::render('ZktDevices/Index', [
             'devices' => ZktDevice::query()
+                ->excludeSystemDevices()
                 ->latest()
                 ->get()
                 ->map(fn (ZktDevice $device) => $this->formatDevice($device)),
@@ -58,8 +59,12 @@ class ZktDeviceController extends Controller
             ->with('success', 'Attendance machine created successfully.');
     }
 
-    public function show(ZktDevice $zktDevice): Response
+    public function show(ZktDevice $zktDevice): Response|RedirectResponse
     {
+        if ($redirect = $this->ensureManagedDevice($zktDevice)) {
+            return $redirect;
+        }
+
         $zktDevice->load([
             'syncLogs' => fn ($query) => $query->latest('started_at')->limit(20),
             'attendanceLogs' => fn ($query) => $query->with('employee:id,staff_id,name')->latest('punched_at')->limit(50),
@@ -71,10 +76,14 @@ class ZktDeviceController extends Controller
         ]);
     }
 
-    public function edit(ZktDevice $zktDevice): Response
+    public function edit(ZktDevice $zktDevice): Response|RedirectResponse
     {
+        if ($redirect = $this->ensureManagedDevice($zktDevice)) {
+            return $redirect;
+        }
+
         return Inertia::render('ZktDevices/Form', [
-            'device' => $this->formatDevice($zktDevice),
+            'device' => $this->formatDevice($zktDevice->loadCount(['locationGroups', 'remoteDoorSites'])),
             'protocols' => $this->protocolOptions(),
             'connectionModes' => ZktConnectionMode::options(),
             'brands' => AttendanceMachineBrand::options(),
@@ -85,6 +94,10 @@ class ZktDeviceController extends Controller
 
     public function update(UpdateZktDeviceRequest $request, ZktDevice $zktDevice): RedirectResponse
     {
+        if ($redirect = $this->ensureManagedDevice($zktDevice)) {
+            return $redirect;
+        }
+
         $zktDevice->update($request->validated());
 
         return redirect()
@@ -94,6 +107,10 @@ class ZktDeviceController extends Controller
 
     public function destroy(ZktDevice $zktDevice): RedirectResponse
     {
+        if ($redirect = $this->ensureManagedDevice($zktDevice)) {
+            return $redirect;
+        }
+
         $zktDevice->delete();
 
         return redirect()
@@ -413,6 +430,8 @@ class ZktDeviceController extends Controller
      */
     protected function formatDevice(ZktDevice $device, bool $includeRelations = false): array
     {
+        $machineTypeLockReason = $device->machineTypeChangeBlockedReason();
+
         $data = [
             'id' => $device->id,
             'name' => $device->name,
@@ -423,6 +442,8 @@ class ZktDeviceController extends Controller
             'machine_type_label' => $device->machine_type->label(),
             'machine_type_short_label' => $device->machine_type->shortLabel(),
             'machine_type_color' => $device->machine_type->color(),
+            'machine_type_locked' => $machineTypeLockReason !== null,
+            'machine_type_lock_reason' => $machineTypeLockReason,
             'ip_address' => $device->ip_address,
             'port' => $device->port,
             'protocol' => $device->protocol->value,
@@ -503,6 +524,8 @@ class ZktDeviceController extends Controller
             'brand' => AttendanceMachineBrand::Zkt->value,
             'location' => '',
             'machine_type' => ZktMachineType::Attendance->value,
+            'machine_type_locked' => false,
+            'machine_type_lock_reason' => null,
             'ip_address' => '',
             'port' => (int) config('zkt.default_port', 4370),
             'protocol' => config('zkt.default_protocol', 'tcp'),
@@ -527,6 +550,17 @@ class ZktDeviceController extends Controller
             'tcpmux_subdomain' => null,
             'tcpmux_port' => null,
         ];
+    }
+
+    protected function ensureManagedDevice(ZktDevice $device): ?RedirectResponse
+    {
+        if ($device->isManagedDevice()) {
+            return null;
+        }
+
+        return redirect()
+            ->route('zkt-devices.index')
+            ->with('error', 'This is a system device and cannot be managed here.');
     }
 
     protected function ensureDeviceIsActive(ZktDevice $device): ?RedirectResponse

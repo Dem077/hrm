@@ -81,6 +81,14 @@ class PermissionRegistry
                 'attendance-sheet.add-punch' => 'Add manual punch records from attendance sheet',
                 'attendance-sheet.remove-punch' => 'Remove punch records from attendance sheet',
             ],
+            'Mobile Punch' => [
+                'self-punch.use' => 'Punch in/out and open doors from the mobile app at allowed sites',
+                'mobile-punch-logs.view' => 'View mobile punch access audit logs',
+                'self-punch-sites.view' => 'View mobile punch and remote door sites',
+                'self-punch-sites.create' => 'Create mobile punch and remote door sites',
+                'self-punch-sites.update' => 'Update mobile punch and remote door sites and employee assignments',
+                'self-punch-sites.delete' => 'Delete mobile punch and remote door sites',
+            ],
             'Duty Roster' => [
                 'duty-rosters.view' => 'View duty roster',
                 'duty-rosters.view-all' => 'View and manage duty roster for all departments',

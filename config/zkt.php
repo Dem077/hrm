@@ -37,4 +37,26 @@ return [
 
     'attendance_max_retries' => (int) env('ZKT_ATTENDANCE_MAX_RETRIES', 3),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Remote door unlock (TCP)
+    |--------------------------------------------------------------------------
+    |
+    | Duration in seconds for CMD_UNLOCK on TCP/UDP access machines.
+    |
+    */
+
+    'door_unlock_seconds' => (int) env('ZKT_DOOR_UNLOCK_SECONDS', 5),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Remote door open cooldown (mobile punch)
+    |--------------------------------------------------------------------------
+    |
+    | Minimum seconds between door open requests from the mobile punch page.
+    |
+    */
+
+    'door_open_cooldown_seconds' => (int) env('ZKT_DOOR_OPEN_COOLDOWN_SECONDS', 10),
+
 ];
