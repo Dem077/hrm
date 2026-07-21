@@ -26,15 +26,18 @@ class ZktLocationGroupController extends Controller
                 ->map(fn (ZktLocationGroup $group) => $group->toPresentationArray()),
             'devices' => ZktDevice::query()
                 ->where('is_active', true)
-                ->where('ip_address', '!=', '0.0.0.0')
                 ->orderBy('name')
-                ->get(['id', 'name', 'location', 'machine_type'])
+                ->get(['id', 'name', 'location', 'machine_type', 'connection_mode', 'ip_address', 'serial_number'])
+                ->filter(fn (ZktDevice $device) => $device->isManagedDevice())
+                ->values()
                 ->map(fn (ZktDevice $device) => [
                     'id' => $device->id,
                     'name' => $device->name,
                     'location' => $device->location,
                     'machine_type' => $device->machine_type->value,
                     'machine_type_label' => $device->machine_type->shortLabel(),
+                    'connection_mode' => $device->connection_mode->value,
+                    'connection_mode_label' => $device->connection_mode->label(),
                 ]),
             'emptyLocationGroup' => $this->emptyLocationGroup(),
         ]);

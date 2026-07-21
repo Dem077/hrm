@@ -13,6 +13,7 @@ use App\Http\Requests\UpdateZktDeviceRequest;
 use App\Jobs\SyncZktDeviceJob;
 use App\Models\ZktDevice;
 use App\Services\Adms\AdmsCommandQueue;
+use App\Services\Adms\AdmsUserCommandBuilder;
 use App\Services\Zkt\ZktDeviceClient;
 use App\Services\Zkt\ZktDeviceSyncService;
 use App\Services\Zkt\ZktDeviceUserSyncService;
@@ -138,6 +139,10 @@ class ZktDeviceController extends Controller
             return $redirect;
         }
 
+        if ($zktDevice->usesAdms()) {
+            return $this->testAdmsDevice($zktDevice);
+        }
+
         $result = $client->testConnection($zktDevice);
 
         return back()->with(
@@ -146,16 +151,29 @@ class ZktDeviceController extends Controller
         );
     }
 
-    public function sync(ZktDevice $zktDevice, ZktDeviceSyncService $syncService): RedirectResponse
-    {
+    public function sync(
+        ZktDevice $zktDevice,
+        ZktDeviceSyncService $syncService,
+        AdmsCommandQueue $admsCommandQueue,
+        AdmsUserCommandBuilder $admsUserCommandBuilder,
+    ): RedirectResponse {
         if ($redirect = $this->ensureDeviceIsActive($zktDevice)) {
             return $redirect;
         }
 
         if ($zktDevice->usesAdms()) {
+            if (! filled($zktDevice->serial_number)) {
+                return back()->with('error', 'ADMS device is missing a serial number.');
+            }
+
+            $admsCommandQueue->enqueue(
+                $zktDevice,
+                $admsUserCommandBuilder->buildQueryAttLogCommand(),
+            );
+
             return back()->with(
                 'success',
-                'This machine uses ADMS push. Punches arrive automatically when the device contacts the server — no TCP pull sync is needed.',
+                'Queued an attendance query. The machine will re-upload recent punches on its next ADMS poll.',
             );
         }
 
@@ -171,6 +189,18 @@ class ZktDeviceController extends Controller
     {
         if ($redirect = $this->ensureDeviceIsActive($zktDevice)) {
             return $redirect;
+        }
+
+        if ($zktDevice->usesAdms()) {
+            $lastSeen = $zktDevice->last_adms_seen_at
+                ? DateFormatter::formatDateTime($zktDevice->last_adms_seen_at)
+                : 'never';
+            $serverTime = DateFormatter::formatDateTime(now());
+
+            return back()->with(
+                'success',
+                "ADMS devices do not report clock time on demand. Last ADMS contact: {$lastSeen} · Server: {$serverTime}. Use Sync time to push the server clock to the machine.",
+            );
         }
 
         try {
@@ -196,10 +226,30 @@ class ZktDeviceController extends Controller
         }
     }
 
-    public function syncTime(ZktDevice $zktDevice, ZktDeviceClient $client): RedirectResponse
-    {
+    public function syncTime(
+        ZktDevice $zktDevice,
+        ZktDeviceClient $client,
+        AdmsCommandQueue $admsCommandQueue,
+        AdmsUserCommandBuilder $admsUserCommandBuilder,
+    ): RedirectResponse {
         if ($redirect = $this->ensureDeviceIsActive($zktDevice)) {
             return $redirect;
+        }
+
+        if ($zktDevice->usesAdms()) {
+            if (! filled($zktDevice->serial_number)) {
+                return back()->with('error', 'ADMS device is missing a serial number.');
+            }
+
+            // F18 rejects SET TIME (-1002). Clock is driven by HTTP Date + reload.
+            foreach ($admsUserCommandBuilder->buildTimeSyncOptionCommands() as $payload) {
+                $admsCommandQueue->enqueue($zktDevice, $payload);
+            }
+
+            return back()->with(
+                'success',
+                'Queued clock sync (reload options + SET DATE). SET OPTION alone only saves timezone — it does not change the display. Wait ~30s for the next poll, then check the F18 clock. Server time is '.now()->format('Y-m-d H:i:s').'.',
+            );
         }
 
         try {
@@ -226,13 +276,16 @@ class ZktDeviceController extends Controller
 
     public function syncAll(Request $request): RedirectResponse
     {
-        $devices = ZktDevice::query()->where('is_active', true)->get();
+        $devices = ZktDevice::query()
+            ->where('is_active', true)
+            ->get()
+            ->filter(fn (ZktDevice $device) => $device->usesTcpPull() && $device->isManagedDevice());
 
         foreach ($devices as $device) {
             SyncZktDeviceJob::dispatch($device);
         }
 
-        return back()->with('success', "Queued {$devices->count()} device(s) for sync.");
+        return back()->with('success', "Queued {$devices->count()} TCP device(s) for punch sync. ADMS machines push punches automatically.");
     }
 
     public function syncUsers(ZktDevice $zktDevice, ZktDeviceUserSyncService $userSyncService): RedirectResponse
@@ -256,6 +309,13 @@ class ZktDeviceController extends Controller
             );
         }
 
+        if ($zktDevice->usesAdms()) {
+            return back()->with(
+                'success',
+                "Queued {$synced} user profile command(s). The machine will apply them on its next ADMS poll.",
+            );
+        }
+
         return back()->with('success', "Synced {$synced} assigned user profile(s) to this machine.");
     }
 
@@ -275,7 +335,7 @@ class ZktDeviceController extends Controller
             if ($zktDevice->usesAdms()) {
                 return back()->with(
                     'success',
-                    'Queued a user query command. The machine will send user info on its next ADMS poll.',
+                    'Queued a user query. Credentials will import when the machine replies on its next ADMS poll.',
                 );
             }
 
@@ -303,6 +363,49 @@ class ZktDeviceController extends Controller
         } catch (Throwable $exception) {
             return back()->with('error', $exception->getMessage());
         }
+    }
+
+    protected function testAdmsDevice(ZktDevice $device): RedirectResponse
+    {
+        if (! filled($device->serial_number)) {
+            return back()->with('error', 'ADMS device is missing a serial number.');
+        }
+
+        $lastSeen = $device->last_adms_seen_at;
+
+        if ($lastSeen === null) {
+            $device->update([
+                'connection_status' => ZktConnectionStatus::Offline,
+                'last_sync_error' => 'Waiting for the machine to contact ADMS.',
+            ]);
+
+            return back()->with(
+                'error',
+                'No ADMS contact yet. Check Cloud Server IP/port on the machine and that it can reach this server.',
+            );
+        }
+
+        if ($lastSeen->greaterThan(now()->subMinutes(5))) {
+            $device->update([
+                'connection_status' => ZktConnectionStatus::Online,
+                'last_sync_error' => null,
+            ]);
+
+            return back()->with(
+                'success',
+                'ADMS connection OK. Last contact '.$lastSeen->diffForHumans().' ('.DateFormatter::formatDateTime($lastSeen).').',
+            );
+        }
+
+        $device->update([
+            'connection_status' => ZktConnectionStatus::Offline,
+            'last_sync_error' => 'No recent ADMS contact.',
+        ]);
+
+        return back()->with(
+            'error',
+            'No recent ADMS contact (last '.DateFormatter::formatDateTime($lastSeen).'). The machine may be offline or misconfigured.',
+        );
     }
 
     /**

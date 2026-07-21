@@ -100,12 +100,12 @@ it('delivers queued commands on getrequest and acknowledges via devicecmd', func
 
     $poll = $this->get('/iclock/getrequest?SN=SN123456');
     $poll->assertOk();
-    expect($poll->getContent())->toContain("C:{$command->command_no}:DATA USER");
+    expect($poll->getContent())->toContain("C:{$command->command_no}:DATA UPDATE USERINFO");
 
     $command->refresh();
     expect($command->status)->toBe(ZktAdmsCommandStatus::Sent);
 
-    $ackBody = "ID={$command->command_no}&Return=0&CMD=DATA USER";
+    $ackBody = "ID={$command->command_no}&Return=0&CMD=DATA";
     $ack = $this->call(
         'POST',
         '/iclock/devicecmd?SN=SN123456',
@@ -119,6 +119,9 @@ it('delivers queued commands on getrequest and acknowledges via devicecmd', func
 
     $command->refresh();
     expect($command->status)->toBe(ZktAdmsCommandStatus::Done);
+    expect($command->payload)->toContain('Pri=')
+        ->and($command->payload)->not->toContain('Privilege=')
+        ->and($command->payload)->not->toContain('DATA USER');
 });
 
 it('queues adms user commands when syncing employees to an adms device', function () {
@@ -141,4 +144,38 @@ it('returns registry options for handshake', function () {
     $response->assertOk();
     expect($response->getContent())->toContain('Stamp=')
         ->and($response->getContent())->toContain('Realtime=1');
+});
+
+it('builds set time and attlog query commands for adms parity actions', function () {
+    $builder = app(AdmsUserCommandBuilder::class);
+
+    expect($builder->buildQueryAttLogCommand(
+        now()->setDateTime(2026, 7, 1, 0, 0, 0),
+        now()->setDateTime(2026, 7, 21, 23, 59, 59),
+    ))->toContain('DATA QUERY ATTLOG')
+        ->toContain('StartTime=2026-07-01 00:00:00')
+        ->toContain('EndTime=2026-07-21 23:59:59');
+});
+
+it('returns push sdk time sync payload and timezone options', function () {
+    $interval = max(1, (int) config('zkt.time_sync_interval_seconds', 60));
+
+    $handshake = $this->get('/iclock/cdata?SN=SN123456&options=all');
+    $handshake->assertOk();
+    expect($handshake->headers->get('Date'))->toContain('GMT')
+        ->and($handshake->getContent())->toContain('SyncTime='.$interval)
+        ->and($handshake->getContent())->toContain('TimeZone=0')
+        ->and($handshake->getContent())->toContain('ServerVer=2.2.14');
+
+    $time = $this->get('/iclock/cdata?SN=SN123456&type=time');
+    $time->assertOk();
+    expect($time->getContent())->toContain('Time=')
+        ->and($time->getContent())->toContain('DateTime=');
+
+    $builder = app(AdmsUserCommandBuilder::class);
+    $commands = $builder->buildTimeSyncOptionCommands();
+    expect($commands)->toContain('SET OPTION TimeZone=0')
+        ->and($commands)->toContain('SET OPTION SyncTime='.$interval)
+        ->and($commands)->toContain('RELOAD OPTIONS')
+        ->and($commands)->toContain('CHECK');
 });

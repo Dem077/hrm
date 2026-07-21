@@ -27,6 +27,10 @@ class IclockController extends Controller
 
         $this->deviceResolver->touch($device);
 
+        if (strtolower((string) $request->query('type')) === 'time') {
+            return $this->plain($this->cdataService->handleTimeSyncResponse());
+        }
+
         if ($request->query('options') === 'all') {
             return $this->plain($this->cdataService->handleOptionsHandshake($device));
         }
@@ -124,6 +128,8 @@ class IclockController extends Controller
     {
         return response($content, 200, [
             'Content-Type' => 'text/plain; charset=UTF-8',
+            // F18 copies this clock face onto the display; send local wall time.
+            'Date' => AdmsCdataService::deviceClockDateHeader(),
         ]);
     }
 }

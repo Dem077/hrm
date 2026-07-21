@@ -81,6 +81,30 @@ it('creates a location group with assigned machines', function () {
         ->and($group->devices->first()->id)->toBe($this->device->id);
 });
 
+it('lists adms machines with placeholder ip in the location group picker', function () {
+    $admsDevice = ZktDevice::query()->create([
+        'name' => 'Cloud Gate',
+        'ip_address' => '0.0.0.0',
+        'port' => 4370,
+        'protocol' => 'tcp',
+        'connection_mode' => 'adms_push',
+        'serial_number' => 'AIOR194560005',
+        'is_active' => true,
+        'auto_sync' => false,
+        'machine_type' => 'attendance',
+    ]);
+
+    $response = $this->actingAs($this->user)->get('/zkt-location-groups');
+
+    $response->assertOk();
+    $response->assertInertia(fn ($page) => $page
+        ->component('ZktLocationGroups/Index')
+        ->has('devices', 2)
+        ->where('devices', fn ($devices) => collect($devices)->contains(
+            fn ($device) => $device['id'] === $admsDevice->id && $device['connection_mode'] === 'adms_push'
+        )));
+});
+
 it('syncs an employee profile to devices in assigned location groups', function () {
     $group = ZktLocationGroup::query()->create([
         'name' => 'Head Office',

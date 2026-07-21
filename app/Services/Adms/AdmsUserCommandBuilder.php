@@ -11,29 +11,28 @@ class AdmsUserCommandBuilder
     {
         $privilege = $employee->device_privilege?->deviceRole() ?? 0;
 
-        $parts = [
-            'DATA USER',
+        // Classic Push / F18: DATA UPDATE USERINFO … with Pri= (not DATA USER / Privilege=).
+        $fields = [
             'PIN='.$employee->staff_id,
             'Name='.$this->sanitizeName($employee->name),
-            'Privilege='.$privilege,
+            'Pri='.$privilege,
+            'Grp=1',
         ];
 
         if (filled($employee->device_card_number)) {
-            $parts[] = 'Card='.$employee->device_card_number;
+            $fields[] = 'Card='.$employee->device_card_number;
         }
 
         if (filled($employee->device_password)) {
-            $parts[] = 'Passwd='.$employee->device_password;
+            $fields[] = 'Passwd='.$employee->device_password;
         }
 
-        $parts[] = 'Grp=0';
-
-        return implode("\t", $parts);
+        return 'DATA UPDATE USERINFO '.implode("\t", $fields);
     }
 
     public function buildDeleteUserCommand(Employee $employee): string
     {
-        return 'DATA DEL_USER PIN='.$employee->staff_id;
+        return 'DATA DELETE USERINFO PIN='.$employee->staff_id;
     }
 
     public function buildQueryUsersCommand(): string
@@ -44,6 +43,47 @@ class AdmsUserCommandBuilder
     public function buildClearLogCommand(): string
     {
         return 'CLEAR LOG';
+    }
+
+    /**
+     * Push wall-clock sync options for classic F18.
+     *
+     * SET TIME / SET DATE return -1002 on this firmware. The display clock is
+     * driven by the HTTP Date header (local wall time) after options reload.
+     *
+     * @return list<string>
+     */
+    public function buildTimeSyncOptionCommands(?\DateTimeInterface $at = null): array
+    {
+        $interval = max(1, (int) config('zkt.time_sync_interval_seconds', 60));
+
+        return [
+            // Keep timezone at 0 — clock face comes from HTTP Date (local-as-GMT).
+            'SET OPTION TimeZone=0',
+            'SET OPTION SyncTime='.$interval,
+            // Force the device to re-fetch handshake options (and re-read Date).
+            'RELOAD OPTIONS',
+            'CHECK',
+        ];
+    }
+
+    public function buildSyncTimeOptionCommand(): string
+    {
+        $interval = max(1, (int) config('zkt.time_sync_interval_seconds', 60));
+
+        return 'SET OPTION SyncTime='.$interval;
+    }
+
+    /**
+     * Ask the device to re-upload attendance logs for a date range.
+     */
+    public function buildQueryAttLogCommand(?\DateTimeInterface $from = null, ?\DateTimeInterface $to = null): string
+    {
+        $from ??= now()->subDays(7)->startOfDay();
+        $to ??= now()->endOfDay();
+
+        return 'DATA QUERY ATTLOG StartTime='.$from->format('Y-m-d H:i:s')
+            .' EndTime='.$to->format('Y-m-d H:i:s');
     }
 
     /**

@@ -145,7 +145,7 @@ function iconTone(color?: string): string {
 
                 <div class="mt-3 flex items-center gap-1 border-t border-slate-100 pt-2.5 dark:border-slate-800">
                     <button
-                        v-if="can('zkt-devices.test') && device.connection_mode !== 'adms_push'"
+                        v-if="can('zkt-devices.test')"
                         type="button"
                         title="Test connection"
                         class="rounded-lg p-1.5 text-slate-500 transition hover:bg-surface-muted hover:text-slate-900 dark:hover:text-white"
@@ -156,7 +156,7 @@ function iconTone(color?: string): string {
                         </svg>
                     </button>
                     <button
-                        v-if="can('zkt-devices.read-time') && device.connection_mode !== 'adms_push'"
+                        v-if="can('zkt-devices.read-time')"
                         type="button"
                         title="Read device clock"
                         class="rounded-lg p-1.5 text-slate-500 transition hover:bg-surface-muted hover:text-slate-900 dark:hover:text-white"
@@ -168,7 +168,7 @@ function iconTone(color?: string): string {
                         </svg>
                     </button>
                     <button
-                        v-if="can('zkt-devices.sync-time') && device.connection_mode !== 'adms_push'"
+                        v-if="can('zkt-devices.sync-time')"
                         type="button"
                         title="Sync device clock"
                         class="rounded-lg p-1.5 text-slate-500 transition hover:bg-surface-muted hover:text-slate-900 dark:hover:text-white"
@@ -179,7 +179,7 @@ function iconTone(color?: string): string {
                         </svg>
                     </button>
                     <button
-                        v-if="can('zkt-devices.sync') && device.connection_mode !== 'adms_push'"
+                        v-if="can('zkt-devices.sync')"
                         type="button"
                         title="Sync attendance"
                         class="rounded-lg p-1.5 text-slate-500 transition hover:bg-surface-muted hover:text-slate-900 dark:hover:text-white"

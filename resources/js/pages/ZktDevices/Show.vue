@@ -72,14 +72,14 @@ function deleteDevice(id: number) {
             aria-label="Device actions"
         >
             <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                <div v-if="device.connection_mode !== 'adms_push'" class="space-y-2">
+                <div class="space-y-2">
                     <p class="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Connection</p>
                     <div class="flex flex-wrap gap-2">
                         <UiButton v-if="can('zkt-devices.test')" size="sm" variant="secondary" @click="testDevice(device.id!)">Test</UiButton>
                     </div>
                 </div>
 
-                <div v-if="device.connection_mode !== 'adms_push'" class="space-y-2">
+                <div class="space-y-2">
                     <p class="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Clock</p>
                     <div class="flex flex-wrap gap-2">
                         <UiButton v-if="can('zkt-devices.read-time')" size="sm" variant="secondary" @click="readDeviceTime(device.id!)">Read time</UiButton>
@@ -91,10 +91,10 @@ function deleteDevice(id: number) {
                     <p class="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">User profiles</p>
                     <div class="flex flex-wrap gap-2">
                         <UiButton v-if="can('zkt-devices.manage-users')" size="sm" variant="primary" @click="syncDeviceUsers(device.id!)">
-                            {{ device.connection_mode === 'adms_push' ? 'Queue user sync' : 'Sync assigned users' }}
+                            Sync assigned users
                         </UiButton>
                         <UiButton v-if="can('zkt-devices.manage-users')" size="sm" variant="secondary" @click="pullDeviceUsers(device.id!)">
-                            {{ device.connection_mode === 'adms_push' ? 'Query users from device' : 'Pull employee credentials' }}
+                            Pull employee credentials
                         </UiButton>
                     </div>
                 </div>
@@ -102,18 +102,13 @@ function deleteDevice(id: number) {
                 <div class="space-y-2">
                     <p class="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Attendance</p>
                     <div class="flex flex-wrap gap-2">
-                        <UiButton
-                            v-if="can('zkt-devices.sync') && device.connection_mode !== 'adms_push'"
-                            size="sm"
-                            variant="primary"
-                            @click="syncDevice(device.id!)"
-                        >
+                        <UiButton v-if="can('zkt-devices.sync')" size="sm" variant="primary" @click="syncDevice(device.id!)">
                             Sync punches
                         </UiButton>
-                        <p v-if="device.connection_mode === 'adms_push'" class="text-sm text-slate-500 dark:text-slate-400">
-                            Punches arrive via ADMS push.
-                        </p>
                     </div>
+                    <p v-if="device.connection_mode === 'adms_push'" class="text-xs text-slate-500 dark:text-slate-400">
+                        ADMS actions queue commands until the machine polls.
+                    </p>
                 </div>
 
                 <div class="space-y-2 sm:col-span-2 xl:col-span-1">

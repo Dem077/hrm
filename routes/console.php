@@ -9,3 +9,4 @@ Artisan::command('inspire', function () {
 })->purpose('Display an inspiring quote');
 
 Schedule::command('zkt:sync')->everyFiveMinutes();
+Schedule::command('zkt:sync-time')->everyMinute();

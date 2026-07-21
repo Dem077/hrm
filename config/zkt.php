@@ -18,6 +18,19 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Device clock sync
+    |--------------------------------------------------------------------------
+    |
+    | How often attendance machines should sync their clock with the server.
+    | Local TCP devices are polled by the scheduler; ADMS devices use SyncTime
+    | in the Push options handshake so they request /iclock/cdata?type=time.
+    |
+    */
+
+    'time_sync_interval_seconds' => (int) env('ZKT_TIME_SYNC_INTERVAL_SECONDS', 60),
+
+    /*
+    |--------------------------------------------------------------------------
     | Attendance Sync
     |--------------------------------------------------------------------------
     */

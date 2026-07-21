@@ -16,23 +16,63 @@ class AdmsCdataService
 
     public function handleOptionsHandshake(ZktDevice $device): string
     {
-        $stamp = now()->format('YmdHis');
+        $now = now();
 
         $lines = [
-            'GET OPTION FROM DB',
-            'Stamp='.$stamp,
-            'OpStamp='.$stamp,
+            'GET OPTION FROM: '.$device->serial_number,
+            'Stamp='.$now->format('Y-m-d H:i:s'),
+            'OpStamp='.$now->timestamp,
             'ErrorDelay=60',
             'Delay=30',
             'TransTimes=00:00;14:00',
             'TransInterval=1',
-            'TransFlag=1111000000',
+            'TransFlag=TransData AttLog OpLog AttPhoto EnrollUser ChgUser EnrollFP ChgFP',
+            // TimeZone=0: wall clock comes from the HTTP Date header, which we send as
+            // local server time (F18 copies Date HH:MM:SS onto the display). Adding a
+            // non-zero TimeZone on top of that would double-shift the clock.
             'TimeZone=0',
             'Realtime=1',
             'Encrypt=0',
+            'Timeout=60',
+            'SyncTime='.max(1, (int) config('zkt.time_sync_interval_seconds', 60)),
+            'ServerVer=2.2.14',
+            'ATTLOGStamp='.$now->format('Y-m-d H:i:s'),
+            'OPERLOGStamp='.$now->format('Y-m-d H:i:s'),
         ];
 
         return implode("\r\n", $lines)."\r\n";
+    }
+
+    /**
+     * Hours east of UTC for classic Push TimeZone= (e.g. 5 for Pakistan).
+     */
+    public static function timezoneHoursFromUtc(?\DateTimeInterface $at = null): int
+    {
+        $at ??= now();
+
+        return (int) round($at->getOffset() / 3600);
+    }
+
+    /**
+     * F18 / classic Push often copies the HTTP Date clock face onto the device
+     * display and ignores the GMT meaning. Send local wall time labeled as GMT.
+     */
+    public static function deviceClockDateHeader(?\DateTimeInterface $at = null): string
+    {
+        $at ??= now();
+
+        return $at->format('D, d M Y H:i:s').' GMT';
+    }
+
+    /**
+     * Push SDK time sync for GET /iclock/cdata?SN=...&type=time
+     */
+    public function handleTimeSyncResponse(): string
+    {
+        $local = now()->format('Y-m-d H:i:s');
+
+        return 'Time='.$local."\r\n"
+            .'DateTime='.$local."\r\n";
     }
 
     public function handleTable(ZktDevice $device, ?string $table, string $body): string
