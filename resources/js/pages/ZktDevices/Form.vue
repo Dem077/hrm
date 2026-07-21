@@ -11,13 +11,15 @@ import UiInput from '@/components/ui/UiInput.vue';
 import UiSelect from '@/components/ui/UiSelect.vue';
 import AppLayout from '@/layouts/AppLayout.vue';
 import { formatDateTime } from '@/lib/format';
-import type { BrandOption, MachineTypeOption, ProtocolOption, ZktDevice } from '@/types/zkt';
+import type { BrandOption, ConnectionModeOption, MachineTypeOption, ProtocolOption, ZktDevice } from '@/types/zkt';
 
 const props = defineProps<{
     device: ZktDevice;
     protocols: ProtocolOption[];
+    connectionModes: ConnectionModeOption[];
     brands: BrandOption[];
     machineTypes: MachineTypeOption[];
+    admsCloudUrl: string;
 }>();
 
 const isEditing = computed(() => props.device.id !== null);
@@ -30,11 +32,12 @@ const form = useForm({
     brand: props.device.brand,
     location: props.device.location ?? '',
     machine_type: props.device.machine_type ?? 'attendance',
+    connection_mode: props.device.connection_mode ?? 'tcp_pull',
     ip_address: props.device.ip_address,
     port: props.device.port,
     protocol: props.device.protocol,
     comm_password: props.device.comm_password,
-    serial_number: props.device.serial_number,
+    serial_number: props.device.serial_number ?? '',
     model_name: props.device.model_name,
     firmware_version: props.device.firmware_version,
     is_active: props.device.is_active,
@@ -48,6 +51,8 @@ const form = useForm({
     tcpmux_subdomain: props.device.tcpmux_subdomain,
     tcpmux_port: props.device.tcpmux_port,
 });
+
+const isAdms = computed(() => form.connection_mode === 'adms_push');
 
 const connectionStatusLabel = computed(() => {
     const labels: Record<string, string> = {
@@ -142,10 +147,19 @@ function submit() {
     <AppLayout>
         <PageHeader
             :title="isEditing ? 'Edit machine' : 'Add machine'"
-            description="Enter network details, test the connection, then save the machine profile."
+            :description="
+                isAdms
+                    ? 'Configure ADMS so the machine pushes punches to HRM over the internet.'
+                    : 'Enter network details, test the connection, then save the machine profile.'
+            "
         >
             <template #actions>
-                <UiButton variant="secondary" :disabled="probing || !form.ip_address" @click="probeDevice">
+                <UiButton
+                    v-if="!isAdms"
+                    variant="secondary"
+                    :disabled="probing || !form.ip_address"
+                    @click="probeDevice"
+                >
                     {{ probing ? 'Testing...' : 'Test & fetch info' }}
                 </UiButton>
                 <UiButton href="/zkt-devices" variant="ghost">Cancel</UiButton>
@@ -158,7 +172,7 @@ function submit() {
         </div>
 
         <form class="space-y-6" @submit.prevent="submit">
-            <UiCard title="Machine details" description="Choose the machine role and connection settings used to reach the device.">
+            <UiCard title="Machine details" description="Choose the machine role and how HRM reaches the device.">
                 <div class="grid gap-5 md:grid-cols-2">
                     <UiInput v-model="form.name" label="Name" required :error="form.errors.name" />
                     <UiSelect v-model="form.brand" label="Brand" required :error="form.errors.brand">
@@ -171,23 +185,49 @@ function submit() {
                             {{ option.label }}
                         </option>
                     </UiSelect>
+                    <UiSelect v-model="form.connection_mode" label="Connection mode" required :error="form.errors.connection_mode">
+                        <option v-for="option in connectionModes" :key="option.value" :value="option.value">
+                            {{ option.label }}
+                        </option>
+                    </UiSelect>
                     <p class="text-sm text-slate-500 dark:text-slate-400 md:col-span-2">
                         Attendance machines feed the attendance sheet. Access machines are for door or access control only
                         and their punches stay in punch logs but do not affect attendance.
                     </p>
                     <UiInput v-model="form.location" label="Location" />
-                    <UiInput v-model="form.ip_address" label="IP address" required :error="form.errors.ip_address" />
-                    <UiInput v-model="form.port" label="Port" type="number" required />
-                    <UiSelect v-model="form.protocol" label="Protocol">
-                        <option v-for="option in protocols" :key="option.value" :value="option.value">
-                            {{ option.label }}
-                        </option>
-                    </UiSelect>
-                    <UiInput v-model="form.comm_password" label="Communication password" type="number" />
+
+                    <template v-if="isAdms">
+                        <UiInput
+                            v-model="form.serial_number"
+                            label="Serial number"
+                            required
+                            hint="Must match the SN shown on the machine (Cloud / ADMS settings)."
+                            :error="form.errors.serial_number"
+                        />
+                        <div class="md:col-span-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm dark:border-slate-700 dark:bg-surface-elevated">
+                            <p class="font-medium text-slate-800 dark:text-slate-200">Cloud / ADMS server URL</p>
+                            <p class="mt-1 break-all font-mono text-brand-700 dark:text-brand-300">{{ admsCloudUrl }}</p>
+                            <p class="mt-2 text-slate-500 dark:text-slate-400">
+                                On the machine, enable Cloud/ADMS/Push and set the server to this URL (some firmwares want host only with path
+                                <span class="font-mono">/iclock</span>). The machine must reach HRM over the internet.
+                            </p>
+                        </div>
+                    </template>
+
+                    <template v-else>
+                        <UiInput v-model="form.ip_address" label="IP address" required :error="form.errors.ip_address" />
+                        <UiInput v-model="form.port" label="Port" type="number" required />
+                        <UiSelect v-model="form.protocol" label="Protocol">
+                            <option v-for="option in protocols" :key="option.value" :value="option.value">
+                                {{ option.label }}
+                            </option>
+                        </UiSelect>
+                        <UiInput v-model="form.comm_password" label="Communication password" type="number" />
+                    </template>
                 </div>
             </UiCard>
 
-            <UiCard title="Sync settings">
+            <UiCard v-if="!isAdms" title="Sync settings">
                 <div class="grid gap-5 md:grid-cols-2">
                     <label class="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-surface-elevated dark:text-slate-300">
                         <input v-model="form.is_active" type="checkbox" class="rounded border-slate-300 bg-white text-brand-600 focus:ring-brand-500/30 dark:border-slate-600 dark:bg-surface dark:text-brand-500" />
@@ -201,12 +241,31 @@ function submit() {
                 </div>
             </UiCard>
 
-            <UiCard title="Machine metadata" description="Populated automatically after a successful connection test.">
+            <UiCard v-else title="Device status">
+                <label class="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-surface-elevated dark:text-slate-300">
+                    <input v-model="form.is_active" type="checkbox" class="rounded border-slate-300 bg-white text-brand-600 focus:ring-brand-500/30 dark:border-slate-600 dark:bg-surface dark:text-brand-500" />
+                    Device is active
+                </label>
+                <p class="mt-3 text-sm text-slate-500 dark:text-slate-400">
+                    ADMS machines push punches automatically. Attendance pull sync is disabled for this connection mode.
+                </p>
+                <input type="hidden" :value="form.sync_interval_minutes" />
+            </UiCard>
+
+            <UiCard
+                title="Machine metadata"
+                :description="isAdms ? 'Updated when the device contacts the ADMS endpoints.' : 'Populated automatically after a successful connection test.'"
+            >
                 <div class="mb-5">
                     <UiBadge :label="connectionStatusLabel" :color="connectionStatusColor" />
                 </div>
                 <div class="grid gap-5 md:grid-cols-2">
-                    <UiInput v-model="form.serial_number" label="Serial number" readonly />
+                    <UiInput
+                        v-if="!isAdms"
+                        v-model="form.serial_number"
+                        label="Serial number"
+                        readonly
+                    />
                     <UiInput v-model="form.model_name" label="Model" readonly />
                     <UiInput v-model="form.firmware_version" label="Firmware" readonly />
                     <UiInput

@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\AttendanceMachineBrand;
+use App\Enums\ZktConnectionMode;
 use App\Enums\ZktConnectionProtocol;
 use App\Enums\ZktConnectionStatus;
 use App\Enums\ZktMachineType;
@@ -18,6 +19,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'ip_address',
     'port',
     'protocol',
+    'connection_mode',
     'comm_password',
     'serial_number',
     'model_name',
@@ -30,6 +32,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'connection_status',
     'last_connected_at',
     'last_synced_at',
+    'last_adms_seen_at',
     'last_sync_error',
     'notes',
     'tcpmux_enabled',
@@ -42,6 +45,7 @@ class ZktDevice extends Model
         'port' => 4370,
         'brand' => 'zkt',
         'protocol' => 'tcp',
+        'connection_mode' => 'tcp_pull',
         'comm_password' => 0,
         'machine_type' => 'attendance',
         'is_active' => true,
@@ -60,10 +64,12 @@ class ZktDevice extends Model
             'auto_sync' => 'boolean',
             'sync_interval_minutes' => 'integer',
             'protocol' => ZktConnectionProtocol::class,
+            'connection_mode' => ZktConnectionMode::class,
             'brand' => AttendanceMachineBrand::class,
             'machine_type' => ZktMachineType::class,
             'last_connected_at' => 'datetime',
             'last_synced_at' => 'datetime',
+            'last_adms_seen_at' => 'datetime',
             'tcpmux_enabled' => 'boolean',
             'tcpmux_port' => 'integer',
         ];
@@ -107,14 +113,37 @@ class ZktDevice extends Model
         return $this->hasMany(ZktDeviceEmployeeSync::class);
     }
 
+    public function admsCommands(): HasMany
+    {
+        return $this->hasMany(ZktAdmsCommand::class);
+    }
+
     public function isManagedDevice(): bool
     {
-        return $this->name !== 'Attendance Sheet' && $this->ip_address !== '0.0.0.0';
+        if ($this->name === 'Attendance Sheet') {
+            return false;
+        }
+
+        if ($this->usesAdms()) {
+            return filled($this->serial_number);
+        }
+
+        return $this->ip_address !== '0.0.0.0';
+    }
+
+    public function usesAdms(): bool
+    {
+        return $this->connection_mode === ZktConnectionMode::AdmsPush;
+    }
+
+    public function usesTcpPull(): bool
+    {
+        return $this->connection_mode === ZktConnectionMode::TcpPull;
     }
 
     public function isDueForSync(): bool
     {
-        if (! $this->is_active || ! $this->auto_sync) {
+        if (! $this->is_active || ! $this->auto_sync || $this->usesAdms()) {
             return false;
         }
 

@@ -106,7 +106,8 @@ it('syncs an employee profile to devices in assigned location groups', function 
         )
         ->andReturn(['uid' => 1, 'user_id' => 'EMP001']);
 
-    $service = new ZktDeviceUserSyncService($client);
+    $this->app->instance(ZktDeviceClient::class, $client);
+    $service = app(ZktDeviceUserSyncService::class);
     $results = $service->syncEmployee($this->employee->fresh(['zktLocationGroups', 'zktDeviceSyncs.device']));
 
     expect($results)->toHaveCount(1)
@@ -153,7 +154,8 @@ it('removes an employee from devices when location group access is removed', fun
             1,
         );
 
-    $service = new ZktDeviceUserSyncService($client);
+    $this->app->instance(ZktDeviceClient::class, $client);
+    $service = app(ZktDeviceUserSyncService::class);
     $results = $service->syncEmployee($this->employee->fresh(['zktLocationGroups', 'zktDeviceSyncs.device']));
 
     expect($results)->toHaveCount(1)
@@ -220,7 +222,8 @@ it('pulls card number password and privilege from a machine into an employee rec
             ],
         ]);
 
-    $service = new ZktDeviceUserSyncService($client);
+    $this->app->instance(ZktDeviceClient::class, $client);
+    $service = app(ZktDeviceUserSyncService::class);
     $result = $service->pullEmployeeCredentialsFromDevices($this->employee);
 
     $employee = $this->employee->fresh();
@@ -246,7 +249,8 @@ it('pulls matching employee credentials from a device in bulk', function () {
             ],
         ]);
 
-    $service = new ZktDeviceUserSyncService($client);
+    $this->app->instance(ZktDeviceClient::class, $client);
+    $service = app(ZktDeviceUserSyncService::class);
     $results = $service->pullDeviceCredentials($this->device);
 
     expect($results)->toHaveCount(1)

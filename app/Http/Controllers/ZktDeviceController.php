@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Enums\AttendanceMachineBrand;
+use App\Enums\ZktConnectionMode;
 use App\Enums\ZktConnectionProtocol;
 use App\Enums\ZktConnectionStatus;
 use App\Enums\ZktMachineType;
@@ -11,6 +12,7 @@ use App\Http\Requests\StoreZktDeviceRequest;
 use App\Http\Requests\UpdateZktDeviceRequest;
 use App\Jobs\SyncZktDeviceJob;
 use App\Models\ZktDevice;
+use App\Services\Adms\AdmsCommandQueue;
 use App\Services\Zkt\ZktDeviceClient;
 use App\Services\Zkt\ZktDeviceSyncService;
 use App\Services\Zkt\ZktDeviceUserSyncService;
@@ -39,8 +41,10 @@ class ZktDeviceController extends Controller
         return Inertia::render('ZktDevices/Form', [
             'device' => $this->emptyDevice(),
             'protocols' => $this->protocolOptions(),
+            'connectionModes' => ZktConnectionMode::options(),
             'brands' => AttendanceMachineBrand::options(),
             'machineTypes' => ZktMachineType::options(),
+            'admsCloudUrl' => rtrim((string) config('app.url'), '/').'/iclock',
         ]);
     }
 
@@ -71,8 +75,10 @@ class ZktDeviceController extends Controller
         return Inertia::render('ZktDevices/Form', [
             'device' => $this->formatDevice($zktDevice),
             'protocols' => $this->protocolOptions(),
+            'connectionModes' => ZktConnectionMode::options(),
             'brands' => AttendanceMachineBrand::options(),
             'machineTypes' => ZktMachineType::options(),
+            'admsCloudUrl' => rtrim((string) config('app.url'), '/').'/iclock',
         ]);
     }
 
@@ -144,6 +150,13 @@ class ZktDeviceController extends Controller
     {
         if ($redirect = $this->ensureDeviceIsActive($zktDevice)) {
             return $redirect;
+        }
+
+        if ($zktDevice->usesAdms()) {
+            return back()->with(
+                'success',
+                'This machine uses ADMS push. Punches arrive automatically when the device contacts the server — no TCP pull sync is needed.',
+            );
         }
 
         $syncLog = $syncService->sync($zktDevice);
@@ -258,6 +271,14 @@ class ZktDeviceController extends Controller
 
         try {
             $results = $userSyncService->pullDeviceCredentials($zktDevice);
+
+            if ($zktDevice->usesAdms()) {
+                return back()->with(
+                    'success',
+                    'Queued a user query command. The machine will send user info on its next ADMS poll.',
+                );
+            }
+
             $updated = collect($results)->where('status', 'updated')->count();
             $matched = count($results);
 
@@ -303,6 +324,8 @@ class ZktDeviceController extends Controller
             'port' => $device->port,
             'protocol' => $device->protocol->value,
             'protocol_label' => $device->protocol->label(),
+            'connection_mode' => $device->connection_mode->value,
+            'connection_mode_label' => $device->connection_mode->label(),
             'comm_password' => $device->comm_password,
             'serial_number' => $device->serial_number,
             'model_name' => $device->model_name,
@@ -313,11 +336,18 @@ class ZktDeviceController extends Controller
             ...$device->connectionStatusPresentation(),
             'last_connected_at' => $device->last_connected_at?->toIso8601String(),
             'last_synced_at' => $device->last_synced_at?->toIso8601String(),
+            'last_adms_seen_at' => $device->last_adms_seen_at?->toIso8601String(),
             'last_sync_error' => $device->last_sync_error,
             'notes' => $device->notes,
             'tcpmux_enabled' => $device->tcpmux_enabled,
             'tcpmux_subdomain' => $device->tcpmux_subdomain,
             'tcpmux_port' => $device->tcpmux_port,
+            'adms_pending_commands' => $includeRelations
+                ? app(AdmsCommandQueue::class)->pendingCount($device)
+                : null,
+            'adms_failed_commands' => $includeRelations
+                ? app(AdmsCommandQueue::class)->failedCount($device)
+                : null,
             'created_at' => $device->created_at?->toIso8601String(),
             'updated_at' => $device->updated_at?->toIso8601String(),
         ];
@@ -347,6 +377,13 @@ class ZktDeviceController extends Controller
                     ] : null,
                 ],
             );
+            $data['adms_commands'] = $device->admsCommands()
+                ->latest('command_no')
+                ->limit(30)
+                ->get()
+                ->map(fn ($command) => $command->toPresentationArray())
+                ->values()
+                ->all();
         }
 
         return $data;
@@ -366,6 +403,8 @@ class ZktDeviceController extends Controller
             'ip_address' => '',
             'port' => (int) config('zkt.default_port', 4370),
             'protocol' => config('zkt.default_protocol', 'tcp'),
+            'connection_mode' => ZktConnectionMode::TcpPull->value,
+            'connection_mode_label' => ZktConnectionMode::TcpPull->label(),
             'comm_password' => 0,
             'serial_number' => null,
             'model_name' => null,
@@ -378,6 +417,7 @@ class ZktDeviceController extends Controller
             'connection_status_color' => ZktConnectionStatus::Unknown->color(),
             'last_connected_at' => null,
             'last_synced_at' => null,
+            'last_adms_seen_at' => null,
             'last_sync_error' => null,
             'notes' => '',
             'tcpmux_enabled' => false,

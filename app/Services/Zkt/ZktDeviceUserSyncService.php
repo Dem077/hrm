@@ -8,6 +8,8 @@ use App\Models\Employee;
 use App\Models\ZktDevice;
 use App\Models\ZktDeviceEmployeeSync;
 use App\Models\ZktLocationGroup;
+use App\Services\Adms\AdmsCommandQueue;
+use App\Services\Adms\AdmsUserCommandBuilder;
 use Illuminate\Support\Collection;
 use Throwable;
 
@@ -15,6 +17,8 @@ class ZktDeviceUserSyncService
 {
     public function __construct(
         protected ZktDeviceClient $client,
+        protected AdmsCommandQueue $admsCommandQueue,
+        protected AdmsUserCommandBuilder $admsUserCommandBuilder,
     ) {}
 
     /**
@@ -220,6 +224,21 @@ class ZktDeviceUserSyncService
             return [];
         }
 
+        if ($device->usesAdms()) {
+            $this->admsCommandQueue->enqueue(
+                $device,
+                $this->admsUserCommandBuilder->buildQueryUsersCommand(),
+            );
+
+            return [[
+                'employee_id' => 0,
+                'employee_name' => '',
+                'staff_id' => '',
+                'status' => 'queued',
+                'updated_fields' => [],
+            ]];
+        }
+
         $users = $this->client->fetchUsers($device);
         $results = [];
 
@@ -255,6 +274,10 @@ class ZktDeviceUserSyncService
      */
     protected function syncEmployeeToDevice(Employee $employee, ZktDevice $device): array
     {
+        if ($device->usesAdms()) {
+            return $this->queueAdmsUserSync($employee, $device);
+        }
+
         try {
             $users = $this->client->fetchUsers($device);
             $existing = $this->findDeviceUser($users, $employee->staff_id);
@@ -319,6 +342,10 @@ class ZktDeviceUserSyncService
      */
     protected function removeEmployeeFromDevice(Employee $employee, ZktDevice $device): array
     {
+        if ($device->usesAdms()) {
+            return $this->queueAdmsUserRemoval($employee, $device);
+        }
+
         $sync = ZktDeviceEmployeeSync::query()
             ->where('employee_id', $employee->id)
             ->where('zkt_device_id', $device->id)
@@ -345,6 +372,111 @@ class ZktDeviceUserSyncService
                 'device_name' => $device->name,
                 'status' => ZktDeviceUserSyncStatus::Removed->value,
                 'message' => null,
+            ];
+        } catch (Throwable $exception) {
+            if ($sync) {
+                $sync->update([
+                    'sync_status' => ZktDeviceUserSyncStatus::Failed,
+                    'last_error' => $exception->getMessage(),
+                ]);
+            }
+
+            return [
+                'device_id' => $device->id,
+                'device_name' => $device->name,
+                'status' => ZktDeviceUserSyncStatus::Failed->value,
+                'message' => $exception->getMessage(),
+            ];
+        }
+    }
+
+    /**
+     * @return array{device_id: int, device_name: string, status: string, message: string|null}
+     */
+    protected function queueAdmsUserSync(Employee $employee, ZktDevice $device): array
+    {
+        try {
+            if (! filled($device->serial_number)) {
+                throw new ZktDeviceException('ADMS device is missing a serial number.');
+            }
+
+            $this->admsCommandQueue->enqueue(
+                $device,
+                $this->admsUserCommandBuilder->buildUserCommand($employee),
+            );
+
+            ZktDeviceEmployeeSync::query()->updateOrCreate(
+                [
+                    'employee_id' => $employee->id,
+                    'zkt_device_id' => $device->id,
+                ],
+                [
+                    'sync_status' => ZktDeviceUserSyncStatus::Synced,
+                    'last_synced_at' => now(),
+                    'last_error' => null,
+                ],
+            );
+
+            return [
+                'device_id' => $device->id,
+                'device_name' => $device->name,
+                'status' => ZktDeviceUserSyncStatus::Synced->value,
+                'message' => 'Queued ADMS user command for next device poll.',
+            ];
+        } catch (Throwable $exception) {
+            ZktDeviceEmployeeSync::query()->updateOrCreate(
+                [
+                    'employee_id' => $employee->id,
+                    'zkt_device_id' => $device->id,
+                ],
+                [
+                    'sync_status' => ZktDeviceUserSyncStatus::Failed,
+                    'last_error' => $exception->getMessage(),
+                ],
+            );
+
+            return [
+                'device_id' => $device->id,
+                'device_name' => $device->name,
+                'status' => ZktDeviceUserSyncStatus::Failed->value,
+                'message' => $exception->getMessage(),
+            ];
+        }
+    }
+
+    /**
+     * @return array{device_id: int, device_name: string, status: string, message: string|null}
+     */
+    protected function queueAdmsUserRemoval(Employee $employee, ZktDevice $device): array
+    {
+        $sync = ZktDeviceEmployeeSync::query()
+            ->where('employee_id', $employee->id)
+            ->where('zkt_device_id', $device->id)
+            ->first();
+
+        try {
+            if (! filled($device->serial_number)) {
+                throw new ZktDeviceException('ADMS device is missing a serial number.');
+            }
+
+            $this->admsCommandQueue->enqueue(
+                $device,
+                $this->admsUserCommandBuilder->buildDeleteUserCommand($employee),
+            );
+
+            if ($sync) {
+                $sync->update([
+                    'sync_status' => ZktDeviceUserSyncStatus::Removed,
+                    'last_synced_at' => now(),
+                    'last_error' => null,
+                ]);
+            }
+
+            return [
+                'device_id' => $device->id,
+                'device_name' => $device->name,
+                'status' => ZktDeviceUserSyncStatus::Removed->value,
+                'message' => 'Queued ADMS delete-user command for next device poll.',
             ];
         } catch (Throwable $exception) {
             if ($sync) {
@@ -435,6 +567,7 @@ class ZktDeviceUserSyncService
         return ZktDevice::query()
             ->where('is_active', true)
             ->where('ip_address', '!=', '0.0.0.0')
+            ->where('connection_mode', 'tcp_pull')
             ->when(
                 $groupDeviceIds->isNotEmpty(),
                 fn ($query) => $query->whereIn('id', $groupDeviceIds),

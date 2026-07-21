@@ -12,6 +12,8 @@ export type MachineTypeOption = {
 
 export type ZktMachineType = 'attendance' | 'access';
 
+export type ZktConnectionMode = 'tcp_pull' | 'adms_push';
+
 export type ZktDevice = {
     id: number | null;
     name: string;
@@ -26,6 +28,8 @@ export type ZktDevice = {
     port: number;
     protocol: string;
     protocol_label?: string;
+    connection_mode: ZktConnectionMode;
+    connection_mode_label?: string;
     comm_password: number;
     serial_number: string | null;
     model_name: string | null;
@@ -38,14 +42,31 @@ export type ZktDevice = {
     connection_status_color?: string;
     last_connected_at: string | null;
     last_synced_at: string | null;
+    last_adms_seen_at?: string | null;
     last_sync_error: string | null;
     notes: string | null;
     tcpmux_enabled: boolean;
     tcpmux_subdomain: string | null;
     tcpmux_port: number | null;
+    adms_pending_commands?: number | null;
+    adms_failed_commands?: number | null;
+    adms_commands?: AdmsCommand[];
     sync_logs?: SyncLog[];
     attendance_logs?: AttendanceLogSummary[];
     employee_syncs?: DeviceEmployeeSync[];
+};
+
+export type AdmsCommand = {
+    id: number;
+    command_no: number;
+    payload: string;
+    status: string;
+    status_label: string;
+    status_color: string;
+    result: string | null;
+    sent_at: string | null;
+    completed_at: string | null;
+    created_at: string | null;
 };
 
 export type DeviceEmployeeSync = {
@@ -91,6 +112,11 @@ export type AttendanceLogSummary = {
 
 export type ProtocolOption = {
     value: string;
+    label: string;
+};
+
+export type ConnectionModeOption = {
+    value: ZktConnectionMode;
     label: string;
 };
 
