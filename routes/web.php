@@ -4,9 +4,13 @@ use App\Http\Controllers\AppSettingController;
 use App\Http\Controllers\AttendanceSettingController;
 use App\Http\Controllers\AttendanceSheetController;
 use App\Http\Controllers\Auth\LoginController;
+use App\Http\Controllers\BankController;
 use App\Http\Controllers\DashboardController;
-use App\Http\Controllers\DepartmentController;
-use App\Http\Controllers\DesignationController;
+use App\Http\Controllers\CompanyStructureController;
+use App\Http\Controllers\GradePayrollController;
+use App\Http\Controllers\StructureGradeController;
+use App\Http\Controllers\StructureLevelController;
+use App\Http\Controllers\StructureNodeController;
 use App\Http\Controllers\DutyRosterController;
 use App\Http\Controllers\DutyShiftTemplateController;
 use App\Http\Controllers\EmployeeController;
@@ -66,16 +70,63 @@ Route::middleware('auth')->group(function () {
             ->name('employees.pull-device-credentials');
     });
 
-    Route::middleware('permission:departments.view')->group(function () {
-        Route::resource('departments', DepartmentController::class)->middleware([
-            'index' => 'permission:departments.view',
-            'show' => 'permission:departments.view',
-            'create' => 'permission:departments.create',
-            'store' => 'permission:departments.create',
-            'edit' => 'permission:departments.update',
-            'update' => 'permission:departments.update',
-            'destroy' => 'permission:departments.delete',
-        ]);
+    Route::middleware('permission:company-structure.view')->group(function () {
+        Route::get('company-structure', [CompanyStructureController::class, 'index'])
+            ->name('company-structure.index');
+
+        Route::get('company-structure/sample-csv', [CompanyStructureController::class, 'downloadSample'])
+            ->name('company-structure.sample-csv');
+        Route::post('company-structure/import/preview', [CompanyStructureController::class, 'previewImport'])
+            ->middleware('permission:company-structure.create')
+            ->name('company-structure.import.preview');
+        Route::post('company-structure/import', [CompanyStructureController::class, 'import'])
+            ->middleware('permission:company-structure.create')
+            ->name('company-structure.import');
+        Route::post('company-structure/import/cancel', [CompanyStructureController::class, 'cancelImport'])
+            ->middleware('permission:company-structure.create')
+            ->name('company-structure.import.cancel');
+
+        Route::post('company-structure/groups/{structure_group}/nodes', [StructureNodeController::class, 'store'])
+            ->middleware('permission:company-structure.create')
+            ->name('company-structure.nodes.store');
+        Route::put('company-structure/nodes/{structure_node}', [StructureNodeController::class, 'update'])
+            ->middleware('permission:company-structure.update')
+            ->name('company-structure.nodes.update');
+        Route::delete('company-structure/nodes/{structure_node}', [StructureNodeController::class, 'destroy'])
+            ->middleware('permission:company-structure.delete')
+            ->name('company-structure.nodes.destroy');
+        Route::post('company-structure/nodes/{structure_node}/move', [StructureNodeController::class, 'move'])
+            ->middleware('permission:company-structure.update')
+            ->name('company-structure.nodes.move');
+        Route::post('company-structure/nodes/reorder', [StructureNodeController::class, 'reorder'])
+            ->middleware('permission:company-structure.update')
+            ->name('company-structure.nodes.reorder');
+
+        Route::post('company-structure/levels', [StructureLevelController::class, 'store'])
+            ->middleware('permission:company-structure.create')
+            ->name('company-structure.levels.store');
+        Route::put('company-structure/levels/{structure_level}', [StructureLevelController::class, 'update'])
+            ->middleware('permission:company-structure.update')
+            ->name('company-structure.levels.update');
+        Route::delete('company-structure/levels/{structure_level}', [StructureLevelController::class, 'destroy'])
+            ->middleware('permission:company-structure.delete')
+            ->name('company-structure.levels.destroy');
+        Route::post('company-structure/levels/reorder', [StructureLevelController::class, 'reorder'])
+            ->middleware('permission:company-structure.update')
+            ->name('company-structure.levels.reorder');
+
+        Route::post('company-structure/levels/{structure_level}/grades', [StructureGradeController::class, 'store'])
+            ->middleware('permission:company-structure.create')
+            ->name('company-structure.grades.store');
+        Route::put('company-structure/grades/{structure_grade}', [StructureGradeController::class, 'update'])
+            ->middleware('permission:company-structure.update')
+            ->name('company-structure.grades.update');
+        Route::delete('company-structure/grades/{structure_grade}', [StructureGradeController::class, 'destroy'])
+            ->middleware('permission:company-structure.delete')
+            ->name('company-structure.grades.destroy');
+        Route::post('company-structure/levels/{structure_level}/grades/reorder', [StructureGradeController::class, 'reorder'])
+            ->middleware('permission:company-structure.update')
+            ->name('company-structure.grades.reorder');
     });
 
     Route::middleware('permission:zkt-devices.view')->group(function () {
@@ -260,20 +311,43 @@ Route::middleware('auth')->group(function () {
         Route::delete('payroll-structure/components/{payroll_component}', [PayrollComponentController::class, 'destroy'])
             ->middleware('permission:payroll-structure.update')
             ->name('payroll-structure.components.destroy');
-        Route::post('payroll-structure/designations', [DesignationController::class, 'store'])
+        Route::put('payroll-structure/grades/{structure_grade}', [GradePayrollController::class, 'update'])
             ->middleware('permission:payroll-structure.update')
-            ->name('payroll-structure.designations.store');
-        Route::put('payroll-structure/designations/{designation}', [DesignationController::class, 'update'])
-            ->middleware('permission:payroll-structure.update')
-            ->name('payroll-structure.designations.update');
-        Route::delete('payroll-structure/designations/{designation}', [DesignationController::class, 'destroy'])
-            ->middleware('permission:payroll-structure.update')
-            ->name('payroll-structure.designations.destroy');
+            ->name('payroll-structure.grades.update');
     });
 
     Route::middleware('permission:payroll.view')->group(function () {
         Route::get('payroll', [PayrollController::class, 'index'])->name('payroll.index');
-        Route::get('payroll/export', [PayrollController::class, 'export'])
+        Route::get('payroll/{payroll_run}', [PayrollController::class, 'show'])->name('payroll.show');
+        Route::get('payroll/{payroll_run}/employees/{employee}/attendance', [PayrollController::class, 'employeeAttendance'])
+            ->name('payroll.employees.attendance');
+        Route::get('payroll/{payroll_run}/employees/{employee}/adjustments', [PayrollController::class, 'employeeAdjustments'])
+            ->name('payroll.employees.adjustments');
+        Route::post('payroll', [PayrollController::class, 'store'])
+            ->middleware('permission:payroll.create')
+            ->name('payroll.store');
+        Route::delete('payroll/{payroll_run}', [PayrollController::class, 'destroy'])
+            ->middleware('permission:payroll.delete')
+            ->name('payroll.destroy');
+        Route::post('payroll/{payroll_run}/employees/{employee}/adjustments', [PayrollController::class, 'storeAdjustment'])
+            ->middleware('permission:payroll.adjust')
+            ->name('payroll.employees.adjustments.store');
+        Route::delete('payroll/{payroll_run}/adjustments/{adjustment}', [PayrollController::class, 'destroyAdjustment'])
+            ->middleware('permission:payroll.adjust')
+            ->name('payroll.adjustments.destroy');
+        Route::post('payroll/{payroll_run}/process', [PayrollController::class, 'process'])
+            ->middleware('permission:payroll.process')
+            ->name('payroll.process');
+        Route::post('payroll/{payroll_run}/rerun', [PayrollController::class, 'rerun'])
+            ->middleware('permission:payroll.process')
+            ->name('payroll.rerun');
+        Route::post('payroll/{payroll_run}/finalize', [PayrollController::class, 'finalize'])
+            ->middleware('permission:payroll.finalize')
+            ->name('payroll.finalize');
+        Route::post('payroll/{payroll_run}/reopen', [PayrollController::class, 'reopen'])
+            ->middleware('permission:payroll.finalize')
+            ->name('payroll.reopen');
+        Route::get('payroll/{payroll_run}/export', [PayrollController::class, 'export'])
             ->middleware('permission:payroll.export')
             ->name('payroll.export');
     });
@@ -291,8 +365,17 @@ Route::middleware('auth')->group(function () {
             ->middleware('permission:attendance-settings.payroll-period.update')
             ->name('attendance-settings.payroll-period.update');
         Route::put('attendance-settings/leave-carry-forward', [AttendanceSettingController::class, 'updateLeaveCarryForward'])
-            ->middleware('permission:attendance-settings.payroll-period.update')
+            ->middleware('permission:attendance-settings.leave-carry-forward.update')
             ->name('attendance-settings.leave-carry-forward.update');
+        Route::post('attendance-settings/banks', [BankController::class, 'store'])
+            ->middleware('permission:attendance-settings.payroll-period.update')
+            ->name('attendance-settings.banks.store');
+        Route::put('attendance-settings/banks/{bank}', [BankController::class, 'update'])
+            ->middleware('permission:attendance-settings.payroll-period.update')
+            ->name('attendance-settings.banks.update');
+        Route::delete('attendance-settings/banks/{bank}', [BankController::class, 'destroy'])
+            ->middleware('permission:attendance-settings.payroll-period.update')
+            ->name('attendance-settings.banks.destroy');
         Route::post('attendance-settings/duty-policies', [AttendanceSettingController::class, 'storePolicy'])
             ->middleware('permission:attendance-settings.duty-policies.create')
             ->name('attendance-settings.duty-policies.store');

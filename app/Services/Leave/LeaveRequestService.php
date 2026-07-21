@@ -41,7 +41,11 @@ class LeaveRequestService
 
     public function resolveApprover(Employee $employee): ?Employee
     {
-        $employee->loadMissing(['manager', 'department.headEmployee']);
+        $employee->loadMissing([
+            'manager',
+            'grade.level.node.headEmployee',
+            'grade.level.node.parent.headEmployee',
+        ]);
 
         if ($employee->manager_id) {
             $manager = $employee->manager ?? Employee::query()->find($employee->manager_id);
@@ -51,10 +55,14 @@ class LeaveRequestService
             }
         }
 
-        $departmentHead = $employee->department?->headEmployee;
+        $node = $employee->grade?->level?->node;
 
-        if ($departmentHead && $departmentHead->id !== $employee->id) {
-            return $departmentHead;
+        while ($node) {
+            $head = $node->headEmployee;
+            if ($head && $head->id !== $employee->id) {
+                return $head;
+            }
+            $node = $node->parent;
         }
 
         return null;
@@ -66,7 +74,7 @@ class LeaveRequestService
             return $leaveRequest;
         }
 
-        $leaveRequest->loadMissing(['employee.manager', 'employee.department.headEmployee']);
+        $leaveRequest->loadMissing(['employee.manager', 'employee.grade.level.node.headEmployee', 'employee.grade.level.node.parent.headEmployee']);
 
         if (! $leaveRequest->employee) {
             return $leaveRequest;
@@ -86,7 +94,7 @@ class LeaveRequestService
     {
         LeaveRequest::query()
             ->where('status', LeaveRequestStatus::Pending)
-            ->with(['employee.manager', 'employee.department.headEmployee'])
+            ->with(['employee.manager', 'employee.grade.level.node.headEmployee', 'employee.grade.level.node.parent.headEmployee'])
             ->chunkById(100, function ($leaveRequests): void {
                 foreach ($leaveRequests as $leaveRequest) {
                     $this->syncApprover($leaveRequest);
@@ -501,7 +509,7 @@ class LeaveRequestService
         int $leaveYearOffset = 0,
         ?int $leaveTypeId = null,
     ): array {
-        $employee->loadMissing('department:id,name');
+        $employee->loadMissing(['grade.level.group', 'grade.level.node.group']);
 
         $leaveTypes = LeaveType::query()
             ->where('is_active', true)
@@ -542,7 +550,9 @@ class LeaveRequestService
                 'id' => $employee->id,
                 'name' => $employee->name,
                 'staff_id' => $employee->staff_id,
-                'department' => $employee->department?->name,
+                'department' => $employee->grade?->resolvePath()['node']['name']
+                    ?? $employee->grade?->resolvePath()['group']['name']
+                    ?? null,
                 'joined_date' => $employee->joined_date?->toDateString(),
                 'balances' => $balances,
             ],
@@ -785,8 +795,9 @@ class LeaveRequestService
 
         return LeaveRequest::query()
             ->with([
-                'employee:id,name,staff_id,department_id',
-                'employee.department:id,name',
+                'employee:id,name,staff_id,grade_id',
+                'employee.grade.level.group',
+                'employee.grade.level.node.group',
                 'leaveType:id,name,requires_document',
                 'approver:id,name,staff_id',
                 'managerReviewedBy:id,name,staff_id',
@@ -826,7 +837,7 @@ class LeaveRequestService
                             $managerQuery->whereNull('manager_id')
                                 ->orWhereColumn('manager_id', 'employees.id');
                         })
-                        ->whereHas('department', fn (Builder $departmentQuery) => $departmentQuery->where('head_employee_id', $approver->id));
+                        ->whereHas('grade.level.node', fn (Builder $nodeQuery) => $nodeQuery->where('head_employee_id', $approver->id));
                 });
             });
     }
@@ -848,7 +859,7 @@ class LeaveRequestService
             return false;
         }
 
-        $leaveRequest->loadMissing(['employee.manager', 'employee.department.headEmployee']);
+        $leaveRequest->loadMissing(['employee.manager', 'employee.grade.level.node.headEmployee', 'employee.grade.level.node.parent.headEmployee']);
 
         if (! $leaveRequest->employee) {
             return false;
@@ -957,7 +968,8 @@ class LeaveRequestService
         $this->syncApprover($leaveRequest);
 
         $leaveRequest->loadMissing([
-            'employee.department:id,name',
+            'employee.grade.level.group',
+            'employee.grade.level.node.group',
             'leaveType:id,name,requires_document,is_visible_to_employees',
             'approver:id,name,staff_id',
             'managerReviewedBy:id,name,staff_id',
@@ -972,6 +984,8 @@ class LeaveRequestService
             ? 'Human Resources'
             : ($approver?->name ?? null);
 
+        $employeePath = $leaveRequest->employee?->grade?->resolvePath();
+
         return [
             'id' => $leaveRequest->id,
             'record_number' => $leaveRequest->record_number,
@@ -980,10 +994,7 @@ class LeaveRequestService
                 'id' => $leaveRequest->employee->id,
                 'name' => $leaveRequest->employee->name,
                 'staff_id' => $leaveRequest->employee->staff_id,
-                'department' => $leaveRequest->employee->department ? [
-                    'id' => $leaveRequest->employee->department->id,
-                    'name' => $leaveRequest->employee->department->name,
-                ] : null,
+                'department' => ($employeePath['node'] ?? null) ?: ($employeePath['group'] ?? null),
             ] : null,
             'leave_type_id' => $leaveRequest->leave_type_id,
             'leave_type' => $leaveRequest->leaveType ? [

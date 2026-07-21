@@ -26,6 +26,7 @@ export type ZktDevice = {
     machine_type_color?: string;
     machine_type_locked?: boolean;
     machine_type_lock_reason?: string | null;
+    default_access_group: number;
     ip_address: string;
     port: number;
     protocol: string;

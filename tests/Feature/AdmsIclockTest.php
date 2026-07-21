@@ -6,6 +6,7 @@ use App\Models\Employee;
 use App\Models\ZktAdmsCommand;
 use App\Models\ZktAttendanceLog;
 use App\Models\ZktDevice;
+use App\Models\ZktLocationGroup;
 use App\Services\Adms\AdmsCommandQueue;
 use App\Services\Adms\AdmsUserCommandBuilder;
 use App\Services\Zkt\ZktDeviceUserSyncService;
@@ -136,6 +137,25 @@ it('queues adms user commands when syncing employees to an adms device', functio
     expect($results[0]['status'])->toBe('queued');
     expect(ZktAdmsCommand::query()->where('zkt_device_id', $this->device->id)->count())->toBe(1);
     expect(ZktAdmsCommand::query()->first()->payload)->toBe('DATA QUERY USERINFO');
+});
+
+it('uses the device default access group in queued adms user commands', function () {
+    $this->device->update([
+        'default_access_group' => 7,
+    ]);
+
+    $group = ZktLocationGroup::query()->create([
+        'name' => 'HQ',
+        'is_active' => true,
+    ]);
+    $group->devices()->attach($this->device->id);
+    $group->employees()->attach($this->employee->id);
+
+    $service = app(ZktDeviceUserSyncService::class);
+    $results = $service->syncEmployee($this->employee->fresh());
+
+    expect($results)->not->toBeEmpty();
+    expect(ZktAdmsCommand::query()->latest('id')->first()?->payload)->toContain('Grp=7');
 });
 
 it('returns registry options for handshake', function () {

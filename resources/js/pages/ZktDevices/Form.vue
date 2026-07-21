@@ -32,6 +32,7 @@ const form = useForm({
     brand: props.device.brand,
     location: props.device.location ?? '',
     machine_type: props.device.machine_type ?? 'attendance',
+    default_access_group: props.device.default_access_group ?? 1,
     connection_mode: props.device.connection_mode ?? 'tcp_pull',
     ip_address: props.device.ip_address,
     port: props.device.port,
@@ -202,6 +203,14 @@ function submit() {
                         and their punches stay in punch logs but do not affect attendance.
                     </p>
                     <UiInput v-model="form.location" label="Location" />
+                    <UiInput
+                        v-if="form.machine_type === 'access'"
+                        v-model="form.default_access_group"
+                        label="Default access group"
+                        type="number"
+                        hint="Used when syncing users to access-control devices like F35. Range: 1-99."
+                        :error="form.errors.default_access_group"
+                    />
 
                     <template v-if="isAdms">
                         <UiInput

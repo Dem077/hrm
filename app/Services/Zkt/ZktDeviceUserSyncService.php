@@ -3,6 +3,7 @@
 namespace App\Services\Zkt;
 
 use App\Enums\ZktDevicePrivilege;
+use App\Enums\ZktMachineType;
 use App\Enums\ZktDeviceUserSyncStatus;
 use App\Models\Employee;
 use App\Models\ZktDevice;
@@ -297,6 +298,10 @@ class ZktDeviceUserSyncService
                 $password,
             );
 
+            if ($device->machine_type === ZktMachineType::Access) {
+                $this->client->setUserAccessGroup($device, $uid, (int) $device->default_access_group);
+            }
+
             ZktDeviceEmployeeSync::query()->updateOrCreate(
                 [
                     'employee_id' => $employee->id,
@@ -402,7 +407,7 @@ class ZktDeviceUserSyncService
 
             $this->admsCommandQueue->enqueue(
                 $device,
-                $this->admsUserCommandBuilder->buildUserCommand($employee),
+                $this->admsUserCommandBuilder->buildUserCommand($employee, (int) $device->default_access_group),
             );
 
             ZktDeviceEmployeeSync::query()->updateOrCreate(

@@ -45,9 +45,13 @@ createInertiaApp({
             }
         });
 
-        createApp({ render: () => h(App, props) })
-            .use(plugin)
-            .mount(el);
+        const vueApp = createApp({ render: () => h(App, props) }).use(plugin);
+
+        if (typeof window !== 'undefined') {
+            vueApp.mount(el);
+        }
+
+        return vueApp;
     },
     progress: {
         color: '#d97706',

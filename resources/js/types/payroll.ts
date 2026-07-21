@@ -2,10 +2,10 @@ export type PayrollComponentType = 'addition' | 'deduction' | 'loan';
 
 export type PayrollComponentCalculationMethod = 'fixed' | 'daily' | 'hourly';
 
-export type PayrollLoanBank = 'BML' | 'MIB' | 'CBM';
+export type PayrollLoanBank = string;
 
 export type LoanBankOption = {
-    value: PayrollLoanBank;
+    value: string;
     label: string;
 };
 
@@ -22,6 +22,7 @@ export type PayrollComponent = {
     is_system_mandatory?: boolean;
     sort_order: number;
     is_active: boolean;
+    grades_count?: number;
     designations_count?: number;
 };
 
@@ -36,7 +37,7 @@ export type DesignationPayrollItem = {
     is_mandatory: boolean;
     amount: number;
     loan_months: number | null;
-    loan_bank: PayrollLoanBank | null;
+    loan_bank: string | null;
     loan_bank_label?: string | null;
 };
 
@@ -60,14 +61,25 @@ export type DesignationTotals = {
     loan_count?: number;
 };
 
-export type Designation = {
+export type StructureGradePackage = {
     id: number | null;
-    name: string;
-    code: string | null;
-    description: string | null;
+    grade: string;
+    title: string;
+    label: string;
+    path_label: string;
+    group?: { id: number; code: string; name: string } | null;
+    node?: { id: number; name: string } | null;
+    level?: { id: number; level_number: number; reference_title: string } | null;
     sort_order: number;
     is_active: boolean;
     items: DesignationPayrollItem[];
     item_groups?: PayrollItemGroups;
     totals?: DesignationTotals;
+};
+
+/** @deprecated Use StructureGradePackage */
+export type Designation = StructureGradePackage & {
+    name?: string;
+    code?: string | null;
+    description?: string | null;
 };

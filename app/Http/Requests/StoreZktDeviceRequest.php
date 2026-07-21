@@ -36,6 +36,7 @@ class StoreZktDeviceRequest extends FormRequest
             'is_active' => $this->boolean('is_active', true),
             'auto_sync' => $this->boolean('auto_sync', true),
             'serial_number' => $this->input('serial_number') ?: null,
+            'default_access_group' => $this->input('default_access_group') ?: 1,
         ];
 
         if ($connectionMode === ZktConnectionMode::AdmsPush->value) {
@@ -60,6 +61,7 @@ class StoreZktDeviceRequest extends FormRequest
             'brand' => ['required', Rule::enum(AttendanceMachineBrand::class)],
             'location' => ['nullable', 'string', 'max:255'],
             'machine_type' => ['required', Rule::enum(ZktMachineType::class)],
+            'default_access_group' => ['required', 'integer', 'min:1', 'max:99'],
             'connection_mode' => ['required', Rule::enum(ZktConnectionMode::class)],
             'ip_address' => [
                 Rule::requiredIf(fn () => $this->input('connection_mode') === ZktConnectionMode::TcpPull->value),

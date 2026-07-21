@@ -22,6 +22,7 @@ function zktDeviceUpdatePayload(ZktDevice $device, array $overrides = []): array
         'brand' => $device->brand->value,
         'location' => $device->location,
         'machine_type' => $device->machine_type->value,
+        'default_access_group' => $device->default_access_group,
         'connection_mode' => $device->connection_mode->value,
         'ip_address' => $device->ip_address,
         'port' => $device->port,

@@ -7,16 +7,17 @@ use App\Models\ZktDevice;
 
 class AdmsUserCommandBuilder
 {
-    public function buildUserCommand(Employee $employee): string
+    public function buildUserCommand(Employee $employee, int $accessGroup = 1): string
     {
         $privilege = $employee->device_privilege?->deviceRole() ?? 0;
+        $accessGroup = max(1, min($accessGroup, 99));
 
         // Classic Push / F18: DATA UPDATE USERINFO … with Pri= (not DATA USER / Privilege=).
         $fields = [
             'PIN='.$employee->staff_id,
             'Name='.$this->sanitizeName($employee->name),
             'Pri='.$privilege,
-            'Grp=1',
+            'Grp='.$accessGroup,
         ];
 
         if (filled($employee->device_card_number)) {
@@ -92,10 +93,11 @@ class AdmsUserCommandBuilder
     public function buildSyncCommandsForDevice(ZktDevice $device, iterable $employees, iterable $removeEmployees = []): array
     {
         $commands = [];
+        $accessGroup = max(1, min((int) $device->default_access_group, 99));
 
         foreach ($employees as $employee) {
             if ($employee instanceof Employee && $employee->is_active) {
-                $commands[] = $this->buildUserCommand($employee);
+                $commands[] = $this->buildUserCommand($employee, $accessGroup);
             }
         }
 

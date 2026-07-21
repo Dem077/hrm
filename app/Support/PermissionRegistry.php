@@ -19,11 +19,11 @@ class PermissionRegistry
                 'employees.update' => 'Update employees',
                 'employees.delete' => 'Delete employees',
             ],
-            'Departments' => [
-                'departments.view' => 'View departments',
-                'departments.create' => 'Create departments',
-                'departments.update' => 'Update departments',
-                'departments.delete' => 'Delete departments',
+            'Company Structure' => [
+                'company-structure.view' => 'View company structure',
+                'company-structure.create' => 'Create company structure items',
+                'company-structure.update' => 'Update company structure items',
+                'company-structure.delete' => 'Delete company structure items',
             ],
             'Leave Types' => [
                 'leave-types.view' => 'View leave types',
@@ -46,11 +46,17 @@ class PermissionRegistry
             ],
             'Payroll Structure' => [
                 'payroll-structure.view' => 'View payroll structure',
-                'payroll-structure.update' => 'Manage payroll components and designations',
+                'payroll-structure.update' => 'Manage payroll components and grade packages',
             ],
             'Payroll Processing' => [
                 'payroll.view' => 'View payroll processing page',
+                'payroll.create' => 'Create payroll draft runs',
+                'payroll.delete' => 'Delete draft payroll runs',
+                'payroll.adjust' => 'Update payroll manual adjustments',
+                'payroll.process' => 'Run payroll processing for draft runs',
+                'payroll.finalize' => 'Finalise and reopen payroll runs',
                 'payroll.export' => 'Export payroll sheets',
+                'payroll.audit.view' => 'View payroll change audit logs',
             ],
             'Attendance Machines' => [
                 'zkt-devices.view' => 'View machines',

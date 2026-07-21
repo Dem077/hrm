@@ -10,11 +10,11 @@ use App\Enums\MaritalStatus;
 use App\Enums\ZktDevicePrivilege;
 use App\Http\Requests\StoreEmployeeRequest;
 use App\Http\Requests\UpdateEmployeeRequest;
-use App\Models\Department;
-use App\Models\Designation;
+use App\Models\Bank;
 use App\Models\Employee;
 use App\Models\User;
 use App\Models\ZktLocationGroup;
+use App\Services\CompanyStructure\CompanyStructureService;
 use App\Services\Zkt\ZktDeviceUserSyncService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -24,6 +24,7 @@ use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
 use Spatie\Permission\Models\Role;
+use Throwable;
 
 class EmployeeController extends Controller
 {
@@ -31,7 +32,7 @@ class EmployeeController extends Controller
     {
         return Inertia::render('Employees/Index', [
             'employees' => Employee::query()
-                ->with(['department:id,name', 'manager:id,name,staff_id', 'user:id,name,email'])
+                ->with(['grade.level.group', 'grade.level.node.group', 'manager:id,name,staff_id', 'user:id,name,email'])
                 ->orderBy('name')
                 ->get()
                 ->map(fn (Employee $employee) => $this->formatEmployee($employee)),
@@ -71,28 +72,50 @@ class EmployeeController extends Controller
             $this->syncProfilePhoto($request, $employee);
         });
 
-        if ($employee && $request->user()?->can('zkt-devices.manage-users')) {
-            $deviceUserSyncService->syncEmployeeLocationGroups(
-                $employee,
-                $request->input('zkt_location_group_ids', []),
-            );
-        } elseif ($employee && $request->filled('zkt_location_group_ids')) {
-            $employee->zktLocationGroups()->sync($request->input('zkt_location_group_ids', []));
+        if ($employee && $request->has('zkt_location_group_ids')) {
+            $locationGroupIds = $request->input('zkt_location_group_ids', []);
+            $employee->zktLocationGroups()->sync($locationGroupIds);
+
+            if ($request->user()?->can('zkt-devices.manage-users')) {
+                $employeeId = $employee->id;
+
+                app()->terminating(function () use ($employeeId, $deviceUserSyncService): void {
+                    try {
+                        $freshEmployee = Employee::query()->find($employeeId);
+
+                        if (! $freshEmployee) {
+                            return;
+                        }
+
+                        $deviceUserSyncService->syncEmployee(
+                            $freshEmployee->fresh(['zktLocationGroups', 'zktDeviceSyncs.device']),
+                        );
+                    } catch (Throwable $exception) {
+                        logger()->warning('Deferred employee machine sync failed.', [
+                            'employee_id' => $employeeId,
+                            'error' => $exception->getMessage(),
+                        ]);
+                    }
+                });
+            }
         }
 
         $message = $request->filled('password')
             ? 'Employee and login account created successfully.'
             : "Employee created successfully. Temporary login password: {$password}";
 
-        return redirect()
+        $redirect = redirect()
             ->route('employees.index')
             ->with('success', $message);
+
+        return $redirect;
     }
 
     public function show(Employee $employee): Response
     {
         $employee->load([
-            'department',
+            'grade.level.group',
+            'grade.level.node.group',
             'manager',
             'user',
             'directReports',
@@ -154,22 +177,43 @@ class EmployeeController extends Controller
             }
         });
 
-        if ($request->user()?->can('zkt-devices.manage-users')) {
-            $deviceUserSyncService->syncEmployeeLocationGroups(
-                $employee,
-                $request->input('zkt_location_group_ids', []),
-            );
-        } elseif ($request->has('zkt_location_group_ids')) {
-            $employee->zktLocationGroups()->sync($request->input('zkt_location_group_ids', []));
+        if ($request->has('zkt_location_group_ids')) {
+            $locationGroupIds = $request->input('zkt_location_group_ids', []);
+            $employee->zktLocationGroups()->sync($locationGroupIds);
+
+            if ($request->user()?->can('zkt-devices.manage-users')) {
+                $employeeId = $employee->id;
+
+                app()->terminating(function () use ($employeeId, $deviceUserSyncService): void {
+                    try {
+                        $freshEmployee = Employee::query()->find($employeeId);
+
+                        if (! $freshEmployee) {
+                            return;
+                        }
+
+                        $deviceUserSyncService->syncEmployee(
+                            $freshEmployee->fresh(['zktLocationGroups', 'zktDeviceSyncs.device']),
+                        );
+                    } catch (Throwable $exception) {
+                        logger()->warning('Deferred employee machine sync failed.', [
+                            'employee_id' => $employeeId,
+                            'error' => $exception->getMessage(),
+                        ]);
+                    }
+                });
+            }
         }
 
         $message ??= $password
             ? 'Employee updated and login password reset successfully.'
             : 'Employee updated successfully.';
 
-        return redirect()
+        $redirect = redirect()
             ->route('employees.show', $employee)
             ->with('success', $message);
+
+        return $redirect;
     }
 
     public function destroy(Employee $employee, ZktDeviceUserSyncService $deviceUserSyncService): RedirectResponse
@@ -178,8 +222,8 @@ class EmployeeController extends Controller
             return back()->with('error', 'Cannot delete an employee who manages other employees.');
         }
 
-        if ($employee->headedDepartments()->exists()) {
-            return back()->with('error', 'Cannot delete an employee assigned as a department head.');
+        if ($employee->headedStructureNodes()->exists()) {
+            return back()->with('error', 'Cannot delete an employee assigned as a structure head.');
         }
 
         $deviceUserSyncService->removeEmployeeFromAllDevices($employee);
@@ -239,8 +283,7 @@ class EmployeeController extends Controller
             'mobile_number' => '',
             'joined_date' => now()->toDateString(),
             'gender' => Gender::Male->value,
-            'department_id' => null,
-            'designation_id' => null,
+            'grade_id' => null,
             'device_privilege' => ZktDevicePrivilege::Employee->value,
             'device_card_number' => null,
             'device_password' => null,
@@ -285,23 +328,7 @@ class EmployeeController extends Controller
     protected function formOptions(?Employee $employee = null): array
     {
         return [
-            'departments' => Department::query()
-                ->where('is_active', true)
-                ->orderBy('name')
-                ->get(['id', 'name'])
-                ->map(fn (Department $department) => [
-                    'id' => $department->id,
-                    'name' => $department->name,
-                ]),
-            'designations' => Designation::query()
-                ->where('is_active', true)
-                ->orderBy('sort_order')
-                ->orderBy('name')
-                ->get(['id', 'name'])
-                ->map(fn (Designation $designation) => [
-                    'id' => $designation->id,
-                    'name' => $designation->name,
-                ]),
+            'grades' => app(CompanyStructureService::class)->gradeOptions(),
             'managers' => Employee::query()
                 ->when($employee, fn ($query) => $query->whereKeyNot($employee->id))
                 ->where('is_active', true)
@@ -316,6 +343,7 @@ class EmployeeController extends Controller
             'bloodGroups' => BloodGroup::options(),
             'employmentTypes' => EmploymentType::options(),
             'dutyTypes' => DutyType::options(),
+            'banks' => Bank::options(),
             'devicePrivileges' => ZktDevicePrivilege::options(),
             'roles' => $this->assignableRoles($employee),
             'canAssignRoles' => $this->canAssignRoles(),
@@ -403,8 +431,17 @@ class EmployeeController extends Controller
      */
     protected function formatEmployee(Employee $employee, bool $includeRelations = false): array
     {
-        $employee->loadMissing(['department:id,name', 'designation:id,name', 'manager:id,name,staff_id', 'user:id,name,email', 'zktLocationGroups:id,name,code,is_active']);
+        $employee->loadMissing([
+            'grade.level.group',
+            'grade.level.node.group',
+            'grade.level.node.parent',
+            'manager:id,name,staff_id',
+            'user:id,name,email',
+            'zktLocationGroups:id,name,code,is_active',
+        ]);
         $employee->user?->loadMissing('roles:id,name');
+
+        $path = $employee->grade?->resolvePath();
 
         $data = [
             'id' => $employee->id,
@@ -417,16 +454,23 @@ class EmployeeController extends Controller
             'joined_date' => $employee->joined_date?->toDateString(),
             'gender' => $employee->gender->value,
             'gender_label' => $employee->gender->label(),
-            'department_id' => $employee->department_id,
-            'department' => $employee->department ? [
-                'id' => $employee->department->id,
-                'name' => $employee->department->name,
+            'grade_id' => $employee->grade_id,
+            'grade' => $employee->grade ? [
+                'id' => $employee->grade->id,
+                'label' => $employee->grade->label(),
+                'grade' => $employee->grade->grade,
+                'title' => $employee->grade->title,
+                'path_label' => $path['path_label'] ?? $employee->grade->label(),
+                'group' => $path['group'] ?? null,
+                'node' => $path['node'] ?? null,
+                'level' => $path['level'] ?? null,
             ] : null,
-            'designation_id' => $employee->designation_id,
-            'designation' => $employee->designation ? [
-                'id' => $employee->designation->id,
-                'name' => $employee->designation->name,
-            ] : null,
+            'department' => $path === null
+                ? null
+                : ($path['node'] ?? ($path['group'] ? [
+                    'id' => $path['group']['id'],
+                    'name' => $path['group']['name'],
+                ] : null)),
             'device_privilege' => $employee->device_privilege->value,
             'device_privilege_label' => $employee->device_privilege->label(),
             'device_card_number' => $employee->device_card_number,
@@ -489,6 +533,7 @@ class EmployeeController extends Controller
             'employment_type' => $employee->employment_type?->value,
             'employment_type_label' => $employee->employment_type?->label(),
             'bank_name' => $employee->bank_name,
+            'bank_name_label' => Bank::labelFor($employee->bank_name),
             'account_name' => $employee->account_name,
             'account_no' => $employee->account_no,
             'length_of_service_label' => $employee->lengthOfServiceLabel(),

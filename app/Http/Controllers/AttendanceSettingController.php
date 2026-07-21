@@ -10,6 +10,7 @@ use App\Http\Requests\UpdatePublicHolidayRequest;
 use App\Models\AppSetting;
 use App\Models\AttendanceDutyPolicy;
 use App\Models\AttendanceGeneralSetting;
+use App\Models\Bank;
 use App\Models\PublicHoliday;
 use Illuminate\Http\Request;
 use App\Services\Attendance\PayrollPeriodService;
@@ -26,6 +27,19 @@ class AttendanceSettingController extends Controller
 
         return Inertia::render('AttendanceSettings/Index', [
             'leaveCarryForwardEnabled' => AppSetting::current()->leave_carry_forward_enabled,
+            'banks' => Bank::query()
+                ->ordered()
+                ->get()
+                ->map(fn (Bank $bank) => [
+                    'id' => $bank->id,
+                    'code' => $bank->code,
+                    'name' => $bank->name,
+                    'sort_order' => $bank->sort_order,
+                    'is_active' => $bank->is_active,
+                    'in_use' => $bank->isInUse(),
+                ])
+                ->values()
+                ->all(),
             'payrollPeriod' => [
                 'payroll_period_start_day' => $settings->payroll_period_start_day,
                 'payroll_period_end_day' => $settings->payroll_period_start_day > 1

@@ -23,7 +23,7 @@ const { can } = usePermissions();
     <AppLayout>
         <PageHeader
             title="Employees"
-            description="Manage staff records, department assignments, and reporting lines for approvals."
+            description="Manage staff records, grade assignments, and reporting lines for approvals."
         >
             <template #actions>
                 <UiButton v-if="can('employees.create')" href="/employees/create" variant="primary">Add employee</UiButton>
@@ -76,8 +76,10 @@ const { can } = usePermissions();
 
                 <dl class="mt-3 space-y-1.5 text-xs">
                     <div class="flex justify-between gap-2">
-                        <dt class="text-slate-500">Department</dt>
-                        <dd class="truncate text-slate-700 dark:text-slate-300">{{ employee.department?.name ?? '—' }}</dd>
+                        <dt class="text-slate-500">Org / Grade</dt>
+                        <dd class="truncate text-slate-700 dark:text-slate-300">
+                            {{ employee.grade?.label ?? employee.department?.name ?? '—' }}
+                        </dd>
                     </div>
                     <div class="flex justify-between gap-2">
                         <dt class="text-slate-500">Manager</dt>

@@ -3,13 +3,13 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\StoreLeaveCarryForwardRequest;
-use App\Models\Department;
 use App\Models\Employee;
 use App\Models\LeaveCarryForwardAdjustment;
 use App\Models\LeaveType;
 use App\Services\Leave\LeaveBalanceExportService;
 use App\Services\Leave\LeaveRequestService;
 use App\Support\DateFormatter;
+use App\Support\StructureNodeOptions;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
@@ -60,10 +60,7 @@ class LeaveBalanceController extends Controller
                 : [],
             'leaveYears' => $report['leaveYears'] ?? [],
             'selectedLeaveYear' => $report['selectedLeaveYear'] ?? null,
-            'departments' => Department::query()
-                ->where('is_active', true)
-                ->orderBy('name')
-                ->get(['id', 'name']),
+            'departments' => StructureNodeOptions::active(),
             'employees' => $this->employeeOptions($filters['departmentId'], $employee),
             'filterLeaveTypes' => LeaveType::query()
                 ->where('is_active', true)
@@ -144,10 +141,10 @@ class LeaveBalanceController extends Controller
 
     private function resolveEmployee(?int $departmentId, ?int $employeeId): ?Employee
     {
-        $employeeQuery = Employee::query()
-            ->where('is_active', true)
-            ->when($departmentId, fn ($query) => $query->where('department_id', $departmentId))
-            ->orderBy('name');
+        $employeeQuery = StructureNodeOptions::constrainEmployeesByNode(
+            Employee::query()->where('is_active', true),
+            $departmentId,
+        )->orderBy('name');
 
         $employee = $employeeId
             ? $employeeQuery->clone()->whereKey($employeeId)->first()
@@ -168,16 +165,12 @@ class LeaveBalanceController extends Controller
      */
     private function employeeOptions(?int $departmentId, ?Employee $employee): array
     {
-        return Employee::query()
-            ->where('is_active', true)
-            ->when($departmentId, function ($query) use ($departmentId, $employee) {
-                $query->where(function ($inner) use ($departmentId, $employee) {
-                    $inner->where('department_id', $departmentId);
-
-                    if ($employee) {
-                        $inner->orWhere('id', $employee->id);
-                    }
-                });
+        return StructureNodeOptions::constrainEmployeesByNode(
+            Employee::query()->where('is_active', true),
+            $departmentId,
+        )
+            ->when($departmentId && $employee, function ($query) use ($employee) {
+                $query->orWhere('id', $employee->id);
             })
             ->orderBy('name')
             ->get(['id', 'name', 'staff_id'])

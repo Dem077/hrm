@@ -260,6 +260,32 @@ class ZktDeviceClient
         }
     }
 
+    public function setUserAccessGroup(ZktDevice $device, int $uid, int $accessGroup): void
+    {
+        $zk = $this->makeConnection($device);
+
+        if (! $zk->connect()) {
+            throw new ZktDeviceException('Unable to connect to the device.');
+        }
+
+        try {
+            $normalizedUid = max(1, min($uid, 255));
+            $normalizedGroup = max(1, min($accessGroup, 99));
+
+            // CMD_USERGRP_WRQ payload: user sn (4 bytes) + group number (1 byte).
+            $commandString = pack('CCCCC', $normalizedUid, 0, 0, 0, $normalizedGroup);
+            $result = $zk->_command((string) ZktProtocol::CMD_SET_USER_GROUP, $commandString);
+
+            if ($result === false) {
+                throw new ZktDeviceException('Device rejected the user access-group update.');
+            }
+
+            $this->markOnline($device);
+        } finally {
+            $zk->disconnect();
+        }
+    }
+
     /**
      * @return array<int, array<string, mixed>>
      */

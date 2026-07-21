@@ -102,17 +102,13 @@ function pullDeviceCredentials(id: number) {
             <UiCard title="Organization & approvals">
                 <dl class="space-y-4 text-sm">
                     <div class="flex justify-between gap-4 border-b border-slate-100 pb-3 dark:border-slate-800">
-                        <dt class="text-slate-500">Department</dt>
-                        <dd class="font-medium text-slate-900 dark:text-slate-100">
-                            <UiButton
-                                v-if="employee.department"
-                                size="sm"
-                                variant="ghost"
-                                :href="`/departments/${employee.department.id}`"
-                            >
-                                {{ employee.department.name }}
-                            </UiButton>
-                            <span v-else>—</span>
+                        <dt class="text-slate-500">Grade</dt>
+                        <dd class="text-right font-medium text-slate-900 dark:text-slate-100">
+                            <div v-if="employee.grade">{{ employee.grade.label }}</div>
+                            <div v-if="employee.grade?.path_label" class="mt-1 text-xs font-normal text-slate-500">
+                                {{ employee.grade.path_label }}
+                            </div>
+                            <span v-if="!employee.grade">—</span>
                         </dd>
                     </div>
                     <div class="flex justify-between gap-4 border-b border-slate-100 pb-3 dark:border-slate-800">
@@ -228,7 +224,7 @@ function pullDeviceCredentials(id: number) {
                         </div>
                         <div class="flex justify-between gap-4 border-b border-slate-100 pb-3 dark:border-slate-800">
                             <dt class="text-slate-500">Bank name</dt>
-                            <dd class="font-medium text-slate-900 dark:text-slate-100">{{ employee.bank_name ?? '—' }}</dd>
+                            <dd class="font-medium text-slate-900 dark:text-slate-100">{{ employee.bank_name_label ?? employee.bank_name ?? '—' }}</dd>
                         </div>
                         <div class="flex justify-between gap-4 border-b border-slate-100 pb-3 dark:border-slate-800">
                             <dt class="text-slate-500">Account name</dt>

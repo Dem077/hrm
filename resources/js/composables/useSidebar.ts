@@ -3,14 +3,16 @@ import { onMounted, ref, watch } from 'vue';
 const STORAGE_KEY = 'hrm-sidebar-collapsed';
 const NAV_GROUP_STORAGE_PREFIX = 'hrm-nav-group-';
 
-const collapsed = ref(
-    typeof window !== 'undefined' && localStorage.getItem(STORAGE_KEY) === '1',
-);
+function canUseLocalStorage(): boolean {
+    return typeof window !== 'undefined' && typeof localStorage !== 'undefined';
+}
+
+const collapsed = ref(canUseLocalStorage() && localStorage.getItem(STORAGE_KEY) === '1');
 const mobileOpen = ref(false);
 const expandedNavGroups = ref<Record<string, boolean>>({});
 
 function readGroupExpanded(key: string): boolean {
-    if (typeof window === 'undefined') {
+    if (!canUseLocalStorage()) {
         return true;
     }
 
@@ -18,15 +20,27 @@ function readGroupExpanded(key: string): boolean {
 }
 
 function persistGroupExpanded(key: string, value: boolean): void {
+    if (!canUseLocalStorage()) {
+        return;
+    }
+
     localStorage.setItem(`${NAV_GROUP_STORAGE_PREFIX}${key}-expanded`, value ? '1' : '0');
 }
 
 export function useSidebar() {
     onMounted(() => {
+        if (!canUseLocalStorage()) {
+            return;
+        }
+
         collapsed.value = localStorage.getItem(STORAGE_KEY) === '1';
     });
 
     watch(collapsed, (value) => {
+        if (!canUseLocalStorage()) {
+            return;
+        }
+
         localStorage.setItem(STORAGE_KEY, value ? '1' : '0');
     });
 

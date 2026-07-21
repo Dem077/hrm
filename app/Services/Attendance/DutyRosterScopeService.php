@@ -22,7 +22,15 @@ class DutyRosterScopeService
             return null;
         }
 
-        return $this->user?->employee?->department_id;
+        $employee = $this->user?->employee;
+
+        if (! $employee) {
+            return null;
+        }
+
+        $employee->loadMissing('grade.level');
+
+        return $employee->grade?->level?->structure_node_id;
     }
 
     public function resolveFilterDepartment(?int $requestedDepartmentId): ?int
@@ -48,14 +56,17 @@ class DutyRosterScopeService
         $departmentId = $this->scopedDepartmentId();
 
         if ($departmentId === null) {
-            return $query;
+            if ($this->canViewAll()) {
+                return $query;
+            }
+
+            return $query->whereRaw('0 = 1');
         }
 
-        if ($departmentId) {
-            return $query->where('department_id', $departmentId);
-        }
-
-        return $query->whereRaw('0 = 1');
+        return $query->whereHas(
+            'grade.level',
+            fn ($levelQuery) => $levelQuery->where('structure_node_id', $departmentId),
+        );
     }
 
     public function shiftEmployeeQuery(): Builder

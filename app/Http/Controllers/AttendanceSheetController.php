@@ -4,11 +4,11 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\RemoveManualAttendancePunchRequest;
 use App\Http\Requests\StoreManualAttendancePunchRequest;
-use App\Models\Department;
 use App\Models\Employee;
 use App\Services\Attendance\AttendanceSheetService;
 use App\Services\Attendance\ManualAttendancePunchService;
 use App\Services\Attendance\PayrollPeriodService;
+use App\Support\StructureNodeOptions;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -127,22 +127,15 @@ class AttendanceSheetController extends Controller
                 'duty_date' => $from->toDateString(),
             ],
             'departments' => $canViewAll
-                ? Department::query()
-                    ->where('is_active', true)
-                    ->orderBy('name')
-                    ->get(['id', 'name'])
+                ? StructureNodeOptions::active()
                 : [],
             'employees' => $canViewAll
-                ? Employee::query()
-                    ->where('is_active', true)
-                    ->when($departmentId, function ($query) use ($departmentId, $employeeId) {
-                        $query->where(function ($inner) use ($departmentId, $employeeId) {
-                            $inner->where('department_id', $departmentId);
-
-                            if ($employeeId) {
-                                $inner->orWhere('id', $employeeId);
-                            }
-                        });
+                ? StructureNodeOptions::constrainEmployeesByNode(
+                    Employee::query()->where('is_active', true),
+                    $departmentId,
+                )
+                    ->when($employeeId && $departmentId, function ($query) use ($employeeId) {
+                        $query->orWhere('id', $employeeId);
                     })
                     ->orderBy('name')
                     ->get(['id', 'name', 'staff_id'])

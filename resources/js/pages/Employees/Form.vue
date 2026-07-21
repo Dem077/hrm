@@ -4,6 +4,8 @@ import { computed, ref, watch } from 'vue';
 
 import PageHeader from '@/components/ui/PageHeader.vue';
 import ProfilePhotoUpload from '@/components/ui/ProfilePhotoUpload.vue';
+import GradeSelect from '@/components/ui/GradeSelect.vue';
+import type { GradeOption } from '@/components/ui/GradeSelect.vue';
 import UiButton from '@/components/ui/UiButton.vue';
 import UiCard from '@/components/ui/UiCard.vue';
 import UiInput from '@/components/ui/UiInput.vue';
@@ -16,8 +18,7 @@ type EmployeeFormTab = 'profile' | 'details' | 'organization' | 'attendance' | '
 
 const props = defineProps<{
     employee: Employee;
-    departments: SelectOption[];
-    designations: SelectOption[];
+    grades: GradeOption[];
     locationGroups: Array<{ id: number; name: string; code: string | null }>;
     devicePrivileges: DevicePrivilegeOption[];
     managers: SelectOption[];
@@ -26,6 +27,7 @@ const props = defineProps<{
     bloodGroups: EnumOption[];
     employmentTypes: EnumOption[];
     dutyTypes: DutyTypeOption[];
+    banks: EnumOption[];
     roles: Array<{ id: number; name: string }>;
     canAssignRoles: boolean;
 }>();
@@ -67,7 +69,7 @@ const tabFields: Record<EmployeeFormTab, string[]> = {
         'account_name',
         'account_no',
     ],
-    organization: ['department_id', 'designation_id', 'manager_id'],
+    organization: ['grade_id', 'manager_id'],
     attendance: [
         'duty_type',
         'works_saturday',
@@ -109,8 +111,7 @@ const form = useForm({
     mobile_number: props.employee.mobile_number ?? '',
     joined_date: props.employee.joined_date ?? '',
     gender: props.employee.gender,
-    department_id: props.employee.department_id ?? '',
-    designation_id: props.employee.designation_id ?? '',
+    grade_id: props.employee.grade_id ?? '',
     device_privilege: props.employee.device_privilege ?? 'employee',
     device_card_number: props.employee.device_card_number ?? '',
     device_password: '',
@@ -146,6 +147,15 @@ const form = useForm({
     bank_name: props.employee.bank_name ?? '',
     account_name: props.employee.account_name ?? '',
     account_no: props.employee.account_no ?? '',
+});
+
+const selectedGrade = computed(() => {
+    const gradeId = Number(form.grade_id);
+    if (!gradeId) {
+        return null;
+    }
+
+    return props.grades.find((grade) => grade.id === gradeId) ?? null;
 });
 
 type LoginEmailSource = 'office' | 'personal';
@@ -322,7 +332,7 @@ watch(
             </template>
         </PageHeader>
 
-        <form class="space-y-6" @submit.prevent="submit">
+        <form class="space-y-6" novalidate @submit.prevent="submit">
             <div class="overflow-x-auto border-b border-slate-200 dark:border-slate-800">
                 <div class="flex min-w-max gap-1">
                     <button
@@ -457,7 +467,18 @@ watch(
 
                 <UiCard title="Banking details" description="Required for payroll and reimbursements.">
                     <div class="grid gap-5 md:grid-cols-3">
-                        <UiInput v-model="form.bank_name" label="Bank name" required :error="form.errors.bank_name" />
+                        <UiSelect v-model="form.bank_name" label="Bank name" required :error="form.errors.bank_name">
+                            <option value="">Select bank</option>
+                            <option
+                                v-if="form.bank_name && !banks.some((bank) => bank.value === form.bank_name)"
+                                :value="form.bank_name"
+                            >
+                                {{ form.bank_name }} (current)
+                            </option>
+                            <option v-for="bank in banks" :key="bank.value" :value="bank.value">
+                                {{ bank.label }}
+                            </option>
+                        </UiSelect>
                         <UiInput v-model="form.account_name" label="Account name" required :error="form.errors.account_name" />
                         <UiInput v-model="form.account_no" label="Account no" required :error="form.errors.account_no" />
                     </div>
@@ -465,20 +486,13 @@ watch(
             </div>
 
             <div v-show="activeTab === 'organization'" class="space-y-6">
-                <UiCard title="Organization & approvals" description="Department and one direct manager for approvals.">
-                    <div class="grid gap-5 md:grid-cols-3">
-                        <UiSelect v-model="form.department_id" label="Department" :error="form.errors.department_id">
-                            <option value="">Unassigned</option>
-                            <option v-for="department in departments" :key="department.id" :value="department.id">
-                                {{ department.name }}
-                            </option>
-                        </UiSelect>
-                        <UiSelect v-model="form.designation_id" label="Designation" :error="form.errors.designation_id">
-                            <option value="">Unassigned</option>
-                            <option v-for="designation in designations" :key="designation.id" :value="designation.id">
-                                {{ designation.name }}
-                            </option>
-                        </UiSelect>
+                <UiCard title="Organization & approvals" description="Assign a grade from Company Structure and one direct manager for approvals.">
+                    <div class="grid gap-5 md:grid-cols-2">
+                        <GradeSelect
+                            v-model="form.grade_id"
+                            :options="grades"
+                            :error="form.errors.grade_id"
+                        />
                         <UiSelect v-model="form.manager_id" label="Direct manager" :error="form.errors.manager_id">
                             <option value="">No manager</option>
                             <option v-for="manager in managers" :key="manager.id" :value="manager.id">
@@ -486,6 +500,15 @@ watch(
                             </option>
                         </UiSelect>
                     </div>
+                    <p
+                        v-if="selectedGrade"
+                        class="mt-4 rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600 dark:bg-slate-900/50 dark:text-slate-300"
+                    >
+                        <span class="font-medium text-slate-800 dark:text-slate-100">{{ selectedGrade.label }}</span>
+                        <span v-if="selectedGrade.context_label" class="mt-0.5 block text-xs text-slate-500 dark:text-slate-400">
+                            {{ selectedGrade.context_label }}
+                        </span>
+                    </p>
                 </UiCard>
             </div>
 
