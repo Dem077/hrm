@@ -6,6 +6,7 @@ use App\Enums\AttendanceDayStatus;
 use App\Enums\PayrollComponentCalculationMethod;
 use App\Enums\PayrollComponentType;
 use App\Models\Employee;
+use App\Models\PayrollComponent;
 use App\Services\Attendance\AttendanceSheetService;
 use App\Services\Attendance\PayrollPeriodService;
 use Carbon\CarbonInterface;
@@ -74,9 +75,10 @@ class PayrollProcessingService
 
         $rows = [];
 
-        foreach ($employees as $employee) {
+            foreach ($employees as $employee) {
             $attendance = $this->attendanceSheetService->build($from, $to, null, $employee->id);
             $attendanceRows = collect($attendance['rows']);
+            $summary = $this->attendanceSheetService->summarizeRows($attendance['rows']);
             $daysAttended = $attendanceRows
                 ->whereIn('status', [
                     AttendanceDayStatus::Present->value,
@@ -88,16 +90,37 @@ class PayrollProcessingService
                 $attendanceRows->sum(fn (array $row) => (int) ($row['working_minutes'] ?? 0)) / 60,
                 2
             );
+            $lateMinutes = (int) ($summary['late_minutes'] ?? 0);
+            $absentDays = (int) ($summary['absent_days'] ?? 0);
 
             $gross = 0.0;
             $deductions = 0.0;
             $details = [];
 
-            foreach ($employee->grade?->payrollComponents ?? [] as $component) {
-                $rate = (float) ($component->pivot->amount ?? 0);
+            $components = $employee->grade?->payrollComponents ?? collect();
+            $basicSalary = (float) ($components
+                ->firstWhere('code', PayrollComponent::BASIC_SALARY_CODE)
+                ?->pivot
+                ?->amount ?? 0);
+
+            foreach ($components as $component) {
+                $rate = $component->usesGlobalRate()
+                    ? (float) ($component->global_rate ?? 0)
+                    : (float) ($component->pivot->amount ?? 0);
+
                 $amount = match ($component->calculation_method) {
                     PayrollComponentCalculationMethod::Daily => round($rate * $daysAttended, 2),
                     PayrollComponentCalculationMethod::Hourly => round($rate * $hoursWorked, 2),
+                    PayrollComponentCalculationMethod::PerLateMinute => round($rate * $lateMinutes, 2),
+                    PayrollComponentCalculationMethod::PerLateMinuteOfBasic => round(
+                        ($basicSalary * ($rate / 100)) * $lateMinutes,
+                        2,
+                    ),
+                    PayrollComponentCalculationMethod::PerAbsentDay => round($rate * $absentDays, 2),
+                    PayrollComponentCalculationMethod::PerAbsentDayOfBasic => round(
+                        ($basicSalary * ($rate / 100)) * $absentDays,
+                        2,
+                    ),
                     default => $rate,
                 };
 
@@ -113,6 +136,9 @@ class PayrollProcessingService
                     'rate' => $rate,
                     'amount' => $amount,
                     'type' => $component->type->value,
+                    'basic_salary' => $component->calculation_method->isPercentageOfBasicSalary()
+                        ? $basicSalary
+                        : null,
                 ];
             }
 
@@ -131,6 +157,8 @@ class PayrollProcessingService
                 'account_no' => $employee->account_no,
                 'days_attended' => $daysAttended,
                 'hours_worked' => $hoursWorked,
+                'late_minutes' => $lateMinutes,
+                'absent_days' => $absentDays,
                 'gross' => round($gross, 2),
                 'deductions' => round($deductions, 2),
                 'net' => round($gross - $deductions, 2),

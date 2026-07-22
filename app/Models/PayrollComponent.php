@@ -4,7 +4,6 @@ namespace App\Models;
 
 use App\Enums\PayrollComponentCalculationMethod;
 use App\Enums\PayrollComponentType;
-use App\Models\Bank;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -14,6 +13,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
     'code',
     'type',
     'calculation_method',
+    'global_rate',
     'is_mandatory',
     'sort_order',
     'is_active',
@@ -22,11 +22,28 @@ class PayrollComponent extends Model
 {
     public const BASIC_SALARY_CODE = 'basic_salary';
 
+    public const LATE_FINE_CODE = 'late_fine';
+
+    public const ABSENT_FEE_CODE = 'absent_fee';
+
+    /**
+     * @return list<string>
+     */
+    public static function systemCodes(): array
+    {
+        return [
+            self::BASIC_SALARY_CODE,
+            self::LATE_FINE_CODE,
+            self::ABSENT_FEE_CODE,
+        ];
+    }
+
     protected function casts(): array
     {
         return [
             'type' => PayrollComponentType::class,
             'calculation_method' => PayrollComponentCalculationMethod::class,
+            'global_rate' => 'decimal:2',
             'is_mandatory' => 'boolean',
             'sort_order' => 'integer',
             'is_active' => 'boolean',
@@ -42,7 +59,24 @@ class PayrollComponent extends Model
 
     public function isSystemMandatory(): bool
     {
-        return $this->code === self::BASIC_SALARY_CODE;
+        return in_array($this->code, self::systemCodes(), true);
+    }
+
+    public function usesGlobalRate(): bool
+    {
+        return $this->calculation_method->usesGlobalRate();
+    }
+
+    /**
+     * @return list<PayrollComponentCalculationMethod>
+     */
+    public function allowedCalculationMethods(): array
+    {
+        return match ($this->code) {
+            self::LATE_FINE_CODE => PayrollComponentCalculationMethod::lateFineOptions(),
+            self::ABSENT_FEE_CODE => PayrollComponentCalculationMethod::absentFeeOptions(),
+            default => [],
+        };
     }
 
     public function isLoan(): bool
@@ -66,7 +100,10 @@ class PayrollComponent extends Model
                 ? 'Monthly payment'
                 : $this->calculation_method->amountLabel(),
             'is_mandatory' => $this->is_mandatory,
-            'amount' => $amount,
+            'uses_global_rate' => $this->usesGlobalRate(),
+            'is_percentage_rate' => $this->calculation_method->isPercentageOfBasicSalary(),
+            'global_rate' => $this->usesGlobalRate() ? (float) ($this->global_rate ?? 0) : null,
+            'amount' => $this->usesGlobalRate() ? (float) ($this->global_rate ?? 0) : $amount,
             'loan_months' => null,
             'loan_bank' => null,
             'loan_bank_label' => null,
@@ -95,6 +132,12 @@ class PayrollComponent extends Model
             'calculation_method' => $this->calculation_method->value,
             'calculation_method_label' => $this->calculation_method->label(),
             'amount_label' => $this->calculation_method->amountLabel(),
+            'global_rate' => $this->usesGlobalRate() ? (float) ($this->global_rate ?? 0) : null,
+            'uses_global_rate' => $this->usesGlobalRate(),
+            'is_percentage_rate' => $this->calculation_method->isPercentageOfBasicSalary(),
+            'allowed_calculation_methods' => PayrollComponentCalculationMethod::optionsPayload(
+                $this->allowedCalculationMethods(),
+            ),
             'is_mandatory' => $this->is_mandatory,
             'is_system_mandatory' => $this->isSystemMandatory(),
             'sort_order' => $this->sort_order,

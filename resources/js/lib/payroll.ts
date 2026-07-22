@@ -25,6 +25,19 @@ export function isAttendanceAllowanceCalculation(method: PayrollComponentCalcula
     return isDailyCalculation(method) || isHourlyCalculation(method);
 }
 
+export function usesGlobalRateCalculation(method: PayrollComponentCalculationMethod | string): boolean {
+    return (
+        method === 'per_late_minute' ||
+        method === 'per_late_minute_of_basic' ||
+        method === 'per_absent_day' ||
+        method === 'per_absent_day_of_basic'
+    );
+}
+
+export function isPercentageOfBasicCalculation(method: PayrollComponentCalculationMethod | string): boolean {
+    return method === 'per_late_minute_of_basic' || method === 'per_absent_day_of_basic';
+}
+
 export function isLoanType(type: string): boolean {
     return type === 'loan';
 }
@@ -46,6 +59,22 @@ export function amountFieldLabel(item: DesignationPayrollItem): string {
         return 'Rate / hour';
     }
 
+    if (item.calculation_method === 'per_late_minute') {
+        return 'Rate / late minute';
+    }
+
+    if (item.calculation_method === 'per_late_minute_of_basic') {
+        return '% of basic salary / late minute';
+    }
+
+    if (item.calculation_method === 'per_absent_day') {
+        return 'Rate / absent day';
+    }
+
+    if (item.calculation_method === 'per_absent_day_of_basic') {
+        return '% of basic salary / absent day';
+    }
+
     return 'Amount';
 }
 
@@ -63,7 +92,9 @@ export function componentToPayrollItem(
         calculation_method_label: component.calculation_method_label,
         amount_label: component.amount_label,
         is_mandatory: component.is_mandatory,
-        amount,
+        uses_global_rate: component.uses_global_rate ?? usesGlobalRateCalculation(component.calculation_method),
+        global_rate: component.uses_global_rate ? Number(component.global_rate ?? 0) : null,
+        amount: component.uses_global_rate ? Number(component.global_rate ?? amount) : amount,
         loan_months: isLoanType(component.type) ? 12 : null,
         loan_bank: isLoanType(component.type) ? (defaultBank?.value ?? defaultLoanBank) : null,
         loan_bank_label: isLoanType(component.type)
@@ -77,6 +108,7 @@ export type PayrollItemGroups = {
     fixed_additions: DesignationPayrollItem[];
     fixed_deductions: DesignationPayrollItem[];
     attendance_allowance: DesignationPayrollItem[];
+    company_penalties: DesignationPayrollItem[];
     loans: DesignationPayrollItem[];
 };
 
@@ -86,6 +118,7 @@ export function groupPayrollItems(items: DesignationPayrollItem[]): PayrollItemG
             (item) =>
                 item.is_mandatory &&
                 !isAttendanceAllowanceCalculation(item.calculation_method) &&
+                !usesGlobalRateCalculation(item.calculation_method) &&
                 !isLoanType(item.type),
         ),
         fixed_additions: items.filter(
@@ -97,6 +130,7 @@ export function groupPayrollItems(items: DesignationPayrollItem[]): PayrollItemG
         attendance_allowance: items.filter((item) =>
             isAttendanceAllowanceCalculation(item.calculation_method),
         ),
+        company_penalties: items.filter((item) => usesGlobalRateCalculation(item.calculation_method)),
         loans: items.filter((item) => item.type === 'loan'),
     };
 }

@@ -37,6 +37,15 @@ class StorePayrollComponentRequest extends FormRequest
             if ($this->input('type') === PayrollComponentType::Loan->value && $this->boolean('is_mandatory')) {
                 $validator->errors()->add('is_mandatory', 'Loan components cannot be mandatory for all designations.');
             }
+
+            $method = PayrollComponentCalculationMethod::tryFrom((string) $this->input('calculation_method'));
+
+            if ($method?->usesGlobalRate()) {
+                $validator->errors()->add(
+                    'calculation_method',
+                    'Late fine and absent fee methods are reserved for system components.',
+                );
+            }
         });
     }
 

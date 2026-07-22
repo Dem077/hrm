@@ -175,6 +175,18 @@ class GradePayrollService
 
         foreach ($mandatoryIds as $componentId) {
             if (! array_key_exists($componentId, $sync)) {
+                $mandatoryComponent = PayrollComponent::query()->find($componentId);
+
+                if ($mandatoryComponent?->usesGlobalRate()) {
+                    $sync[$componentId] = [
+                        'amount' => 0,
+                        'loan_months' => null,
+                        'loan_bank' => null,
+                    ];
+
+                    continue;
+                }
+
                 throw ValidationException::withMessages([
                     'items' => 'All mandatory payroll components must have an amount.',
                 ]);
@@ -282,10 +294,21 @@ class GradePayrollService
             true,
         );
 
+        $usesGlobalRate = fn (array $item): bool => in_array(
+            $item['calculation_method'],
+            [
+                PayrollComponentCalculationMethod::PerLateMinute->value,
+                PayrollComponentCalculationMethod::PerLateMinuteOfBasic->value,
+                PayrollComponentCalculationMethod::PerAbsentDay->value,
+                PayrollComponentCalculationMethod::PerAbsentDayOfBasic->value,
+            ],
+            true,
+        );
+
         return [
             'mandatory' => $items
                 ->where('is_mandatory', true)
-                ->reject(fn (array $item) => $isAttendanceAllowance($item) || $item['type'] === PayrollComponentType::Loan->value)
+                ->reject(fn (array $item) => $isAttendanceAllowance($item) || $usesGlobalRate($item) || $item['type'] === PayrollComponentType::Loan->value)
                 ->values()
                 ->all(),
             'fixed_additions' => $items
@@ -302,6 +325,10 @@ class GradePayrollService
                 ->all(),
             'attendance_allowance' => $items
                 ->filter($isAttendanceAllowance)
+                ->values()
+                ->all(),
+            'company_penalties' => $items
+                ->filter($usesGlobalRate)
                 ->values()
                 ->all(),
             'loans' => $items

@@ -4,7 +4,7 @@ import { watch } from 'vue';
 
 import UiButton from '@/components/ui/UiButton.vue';
 import UiModal from '@/components/ui/UiModal.vue';
-import { componentToPayrollItem } from '@/lib/payroll';
+import { componentToPayrollItem, usesGlobalRateCalculation } from '@/lib/payroll';
 import DesignationTotalsSummary from '@/pages/PayrollStructure/components/DesignationTotalsSummary.vue';
 import PayrollItemsEditor from '@/pages/PayrollStructure/components/PayrollItemsEditor.vue';
 import type { DesignationPayrollItem, LoanBankOption, PayrollComponent, StructureGradePackage } from '@/types/payroll';
@@ -34,7 +34,9 @@ watch(
 
         form.clearErrors();
         form.items = ensureMandatoryItems(
-            grade.items.map((item) => ({ ...item })),
+            grade.items
+                .filter((item) => !usesGlobalRateCalculation(item.calculation_method))
+                .map((item) => ({ ...item })),
             props.components,
         );
     },
@@ -47,7 +49,14 @@ function ensureMandatoryItems(
 ): DesignationPayrollItem[] {
     const existingIds = new Set(items.map((item) => item.payroll_component_id));
     const missing = components
-        .filter((component) => component.is_mandatory && component.is_active && component.id && !existingIds.has(component.id))
+        .filter(
+            (component) =>
+                component.is_mandatory &&
+                component.is_active &&
+                component.id &&
+                !usesGlobalRateCalculation(component.calculation_method) &&
+                !existingIds.has(component.id),
+        )
         .map((component) => componentToPayrollItem(component, 0));
 
     return missing.length ? [...missing, ...items] : items;

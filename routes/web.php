@@ -310,6 +310,9 @@ Route::middleware('auth')->group(function () {
         Route::put('payroll-structure/components/{payroll_component}', [PayrollComponentController::class, 'update'])
             ->middleware('permission:payroll-structure.update')
             ->name('payroll-structure.components.update');
+        Route::put('payroll-structure/components/{payroll_component}/global-rate', [PayrollComponentController::class, 'updateGlobalRate'])
+            ->middleware('permission:payroll-structure.update')
+            ->name('payroll-structure.components.global-rate');
         Route::delete('payroll-structure/components/{payroll_component}', [PayrollComponentController::class, 'destroy'])
             ->middleware('permission:payroll-structure.update')
             ->name('payroll-structure.components.destroy');

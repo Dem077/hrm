@@ -1,12 +1,26 @@
 export type PayrollComponentType = 'addition' | 'deduction' | 'loan';
 
-export type PayrollComponentCalculationMethod = 'fixed' | 'daily' | 'hourly';
+export type PayrollComponentCalculationMethod =
+    | 'fixed'
+    | 'daily'
+    | 'hourly'
+    | 'per_late_minute'
+    | 'per_late_minute_of_basic'
+    | 'per_absent_day'
+    | 'per_absent_day_of_basic';
 
 export type PayrollLoanBank = string;
 
 export type LoanBankOption = {
     value: string;
     label: string;
+};
+
+export type PayrollCalculationMethodOption = {
+    value: PayrollComponentCalculationMethod;
+    label: string;
+    is_percentage_rate: boolean;
+    amount_label: string;
 };
 
 export type PayrollComponent = {
@@ -18,6 +32,10 @@ export type PayrollComponent = {
     calculation_method: PayrollComponentCalculationMethod;
     calculation_method_label?: string;
     amount_label?: string;
+    global_rate?: number | null;
+    uses_global_rate?: boolean;
+    is_percentage_rate?: boolean;
+    allowed_calculation_methods?: PayrollCalculationMethodOption[];
     is_mandatory: boolean;
     is_system_mandatory?: boolean;
     sort_order: number;
@@ -35,6 +53,8 @@ export type DesignationPayrollItem = {
     calculation_method_label?: string;
     amount_label?: string;
     is_mandatory: boolean;
+    uses_global_rate?: boolean;
+    global_rate?: number | null;
     amount: number;
     loan_months: number | null;
     loan_bank: string | null;
@@ -46,6 +66,7 @@ export type PayrollItemGroups = {
     fixed_additions: DesignationPayrollItem[];
     fixed_deductions: DesignationPayrollItem[];
     attendance_allowance: DesignationPayrollItem[];
+    company_penalties?: DesignationPayrollItem[];
     loans: DesignationPayrollItem[];
 };
 

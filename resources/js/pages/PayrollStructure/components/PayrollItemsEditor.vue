@@ -8,6 +8,7 @@ import {
     componentToPayrollItem,
     groupPayrollItems,
     updatePayrollItem,
+    usesGlobalRateCalculation,
 } from '@/lib/payroll';
 import type { DesignationPayrollItem, LoanBankOption, PayrollComponent } from '@/types/payroll';
 
@@ -25,7 +26,12 @@ const emit = defineEmits<{
 const groups = computed(() => groupPayrollItems(props.items));
 
 const optionalComponents = computed(() =>
-    props.components.filter((component) => !component.is_mandatory && component.is_active),
+    props.components.filter(
+        (component) =>
+            !component.is_mandatory &&
+            component.is_active &&
+            !usesGlobalRateCalculation(component.calculation_method),
+    ),
 );
 
 const availableOptionalComponents = computed(() => {
@@ -185,6 +191,28 @@ function removeItem(item: DesignationPayrollItem) {
                         >
                             Remove
                         </UiButton>
+                    </div>
+                </div>
+            </section>
+
+            <section v-if="groups.company_penalties.length > 0" class="overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700">
+                <div class="border-b border-slate-200 bg-slate-50 px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:border-slate-700 dark:bg-surface-elevated dark:text-slate-400">
+                    Company-wide penalties
+                </div>
+                <div class="divide-y divide-slate-100 dark:divide-slate-800">
+                    <div v-for="item in groups.company_penalties" :key="item.payroll_component_id" class="px-4 py-3">
+                        <p class="font-medium text-slate-900 dark:text-white">{{ item.name }}</p>
+                        <p class="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                            {{ item.calculation_method_label ?? item.calculation_method }}
+                            ·
+                            <template v-if="item.calculation_method?.includes('_of_basic')">
+                                {{ item.global_rate ?? item.amount }}%
+                            </template>
+                            <template v-else>
+                                company rate {{ item.global_rate ?? item.amount }}
+                            </template>
+                            (configure under Payroll components)
+                        </p>
                     </div>
                 </div>
             </section>

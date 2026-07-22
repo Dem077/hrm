@@ -2,6 +2,7 @@
 
 namespace App\Services\Payroll;
 
+use App\Enums\PayrollComponentCalculationMethod;
 use App\Models\PayrollComponent;
 use Illuminate\Support\Facades\DB;
 
@@ -44,7 +45,14 @@ class PayrollComponentService
     public function update(PayrollComponent $component, array $data): ?string
     {
         if ($component->isSystemMandatory()) {
-            return 'Basic Salary cannot be edited.';
+            return $component->name.' cannot be edited.';
+        }
+
+        if (
+            isset($data['calculation_method'])
+            && PayrollComponentCalculationMethod::tryFrom((string) $data['calculation_method'])?->usesGlobalRate()
+        ) {
+            return 'Late fine and absent fee calculation methods are reserved for system components.';
         }
 
         $wasMandatory = $component->is_mandatory;
@@ -60,10 +68,37 @@ class PayrollComponentService
         return null;
     }
 
+    /**
+     * @param  array{global_rate: float|int|string, calculation_method: string}  $data
+     */
+    public function updateGlobalRate(PayrollComponent $component, array $data): ?string
+    {
+        if (! $component->isSystemMandatory() || $component->allowedCalculationMethods() === []) {
+            return 'Only Late Fine and Absent Fee rates can be updated this way.';
+        }
+
+        $method = PayrollComponentCalculationMethod::from((string) $data['calculation_method']);
+        $allowed = array_map(
+            fn (PayrollComponentCalculationMethod $option) => $option->value,
+            $component->allowedCalculationMethods(),
+        );
+
+        if (! in_array($method->value, $allowed, true)) {
+            return 'That calculation method is not allowed for '.$component->name.'.';
+        }
+
+        $component->update([
+            'calculation_method' => $method,
+            'global_rate' => round((float) $data['global_rate'], 2),
+        ]);
+
+        return null;
+    }
+
     public function delete(PayrollComponent $component): ?string
     {
         if ($component->isSystemMandatory()) {
-            return 'Basic Salary cannot be deleted.';
+            return $component->name.' cannot be deleted.';
         }
 
         if ($component->is_mandatory) {
