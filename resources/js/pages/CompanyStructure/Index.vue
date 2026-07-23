@@ -3,6 +3,8 @@ import { Head, useForm } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 
 import PageHeader from '@/components/ui/PageHeader.vue';
+import UiActionMenu from '@/components/ui/UiActionMenu.vue';
+import UiActionMenuItem from '@/components/ui/UiActionMenuItem.vue';
 import UiButton from '@/components/ui/UiButton.vue';
 import UiCard from '@/components/ui/UiCard.vue';
 import { usePermissions } from '@/composables/usePermissions';
@@ -178,19 +180,18 @@ function openEditGrade(grade: StructureGrade, level: StructureLevel) {
                 <UiButton href="/company-structure/chart" variant="secondary" size="sm">
                     View org chart
                 </UiButton>
-                <UiButton href="/company-structure/sample-csv" external variant="secondary" size="sm">
-                    Download sample CSV
-                </UiButton>
-                <UiButton
-                    v-if="canCreate"
-                    type="button"
-                    variant="primary"
-                    size="sm"
-                    :disabled="importForm.processing"
-                    @click="openImportPicker"
-                >
-                    {{ importForm.processing ? 'Preparing…' : 'Import CSV' }}
-                </UiButton>
+                <UiActionMenu label="CSV" variant="secondary" size="sm">
+                    <UiActionMenuItem @click="() => window.location.assign('/company-structure/sample-csv')">
+                        Download sample CSV
+                    </UiActionMenuItem>
+                    <UiActionMenuItem
+                        v-if="canCreate"
+                        :disabled="importForm.processing"
+                        @click="openImportPicker"
+                    >
+                        {{ importForm.processing ? 'Preparing…' : 'Import CSV' }}
+                    </UiActionMenuItem>
+                </UiActionMenu>
                 <input
                     ref="fileInput"
                     type="file"
@@ -230,24 +231,25 @@ function openEditGrade(grade: StructureGrade, level: StructureLevel) {
 
             <UiCard v-if="organizationGroup" title="Organization" padding="md">
                 <template #actions>
-                    <div class="flex flex-wrap gap-2">
-                        <UiButton
-                            v-if="canCreate && divisionGroupId"
-                            size="sm"
-                            variant="secondary"
+                    <UiActionMenu
+                        v-if="canCreate && (divisionGroupId || unitSectionGroupId)"
+                        label="Add"
+                        variant="secondary"
+                        size="sm"
+                    >
+                        <UiActionMenuItem
+                            v-if="divisionGroupId"
                             @click="openAddNode(divisionGroupId)"
                         >
                             Add division
-                        </UiButton>
-                        <UiButton
-                            v-if="canCreate && unitSectionGroupId"
-                            size="sm"
-                            variant="secondary"
+                        </UiActionMenuItem>
+                        <UiActionMenuItem
+                            v-if="unitSectionGroupId"
                             @click="openAddNode(unitSectionGroupId)"
                         >
                             Add unit / section
-                        </UiButton>
-                    </div>
+                        </UiActionMenuItem>
+                    </UiActionMenu>
                 </template>
 
                 <p v-if="organizationGroup.nodes.length === 0" class="text-sm text-slate-500">

@@ -2,7 +2,9 @@
 import { router } from '@inertiajs/vue3';
 import { ref } from 'vue';
 
-import UiButton from '@/components/ui/UiButton.vue';
+import UiActionMenu from '@/components/ui/UiActionMenu.vue';
+import UiActionMenuItem from '@/components/ui/UiActionMenuItem.vue';
+import UiIconButton from '@/components/ui/UiIconButton.vue';
 import LevelsPanel from '@/pages/CompanyStructure/components/LevelsPanel.vue';
 import type {
     StructureGrade,
@@ -104,32 +106,48 @@ function moveSibling(index: number, direction: -1 | 1) {
                         · {{ node.is_active ? 'Active' : 'Inactive' }}
                     </p>
                 </button>
-                <div class="flex flex-wrap gap-1">
-                    <UiButton v-if="canUpdate" size="sm" variant="ghost" :disabled="index === 0" @click="moveSibling(index, -1)">Up</UiButton>
-                    <UiButton
-                        v-if="canUpdate"
-                        size="sm"
-                        variant="ghost"
-                        :disabled="index === nodes.length - 1"
-                        @click="moveSibling(index, 1)"
-                    >
-                        Down
-                    </UiButton>
-                    <UiButton v-if="canUpdate" size="sm" variant="ghost" @click="emit('editNode', node)">Edit</UiButton>
-                    <UiButton v-if="canUpdate" size="sm" variant="ghost" @click="emit('moveNode', node)">Move</UiButton>
-                    <template v-if="canCreate">
-                        <UiButton
+                <div class="flex flex-wrap items-center gap-0.5">
+                    <template v-if="canUpdate">
+                        <UiIconButton label="Move up" :disabled="index === 0" @click="moveSibling(index, -1)">
+                            <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                                <path
+                                    fill-rule="evenodd"
+                                    d="M10 3a.75.75 0 0 1 .53.22l4.25 4.25a.75.75 0 1 1-1.06 1.06L10 4.81 6.28 8.53a.75.75 0 0 1-1.06-1.06l4.25-4.25A.75.75 0 0 1 10 3Z"
+                                    clip-rule="evenodd"
+                                />
+                            </svg>
+                        </UiIconButton>
+                        <UiIconButton
+                            label="Move down"
+                            :disabled="index === nodes.length - 1"
+                            @click="moveSibling(index, 1)"
+                        >
+                            <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                                <path
+                                    fill-rule="evenodd"
+                                    d="M10 17a.75.75 0 0 1-.53-.22l-4.25-4.25a.75.75 0 1 1 1.06-1.06L10 15.19l3.72-3.72a.75.75 0 1 1 1.06 1.06l-4.25 4.25A.75.75 0 0 1 10 17Z"
+                                    clip-rule="evenodd"
+                                />
+                            </svg>
+                        </UiIconButton>
+                    </template>
+
+                    <UiActionMenu v-if="canCreate" label="Add">
+                        <UiActionMenuItem
                             v-for="childGroup in childAddActions(node)"
                             :key="`${node.id}-${childGroup.code}`"
-                            size="sm"
-                            variant="ghost"
                             @click="emit('addNode', { parentId: node.id, structureGroupId: childGroup.id })"
                         >
                             Add {{ childGroup.name }}
-                        </UiButton>
-                    </template>
-                    <UiButton v-if="canCreate" size="sm" variant="ghost" @click="emit('addLevel', node)">Add level</UiButton>
-                    <UiButton v-if="canDelete" size="sm" variant="ghost" @click="deleteNode(node)">Delete</UiButton>
+                        </UiActionMenuItem>
+                        <UiActionMenuItem @click="emit('addLevel', node)">Add level</UiActionMenuItem>
+                    </UiActionMenu>
+
+                    <UiActionMenu v-if="canUpdate || canDelete" label="More">
+                        <UiActionMenuItem v-if="canUpdate" @click="emit('editNode', node)">Edit</UiActionMenuItem>
+                        <UiActionMenuItem v-if="canUpdate" @click="emit('moveNode', node)">Move</UiActionMenuItem>
+                        <UiActionMenuItem v-if="canDelete" danger @click="deleteNode(node)">Delete</UiActionMenuItem>
+                    </UiActionMenu>
                 </div>
             </div>
 

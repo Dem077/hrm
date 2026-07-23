@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { router } from '@inertiajs/vue3';
 
+import UiActionMenu from '@/components/ui/UiActionMenu.vue';
+import UiActionMenuItem from '@/components/ui/UiActionMenuItem.vue';
 import UiButton from '@/components/ui/UiButton.vue';
+import UiIconButton from '@/components/ui/UiIconButton.vue';
 import type { StructureGrade, StructureLevel } from '@/types/companyStructure';
 
 defineProps<{
@@ -86,20 +89,44 @@ function moveGrade(level: StructureLevel, index: number, direction: -1 | 1) {
                         <span class="font-normal text-slate-500">· {{ level.reference_title }}</span>
                     </div>
                 </div>
-                <div class="flex flex-wrap gap-1">
-                    <UiButton v-if="canUpdate" size="sm" variant="ghost" :disabled="levelIndex === 0" @click="moveLevel(levels, levelIndex, -1)">Up</UiButton>
-                    <UiButton
-                        v-if="canUpdate"
-                        size="sm"
-                        variant="ghost"
-                        :disabled="levelIndex === levels.length - 1"
-                        @click="moveLevel(levels, levelIndex, 1)"
-                    >
-                        Down
+                <div class="flex flex-wrap items-center gap-0.5">
+                    <template v-if="canUpdate">
+                        <UiIconButton
+                            label="Move up"
+                            :disabled="levelIndex === 0"
+                            @click="moveLevel(levels, levelIndex, -1)"
+                        >
+                            <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                                <path
+                                    fill-rule="evenodd"
+                                    d="M10 3a.75.75 0 0 1 .53.22l4.25 4.25a.75.75 0 1 1-1.06 1.06L10 4.81 6.28 8.53a.75.75 0 0 1-1.06-1.06l4.25-4.25A.75.75 0 0 1 10 3Z"
+                                    clip-rule="evenodd"
+                                />
+                            </svg>
+                        </UiIconButton>
+                        <UiIconButton
+                            label="Move down"
+                            :disabled="levelIndex === levels.length - 1"
+                            @click="moveLevel(levels, levelIndex, 1)"
+                        >
+                            <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                                <path
+                                    fill-rule="evenodd"
+                                    d="M10 17a.75.75 0 0 1-.53-.22l-4.25-4.25a.75.75 0 1 1 1.06-1.06L10 15.19l3.72-3.72a.75.75 0 1 1 1.06 1.06l-4.25 4.25A.75.75 0 0 1 10 17Z"
+                                    clip-rule="evenodd"
+                                />
+                            </svg>
+                        </UiIconButton>
+                    </template>
+
+                    <UiButton v-if="canCreate" size="sm" variant="ghost" @click="emit('addGrade', level)">
+                        Add grade
                     </UiButton>
-                    <UiButton v-if="canUpdate" size="sm" variant="ghost" @click="emit('editLevel', level)">Edit</UiButton>
-                    <UiButton v-if="canCreate" size="sm" variant="ghost" @click="emit('addGrade', level)">Add grade</UiButton>
-                    <UiButton v-if="canDelete" size="sm" variant="ghost" @click="deleteLevel(level)">Delete</UiButton>
+
+                    <UiActionMenu v-if="canUpdate || canDelete" label="More">
+                        <UiActionMenuItem v-if="canUpdate" @click="emit('editLevel', level)">Edit</UiActionMenuItem>
+                        <UiActionMenuItem v-if="canDelete" danger @click="deleteLevel(level)">Delete</UiActionMenuItem>
+                    </UiActionMenu>
                 </div>
             </div>
 
@@ -118,27 +145,44 @@ function moveGrade(level: StructureLevel, index: number, direction: -1 | 1) {
                             {{ grade.is_active ? 'Active' : 'Inactive' }}
                         </span>
                     </div>
-                    <div class="flex gap-1">
-                        <UiButton
-                            v-if="canUpdate"
-                            size="sm"
-                            variant="ghost"
-                            :disabled="gradeIndex === 0"
-                            @click="moveGrade(level, gradeIndex, -1)"
-                        >
-                            Up
-                        </UiButton>
-                        <UiButton
-                            v-if="canUpdate"
-                            size="sm"
-                            variant="ghost"
-                            :disabled="gradeIndex === level.grades.length - 1"
-                            @click="moveGrade(level, gradeIndex, 1)"
-                        >
-                            Down
-                        </UiButton>
-                        <UiButton v-if="canUpdate" size="sm" variant="ghost" @click="emit('editGrade', grade, level)">Edit</UiButton>
-                        <UiButton v-if="canDelete" size="sm" variant="ghost" @click="deleteGrade(grade)">Delete</UiButton>
+                    <div class="flex items-center gap-0.5">
+                        <template v-if="canUpdate">
+                            <UiIconButton
+                                label="Move up"
+                                :disabled="gradeIndex === 0"
+                                @click="moveGrade(level, gradeIndex, -1)"
+                            >
+                                <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                                    <path
+                                        fill-rule="evenodd"
+                                        d="M10 3a.75.75 0 0 1 .53.22l4.25 4.25a.75.75 0 1 1-1.06 1.06L10 4.81 6.28 8.53a.75.75 0 0 1-1.06-1.06l4.25-4.25A.75.75 0 0 1 10 3Z"
+                                        clip-rule="evenodd"
+                                    />
+                                </svg>
+                            </UiIconButton>
+                            <UiIconButton
+                                label="Move down"
+                                :disabled="gradeIndex === level.grades.length - 1"
+                                @click="moveGrade(level, gradeIndex, 1)"
+                            >
+                                <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                                    <path
+                                        fill-rule="evenodd"
+                                        d="M10 17a.75.75 0 0 1-.53-.22l-4.25-4.25a.75.75 0 1 1 1.06-1.06L10 15.19l3.72-3.72a.75.75 0 1 1 1.06 1.06l-4.25 4.25A.75.75 0 0 1 10 17Z"
+                                        clip-rule="evenodd"
+                                    />
+                                </svg>
+                            </UiIconButton>
+                        </template>
+
+                        <UiActionMenu v-if="canUpdate || canDelete" label="More">
+                            <UiActionMenuItem v-if="canUpdate" @click="emit('editGrade', grade, level)">
+                                Edit
+                            </UiActionMenuItem>
+                            <UiActionMenuItem v-if="canDelete" danger @click="deleteGrade(grade)">
+                                Delete
+                            </UiActionMenuItem>
+                        </UiActionMenu>
                     </div>
                 </li>
             </ul>
