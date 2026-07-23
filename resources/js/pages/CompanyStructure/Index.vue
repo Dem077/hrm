@@ -153,7 +153,7 @@ function openEditLevel(level: StructureLevel) {
 
 function openAddGrade(level: StructureLevel) {
     modalMode.value = 'grade';
-    modalTitle.value = 'Add grade';
+    modalTitle.value = 'Add designation';
     modalLevelId.value = level.id;
     modalGrade.value = null;
     modalOpen.value = true;
@@ -161,7 +161,7 @@ function openAddGrade(level: StructureLevel) {
 
 function openEditGrade(grade: StructureGrade, level: StructureLevel) {
     modalMode.value = 'grade';
-    modalTitle.value = 'Edit grade';
+    modalTitle.value = 'Edit designation';
     modalLevelId.value = level.id;
     modalGrade.value = grade;
     modalOpen.value = true;
@@ -174,7 +174,7 @@ function openEditGrade(grade: StructureGrade, level: StructureLevel) {
     <AppLayout>
         <PageHeader
             title="Company Structure"
-            description="Strategic Leadership at the top, then Divisions → Departments → Units / Sections with levels and grades."
+            description="Strategic Leadership at the top, then Divisions → Departments → Units / Sections with levels and designations."
         >
             <template #actions>
                 <UiButton href="/company-structure/chart" variant="secondary" size="sm">

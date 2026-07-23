@@ -258,7 +258,7 @@ function submit() {
                 <UiInput v-model="nodeForm.description" label="Description" :error="nodeForm.errors.description" />
 
                 <div>
-                    <p class="mb-1.5 text-sm font-medium text-slate-700 dark:text-slate-200">Head grades</p>
+                    <p class="mb-1.5 text-sm font-medium text-slate-700 dark:text-slate-200">Head designations</p>
                     <p v-if="nodeForm.errors.head_grade_ids" class="mb-2 text-sm text-red-600">
                         {{ nodeForm.errors.head_grade_ids }}
                     </p>
@@ -266,7 +266,7 @@ function submit() {
                         v-if="headGradeOptions.length === 0"
                         class="rounded-lg border border-dashed border-slate-300 px-3 py-4 text-sm text-slate-500 dark:border-slate-700"
                     >
-                        No eligible grades yet. Add grades on this subgroup or its parent first.
+                        No eligible designations yet. Add designations on this subgroup or its parent first.
                     </div>
                     <div v-else class="max-h-56 space-y-3 overflow-y-auto rounded-lg border border-slate-200 p-3 dark:border-slate-700">
                         <div v-if="headGradesBySource.current.length">
@@ -311,7 +311,7 @@ function submit() {
                         </div>
                     </div>
                     <p class="mt-1.5 text-xs text-slate-500">
-                        Select one or more grades. Leave approvals use employees in those grades.
+                        Select one or more designations. Leave approvals use employees in those designations.
                     </p>
                 </div>
 
@@ -327,8 +327,8 @@ function submit() {
             </template>
 
             <template v-else>
-                <UiInput v-model="gradeForm.grade" label="Grade" :error="gradeForm.errors.grade" required />
-                <UiInput v-model="gradeForm.title" label="Title" :error="gradeForm.errors.title" required />
+                <UiInput v-model="gradeForm.grade" label="Grade code" :error="gradeForm.errors.grade" required />
+                <UiInput v-model="gradeForm.title" label="Designation title" :error="gradeForm.errors.title" required />
                 <label class="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
                     <input v-model="gradeForm.is_active" type="checkbox" class="rounded border-slate-300" />
                     Active

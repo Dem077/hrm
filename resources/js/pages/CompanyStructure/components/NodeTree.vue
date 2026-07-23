@@ -98,7 +98,7 @@ function moveSibling(index: number, direction: -1 | 1) {
                     </div>
                     <p class="mt-0.5 text-xs text-slate-500">
                         <span v-if="node.code">{{ node.code }} · </span>
-                        Head grades:
+                        Head designations:
                         <template v-if="node.head_grades?.length">
                             {{ node.head_grades.map((grade) => grade.label).join(', ') }}
                         </template>

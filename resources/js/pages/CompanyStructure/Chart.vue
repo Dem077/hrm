@@ -211,7 +211,7 @@ onUnmounted(() => {
             <template #actions>
                 <UiButton href="/company-structure" variant="secondary" size="sm">Manage structure</UiButton>
                 <UiButton type="button" variant="secondary" size="sm" @click="showGrades = !showGrades">
-                    {{ showGrades ? 'Hide grades' : 'Show grades' }}
+                    {{ showGrades ? 'Hide designations' : 'Show designations' }}
                 </UiButton>
                 <UiButton type="button" variant="ghost" size="sm" @click="zoomOut">−</UiButton>
                 <UiButton type="button" variant="ghost" size="sm" @click="resetView">

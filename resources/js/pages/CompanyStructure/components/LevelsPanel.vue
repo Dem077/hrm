@@ -120,7 +120,7 @@ function moveGrade(level: StructureLevel, index: number, direction: -1 | 1) {
                     </template>
 
                     <UiButton v-if="canCreate" size="sm" variant="ghost" @click="emit('addGrade', level)">
-                        Add grade
+                        Add designation
                     </UiButton>
 
                     <UiActionMenu v-if="canUpdate || canDelete" label="More">

@@ -99,7 +99,7 @@ function toggle() {
 
                     <div v-if="showGrades">
                         <p class="text-[10px] font-semibold uppercase tracking-wide opacity-60">
-                            Grades
+                            Designations
                             <span v-if="gradeCount" class="font-normal normal-case tracking-normal opacity-80">
                                 ({{ gradeCount }})
                             </span>
@@ -125,7 +125,7 @@ function toggle() {
                                         {{ grade.label }}
                                     </li>
                                 </ul>
-                                <p v-else class="mt-0.5 text-[10px] opacity-60">No grades</p>
+                                <p v-else class="mt-0.5 text-[10px] opacity-60">No designations</p>
                             </div>
                         </div>
                         <p v-else class="mt-1 text-[11px] opacity-60">No levels yet</p>
