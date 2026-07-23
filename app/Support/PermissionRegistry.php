@@ -54,7 +54,7 @@ class PermissionRegistry
             ],
             'Payroll Structure' => [
                 'payroll-structure.view' => 'View payroll structure',
-                'payroll-structure.update' => 'Manage payroll components and grade packages',
+                'payroll-structure.update' => 'Manage payroll components and designation salary structures',
             ],
             'Payroll Processing' => [
                 'payroll.view' => 'View payroll processing page',
@@ -114,7 +114,7 @@ class PermissionRegistry
                 'attendance-settings.view' => 'View attendance settings',
                 'attendance-settings.payroll-period.update' => 'Update payroll period',
                 'attendance-settings.leave-carry-forward.update' => 'Update leave carry-forward setting',
-                'attendance-settings.leave-workflow.update' => 'Update leave approval workflow',
+                'attendance-settings.leave-workflow.update' => 'Update leave and overtime approval workflows by branch',
                 'attendance-settings.duty-policies.create' => 'Add duty policies',
                 'attendance-settings.duty-policies.update' => 'Update duty policies',
                 'attendance-settings.duty-policies.delete' => 'Delete duty policies',

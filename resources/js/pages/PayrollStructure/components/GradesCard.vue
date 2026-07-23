@@ -239,9 +239,9 @@ function closeModal() {
         <div class="space-y-4 border-b border-slate-100 px-5 py-4 dark:border-slate-800">
             <div class="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                    <h2 class="text-base font-semibold text-slate-900 dark:text-white">Grade packages</h2>
+                    <h2 class="text-base font-semibold text-slate-900 dark:text-white">Designation salary structures</h2>
                     <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                        Browse by company structure, then set salary amounts for each grade. Fixed net excludes daily lines until attendance is applied.
+                        Browse by company structure, then set salary amounts for each designation. Fixed net excludes daily lines until attendance is applied.
                     </p>
                 </div>
                 <div class="flex flex-wrap gap-2">
@@ -256,7 +256,7 @@ function closeModal() {
         </div>
 
         <div v-if="grades.length === 0" class="px-5 py-10 text-center text-sm text-slate-500">
-            Create grades under Company Structure first, then configure payroll packages here.
+            Create designations under Company Structure first, then configure salary structures here.
         </div>
 
         <div v-else-if="grouped.length === 0" class="px-5 py-10 text-center text-sm text-slate-500">
@@ -327,7 +327,7 @@ function closeModal() {
                                                 <th class="px-4 py-2.5 font-medium">Grade</th>
                                                 <th class="px-4 py-2.5 font-medium">Title</th>
                                                 <th class="px-4 py-2.5 font-medium">Fixed net</th>
-                                                <th class="px-4 py-2.5 font-medium">Package</th>
+                                                <th class="px-4 py-2.5 font-medium">Salary structure</th>
                                                 <th v-if="canManage" class="px-4 py-2.5 font-medium">Actions</th>
                                             </tr>
                                         </thead>
@@ -362,7 +362,7 @@ function closeModal() {
                                                 </td>
                                                 <td v-if="canManage" class="px-4 py-3">
                                                     <UiButton size="sm" variant="ghost" @click="openEdit(grade)">
-                                                        Edit package
+                                                        Edit structure
                                                     </UiButton>
                                                 </td>
                                             </tr>

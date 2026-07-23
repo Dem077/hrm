@@ -2,8 +2,12 @@
 
 namespace App\Http\Requests;
 
+use App\Enums\EmploymentType;
+use App\Enums\PayrollApplicabilityField;
+use App\Enums\PayrollApplicabilityOperator;
 use App\Enums\PayrollComponentCalculationMethod;
 use App\Enums\PayrollComponentType;
+use App\Models\Nationality;
 use App\Services\Payroll\PayrollFormulaEvaluator;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -23,6 +27,14 @@ class StorePayrollComponentRequest extends FormRequest
     {
         $method = PayrollComponentCalculationMethod::tryFrom((string) $this->input('calculation_method'));
         $isCustom = $method?->isCustomFormula() ?? false;
+        $fields = array_map(
+            fn (PayrollApplicabilityField $field) => $field->value,
+            PayrollApplicabilityField::cases(),
+        );
+        $operators = array_map(
+            fn (PayrollApplicabilityOperator $operator) => $operator->value,
+            PayrollApplicabilityOperator::cases(),
+        );
 
         return [
             'name' => ['required', 'string', 'max:255'],
@@ -31,6 +43,11 @@ class StorePayrollComponentRequest extends FormRequest
             'calculation_method' => ['required', Rule::enum(PayrollComponentCalculationMethod::class)],
             'calculation_formula' => [$isCustom ? 'required' : 'nullable', 'string', 'max:1000'],
             'is_mandatory' => ['boolean'],
+            'applicability_rules' => ['nullable', 'array'],
+            'applicability_rules.all' => ['nullable', 'array'],
+            'applicability_rules.all.*.field' => ['required_with:applicability_rules.all', 'string', Rule::in($fields)],
+            'applicability_rules.all.*.operator' => ['required_with:applicability_rules.all', 'string', Rule::in($operators)],
+            'applicability_rules.all.*.value' => ['required_with:applicability_rules.all', 'string', 'max:100'],
             'sort_order' => ['integer', 'min:0', 'max:9999'],
             'is_active' => ['boolean'],
         ];
@@ -50,6 +67,32 @@ class StorePayrollComponentRequest extends FormRequest
                     'calculation_method',
                     'Late fine and absent fee methods are reserved for system components.',
                 );
+            }
+
+            foreach ($this->input('applicability_rules.all', []) as $index => $rule) {
+                if (! is_array($rule)) {
+                    continue;
+                }
+
+                if (($rule['field'] ?? null) === PayrollApplicabilityField::EmploymentType->value
+                    && EmploymentType::tryFrom((string) ($rule['value'] ?? '')) === null
+                ) {
+                    $validator->errors()->add(
+                        "applicability_rules.all.{$index}.value",
+                        'Select a valid employment type.',
+                    );
+                }
+
+                if (($rule['field'] ?? null) === PayrollApplicabilityField::Nationality->value
+                    && ! Nationality::query()
+                        ->where('name', trim((string) ($rule['value'] ?? '')))
+                        ->exists()
+                ) {
+                    $validator->errors()->add(
+                        "applicability_rules.all.{$index}.value",
+                        'Select a valid nationality.',
+                    );
+                }
             }
 
             if ($method?->isCustomFormula()) {
@@ -86,6 +129,11 @@ class StorePayrollComponentRequest extends FormRequest
             $merge['calculation_method'] = PayrollComponentCalculationMethod::Fixed->value;
             $merge['is_mandatory'] = false;
             $merge['calculation_formula'] = null;
+            $merge['applicability_rules'] = null;
+        }
+
+        if (! ($merge['is_mandatory'] ?? $this->boolean('is_mandatory'))) {
+            $merge['applicability_rules'] = null;
         }
 
         $method = PayrollComponentCalculationMethod::tryFrom((string) $this->input('calculation_method'));

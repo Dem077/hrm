@@ -8,6 +8,8 @@ export type PayrollComponentCalculationMethod =
     | 'per_late_minute_of_basic'
     | 'per_absent_day'
     | 'per_absent_day_of_basic'
+    | 'per_overtime_hour'
+    | 'per_overtime_hour_of_basic'
     | 'custom_formula';
 
 export type PayrollLoanBank = string;
@@ -24,6 +26,22 @@ export type PayrollCalculationMethodOption = {
     amount_label: string;
 };
 
+export type PayrollApplicabilityRule = {
+    field: string;
+    operator: string;
+    value: string;
+};
+
+export type PayrollApplicabilitySummaryItem = {
+    field: string;
+    field_label: string;
+    operator: string;
+    operator_label: string;
+    operator_symbol: string;
+    value: string;
+    value_label: string;
+};
+
 export type PayrollComponent = {
     id: number | null;
     name: string;
@@ -38,11 +56,15 @@ export type PayrollComponent = {
     uses_global_rate?: boolean;
     is_percentage_rate?: boolean;
     is_custom_formula?: boolean;
+    is_configurable?: boolean;
+    rate_set_per_grade?: boolean;
     formula_variables?: string[];
     formula_variable_options?: Array<{ value: string; label: string }>;
     allowed_calculation_methods?: PayrollCalculationMethodOption[];
     is_mandatory: boolean;
     is_system_mandatory?: boolean;
+    applicability_rules?: { all: PayrollApplicabilityRule[] };
+    applicability_summary?: PayrollApplicabilitySummaryItem[];
     sort_order: number;
     is_active: boolean;
     grades_count?: number;

@@ -5,6 +5,7 @@ use App\Http\Controllers\AttendanceSettingController;
 use App\Http\Controllers\AttendanceSheetController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\BankController;
+use App\Http\Controllers\NationalityController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\CompanyStructureController;
 use App\Http\Controllers\GradePayrollController;
@@ -69,6 +70,13 @@ Route::middleware('auth')->group(function () {
         Route::post('employees/{employee}/pull-device-credentials', [EmployeeController::class, 'pullDeviceCredentials'])
             ->middleware('permission:zkt-devices.manage-users')
             ->name('employees.pull-device-credentials');
+
+        Route::post('nationalities', [NationalityController::class, 'store'])
+            ->middleware('permission:employees.create|employees.update')
+            ->name('nationalities.store');
+        Route::delete('nationalities/{nationality}', [NationalityController::class, 'destroy'])
+            ->middleware('permission:employees.create|employees.update')
+            ->name('nationalities.destroy');
     });
 
     Route::middleware('permission:company-structure.view')->group(function () {
@@ -404,6 +412,9 @@ Route::middleware('auth')->group(function () {
         Route::put('attendance-settings/leave-approval-workflow', [AttendanceSettingController::class, 'updateLeaveApprovalWorkflow'])
             ->middleware('permission:attendance-settings.leave-workflow.update')
             ->name('attendance-settings.leave-workflow.update');
+        Route::put('attendance-settings/approval-workflows', [AttendanceSettingController::class, 'updateApprovalWorkflow'])
+            ->middleware('permission:attendance-settings.leave-workflow.update')
+            ->name('attendance-settings.approval-workflows.update');
         Route::post('attendance-settings/banks', [BankController::class, 'store'])
             ->middleware('permission:attendance-settings.payroll-period.update')
             ->name('attendance-settings.banks.store');

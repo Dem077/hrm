@@ -14,6 +14,10 @@ defineProps<{
     grades: StructureGradePackage[];
     emptyComponent: PayrollComponent;
     loanBanks: LoanBankOption[];
+    employmentTypes: Array<{ value: string; label: string }>;
+    nationalities: Array<{ value: string; label: string }>;
+    applicabilityFields: Array<{ value: string; label: string }>;
+    applicabilityOperators: Array<{ value: string; label: string }>;
 }>();
 
 const { can } = usePermissions();
@@ -33,13 +37,17 @@ function destroyComponent(id: number, name: string) {
     <AppLayout>
         <PageHeader
             title="Payroll structure"
-            description="Define payroll components, then build salary packages per grade with fixed amounts and daily rates."
+            description="Define payroll components, then build designation salary structures with fixed amounts and daily rates."
         />
 
         <div class="space-y-8">
             <PayrollComponentsCard
                 :components="components"
                 :empty-component="emptyComponent"
+                :employment-types="employmentTypes"
+                :nationalities="nationalities"
+                :applicability-fields="applicabilityFields"
+                :applicability-operators="applicabilityOperators"
                 :can-manage="canManage"
                 @delete="destroyComponent"
             />

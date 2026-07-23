@@ -2,6 +2,7 @@
 
 namespace App\Services\Leave;
 
+use App\Enums\ApprovalWorkflowKind;
 use App\Enums\LeaveApprovalStepKey;
 use App\Enums\LeaveApprovalStepStatus;
 use App\Enums\LeaveRequestStatus;
@@ -10,15 +11,17 @@ use App\Models\AppSetting;
 use App\Models\Employee;
 use App\Models\LeaveRequest;
 use App\Models\LeaveRequestApprovalStep;
+use App\Models\StructureNode;
+use Illuminate\Validation\ValidationException;
 
 class LeaveApprovalWorkflowService
 {
     /**
      * @return list<array{key: string, label: string, description: string, enabled: bool, locked: bool}>
      */
-    public function presentation(): array
+    public function presentation(?array $stored = null): array
     {
-        $enabled = $this->enabledStepKeys();
+        $enabled = $this->enabledKeysFromStored($stored);
 
         $steps = [];
 
@@ -44,90 +47,159 @@ class LeaveApprovalWorkflowService
     }
 
     /**
+     * Company default + one config per top-level branch (under Strategic Leadership).
+     *
+     * @return array{
+     *     default: array{id: null, name: string, description: string, leave: list<array<string, mixed>>, overtime: list<array<string, mixed>>},
+     *     branches: list<array{id: int, name: string, group_label: string|null, leave: list<array<string, mixed>>, overtime: list<array<string, mixed>>}>
+     * }
+     */
+    public function branchWorkflowsPresentation(): array
+    {
+        $settings = AppSetting::current();
+
+        $branches = StructureNode::query()
+            ->with('group:id,name,code')
+            ->whereNull('parent_id')
+            ->orderBy('sort_order')
+            ->orderBy('name')
+            ->get(['id', 'name', 'structure_group_id', 'leave_approval_workflow', 'overtime_approval_workflow'])
+            ->map(fn (StructureNode $node) => [
+                'id' => $node->id,
+                'name' => $node->name,
+                'group_label' => $node->group?->name,
+                'leave' => $this->presentation($node->leave_approval_workflow),
+                'overtime' => $this->presentation($node->overtime_approval_workflow),
+            ])
+            ->values()
+            ->all();
+
+        return [
+            'default' => [
+                'id' => null,
+                'name' => 'Company default',
+                'description' => 'Used for Strategic Leadership staff (no branch) and as a fallback when a branch has no workflow saved.',
+                'leave' => $this->presentation($settings->leave_approval_workflow),
+                'overtime' => $this->presentation($settings->overtime_approval_workflow),
+            ],
+            'branches' => $branches,
+        ];
+    }
+
+    /**
+     * Top-level branch under Strategic Leadership for this employee, if any.
+     */
+    public function resolveRootBranch(Employee $employee): ?StructureNode
+    {
+        $employee->loadMissing(['grade.level.node.parent.parent.parent']);
+
+        $node = $employee->grade?->level?->node;
+
+        if (! $node) {
+            return null;
+        }
+
+        while ($node->parent_id) {
+            $node->loadMissing('parent');
+            $node = $node->parent;
+
+            if (! $node) {
+                return null;
+            }
+        }
+
+        return $node;
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function enabledStepKeysFor(Employee $employee, ApprovalWorkflowKind $kind): array
+    {
+        $branch = $this->resolveRootBranch($employee);
+        $column = $kind->column();
+
+        if ($branch) {
+            $stored = $branch->{$column};
+
+            if ($this->hasConfiguredSteps($stored)) {
+                return $this->enabledKeysFromStored($stored);
+            }
+        }
+
+        $settings = AppSetting::current();
+
+        return $this->enabledKeysFromStored($settings->{$column});
+    }
+
+    /**
+     * @deprecated Use enabledStepKeysFor()
+     *
      * @return list<string>
      */
     public function enabledStepKeys(): array
     {
-        $stored = AppSetting::current()->leave_approval_workflow;
-        $default = array_map(
-            fn (LeaveApprovalStepKey $key) => $key->value,
-            LeaveApprovalStepKey::configurableKeys(),
-        );
-
-        if (! is_array($stored) || ! isset($stored['steps']) || ! is_array($stored['steps'])) {
-            return $default;
-        }
-
-        $keys = [];
-
-        foreach ($stored['steps'] as $step) {
-            if (! is_array($step)) {
-                continue;
-            }
-
-            $key = (string) ($step['key'] ?? '');
-            $enabled = (bool) ($step['enabled'] ?? false);
-
-            if (! $enabled || $key === LeaveApprovalStepKey::Hr->value) {
-                continue;
-            }
-
-            if (LeaveApprovalStepKey::tryFrom($key) === null) {
-                continue;
-            }
-
-            if (! in_array($key, $keys, true)) {
-                $keys[] = $key;
-            }
-        }
-
-        return $keys === [] ? $default : $keys;
+        return $this->enabledKeysFromStored(AppSetting::current()->leave_approval_workflow);
     }
 
     /**
      * @param  list<array{key: string, enabled: bool}>  $steps
      */
-    public function save(array $steps): void
+    public function saveDefault(ApprovalWorkflowKind $kind, array $steps): void
     {
-        $normalized = [];
-        $seen = [];
-
-        foreach ($steps as $step) {
-            $key = (string) ($step['key'] ?? '');
-            $enum = LeaveApprovalStepKey::tryFrom($key);
-
-            if (! $enum || $enum === LeaveApprovalStepKey::Hr) {
-                continue;
-            }
-
-            if (isset($seen[$key])) {
-                continue;
-            }
-
-            $seen[$key] = true;
-            $normalized[] = [
-                'key' => $key,
-                'enabled' => (bool) ($step['enabled'] ?? false),
-            ];
-        }
-
-        foreach (LeaveApprovalStepKey::configurableKeys() as $key) {
-            if (! isset($seen[$key->value])) {
-                $normalized[] = [
-                    'key' => $key->value,
-                    'enabled' => false,
-                ];
-            }
-        }
-
         AppSetting::current()->update([
-            'leave_approval_workflow' => ['steps' => $normalized],
+            $kind->column() => ['steps' => $this->normalizeSteps($steps)],
         ]);
     }
 
-    public function resolveFirstApprover(Employee $employee): ?Employee
+    /**
+     * @param  list<array{key: string, enabled: bool}>  $steps
+     */
+    public function saveBranch(StructureNode $branch, ApprovalWorkflowKind $kind, array $steps): void
     {
-        foreach ($this->planSteps($employee) as $step) {
+        if ($branch->parent_id !== null) {
+            throw ValidationException::withMessages([
+                'structure_node_id' => 'Approval workflows can only be set on branches directly under Strategic Leadership.',
+            ]);
+        }
+
+        $branch->update([
+            $kind->column() => ['steps' => $this->normalizeSteps($steps)],
+        ]);
+    }
+
+    /**
+     * @param  list<array{key: string, enabled: bool}>  $steps
+     *
+     * @deprecated Use saveDefault(ApprovalWorkflowKind::Leave, $steps)
+     */
+    public function save(array $steps): void
+    {
+        $this->saveDefault(ApprovalWorkflowKind::Leave, $steps);
+    }
+
+    /**
+     * Copy company defaults onto a newly created top-level branch.
+     */
+    public function seedBranchWorkflows(StructureNode $branch): void
+    {
+        if ($branch->parent_id !== null) {
+            return;
+        }
+
+        $settings = AppSetting::current();
+
+        $branch->update([
+            'leave_approval_workflow' => $settings->leave_approval_workflow
+                ?? ['steps' => $this->defaultStepPayload()],
+            'overtime_approval_workflow' => $settings->overtime_approval_workflow
+                ?? ['steps' => $this->defaultStepPayload()],
+        ]);
+    }
+
+    public function resolveFirstApprover(Employee $employee, ApprovalWorkflowKind $kind = ApprovalWorkflowKind::Leave): ?Employee
+    {
+        foreach ($this->planSteps($employee, $kind) as $step) {
             if ($step['status'] === LeaveApprovalStepStatus::Pending && $step['approver'] instanceof Employee) {
                 return $step['approver'];
             }
@@ -143,7 +215,7 @@ class LeaveApprovalWorkflowService
     {
         $leaveRequest->approvalSteps()->delete();
 
-        $plan = $this->planSteps($employee);
+        $plan = $this->planSteps($employee, ApprovalWorkflowKind::Leave);
         $order = 1;
         $firstApprover = null;
 
@@ -174,9 +246,7 @@ class LeaveApprovalWorkflowService
             'step_key' => LeaveApprovalStepKey::Hr->value,
             'label' => LeaveApprovalStepKey::Hr->label(),
             'approver_employee_id' => null,
-            'status' => $firstApprover
-                ? LeaveApprovalStepStatus::Pending->value
-                : LeaveApprovalStepStatus::Pending->value,
+            'status' => LeaveApprovalStepStatus::Pending->value,
         ]);
 
         return $firstApprover;
@@ -185,7 +255,7 @@ class LeaveApprovalWorkflowService
     /**
      * @return list<array{key: LeaveApprovalStepKey, label: string, approver: ?Employee, status: LeaveApprovalStepStatus}>
      */
-    public function planSteps(Employee $employee): array
+    public function planSteps(Employee $employee, ApprovalWorkflowKind $kind = ApprovalWorkflowKind::Leave): array
     {
         $employee->loadMissing([
             'manager',
@@ -199,7 +269,7 @@ class LeaveApprovalWorkflowService
 
         $plan = [];
 
-        foreach ($this->enabledStepKeys() as $keyValue) {
+        foreach ($this->enabledStepKeysFor($employee, $kind) as $keyValue) {
             $key = LeaveApprovalStepKey::from($keyValue);
             $approver = $this->resolveStepApprover($employee, $key);
 
@@ -465,5 +535,104 @@ class LeaveApprovalWorkflowService
         }
 
         return null;
+    }
+
+    /**
+     * @param  list<array{key: string, enabled: bool}>  $steps
+     * @return list<array{key: string, enabled: bool}>
+     */
+    protected function normalizeSteps(array $steps): array
+    {
+        $normalized = [];
+        $seen = [];
+
+        foreach ($steps as $step) {
+            $key = (string) ($step['key'] ?? '');
+            $enum = LeaveApprovalStepKey::tryFrom($key);
+
+            if (! $enum || $enum === LeaveApprovalStepKey::Hr) {
+                continue;
+            }
+
+            if (isset($seen[$key])) {
+                continue;
+            }
+
+            $seen[$key] = true;
+            $normalized[] = [
+                'key' => $key,
+                'enabled' => (bool) ($step['enabled'] ?? false),
+            ];
+        }
+
+        foreach (LeaveApprovalStepKey::configurableKeys() as $key) {
+            if (! isset($seen[$key->value])) {
+                $normalized[] = [
+                    'key' => $key->value,
+                    'enabled' => false,
+                ];
+            }
+        }
+
+        return $normalized;
+    }
+
+    /**
+     * @return list<array{key: string, enabled: bool}>
+     */
+    protected function defaultStepPayload(): array
+    {
+        return array_map(
+            fn (LeaveApprovalStepKey $key) => ['key' => $key->value, 'enabled' => true],
+            LeaveApprovalStepKey::configurableKeys(),
+        );
+    }
+
+    protected function hasConfiguredSteps(mixed $stored): bool
+    {
+        return is_array($stored)
+            && isset($stored['steps'])
+            && is_array($stored['steps'])
+            && $stored['steps'] !== [];
+    }
+
+    /**
+     * @return list<string>
+     */
+    protected function enabledKeysFromStored(mixed $stored): array
+    {
+        $default = array_map(
+            fn (LeaveApprovalStepKey $key) => $key->value,
+            LeaveApprovalStepKey::configurableKeys(),
+        );
+
+        if (! $this->hasConfiguredSteps($stored)) {
+            return $default;
+        }
+
+        $keys = [];
+
+        foreach ($stored['steps'] as $step) {
+            if (! is_array($step)) {
+                continue;
+            }
+
+            $key = (string) ($step['key'] ?? '');
+            $enabled = (bool) ($step['enabled'] ?? false);
+
+            if (! $enabled || $key === LeaveApprovalStepKey::Hr->value) {
+                continue;
+            }
+
+            if (LeaveApprovalStepKey::tryFrom($key) === null) {
+                continue;
+            }
+
+            if (! in_array($key, $keys, true)) {
+                $keys[] = $key;
+            }
+        }
+
+        return $keys;
     }
 }

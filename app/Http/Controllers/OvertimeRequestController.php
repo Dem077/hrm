@@ -65,7 +65,16 @@ class OvertimeRequestController extends Controller
                 ->with('error', 'Your login account must be linked to an employee record before applying for overtime.');
         }
 
+        $eligibleDays = $overtimeService->eligibleOvertimeDays($employee);
+
+        if ($eligibleDays === []) {
+            return redirect()
+                ->route('overtime-requests.index')
+                ->with('error', 'No claimable overtime found. You can only apply for hours worked after your duty end time.');
+        }
+
         $approver = $overtimeService->resolveApprover($employee);
+        $firstDay = $eligibleDays[0];
 
         return Inertia::render('OvertimeRequests/Form', [
             'approver' => $approver ? [
@@ -73,11 +82,12 @@ class OvertimeRequestController extends Controller
                 'name' => $approver->name,
                 'staff_id' => $approver->staff_id,
             ] : null,
+            'eligibleDays' => $eligibleDays,
             'request' => [
-                'overtime_date' => now()->toDateString(),
-                'start_time' => '',
-                'end_time' => '',
-                'hours' => '',
+                'overtime_date' => $firstDay['overtime_date'],
+                'start_time' => $firstDay['start_time'],
+                'end_time' => $firstDay['end_time'],
+                'hours' => $firstDay['available_hours'],
                 'reason' => '',
             ],
         ]);
@@ -96,14 +106,21 @@ class OvertimeRequestController extends Controller
 
         $timezone = config('app.timezone', 'UTC');
         $overtimeDate = Carbon::parse($request->validated('overtime_date'), $timezone)->startOfDay();
+        $eligibility = $overtimeService->eligibilityForDate($employee, $overtimeDate);
+
+        if ($eligibility === null) {
+            return back()->with('error', 'No claimable overtime hours after duty end were found for this date.');
+        }
+
+        $hours = min((float) $request->validated('hours'), (float) $eligibility['available_hours']);
 
         $overtimeRequest = OvertimeRequest::query()->create([
             'record_number' => $overtimeService->generateRecordNumber(),
             'employee_id' => $employee->id,
             'overtime_date' => $overtimeDate,
-            'start_time' => $request->validated('start_time') ?: null,
-            'end_time' => $request->validated('end_time') ?: null,
-            'hours' => $request->validated('hours'),
+            'start_time' => $eligibility['start_time'],
+            'end_time' => $eligibility['end_time'],
+            'hours' => $hours,
             'reason' => $request->string('reason')->toString(),
             'status' => OvertimeRequestStatus::Pending,
             'approver_employee_id' => null,

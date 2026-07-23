@@ -11,6 +11,10 @@ import type { PayrollComponent } from '@/types/payroll';
 defineProps<{
     components: PayrollComponent[];
     emptyComponent: PayrollComponent;
+    employmentTypes: Array<{ value: string; label: string }>;
+    nationalities: Array<{ value: string; label: string }>;
+    applicabilityFields: Array<{ value: string; label: string }>;
+    applicabilityOperators: Array<{ value: string; label: string }>;
     canManage: boolean;
 }>();
 
@@ -55,7 +59,7 @@ function closeRateModal() {
             <div>
                 <h2 class="text-base font-semibold text-slate-900 dark:text-white">Payroll components</h2>
                 <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                    Building blocks for grade packages. Late Fine and Absent Fee use one company-wide rate.
+                    Building blocks for designation salary structures. Late Fine, Absent Fee, and Overtime use a company-wide rate. Attendance Allowance days/hours rates are set per designation.
                 </p>
             </div>
             <UiButton v-if="canManage" @click="openCreate">Add component</UiButton>
@@ -90,6 +94,10 @@ function closeRateModal() {
                                 <span class="font-mono text-xs">{{ component.calculation_formula || '—' }}</span>
                                 <span class="block text-xs text-slate-400">Custom formula</span>
                             </template>
+                            <template v-else-if="component.rate_set_per_grade">
+                                <span class="text-xs text-slate-500">Set per designation</span>
+                                <span class="block text-xs text-slate-400">{{ component.amount_label }}</span>
+                            </template>
                             <template v-else-if="component.uses_global_rate">
                                 <template v-if="component.is_percentage_rate">
                                     {{ Number(component.global_rate ?? 0) }}%
@@ -105,6 +113,15 @@ function closeRateModal() {
                         <td class="px-5 py-4 text-slate-600 dark:text-slate-400">
                             {{ component.is_mandatory ? 'Yes' : 'No' }}
                             <span v-if="component.is_system_mandatory" class="ml-1 text-xs text-slate-400">(system)</span>
+                            <template v-if="component.applicability_summary?.length">
+                                <span
+                                    v-for="rule in component.applicability_summary"
+                                    :key="`${rule.field}-${rule.operator}-${rule.value}`"
+                                    class="mt-1 block text-xs text-slate-500"
+                                >
+                                    {{ rule.field_label }} {{ rule.operator_symbol }} {{ rule.value_label }}
+                                </span>
+                            </template>
                         </td>
                         <td class="px-5 py-4">
                             <span
@@ -150,6 +167,10 @@ function closeRateModal() {
             :open="modalOpen"
             :component="editingComponent"
             :empty-component="emptyComponent"
+            :employment-types="employmentTypes"
+            :nationalities="nationalities"
+            :applicability-fields="applicabilityFields"
+            :applicability-operators="applicabilityOperators"
             @close="closeModal"
             @saved="closeModal"
         />

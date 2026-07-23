@@ -7,9 +7,11 @@ use App\Enums\OvertimeRequestStatus;
 use App\Models\Employee;
 use App\Models\OvertimeRequest;
 use App\Models\User;
+use App\Services\Attendance\AttendanceSheetService;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -18,7 +20,200 @@ class OvertimeRequestService
 {
     public function __construct(
         private readonly OvertimeApprovalWorkflowService $overtimeApprovalWorkflowService,
+        private readonly AttendanceSheetService $attendanceSheetService,
     ) {}
+
+    /**
+     * Days where the employee stayed past duty end and still has claimable OT hours.
+     *
+     * @return list<array{
+     *     overtime_date: string,
+     *     label: string,
+     *     duty_end_time: string,
+     *     check_out_time: string,
+     *     start_time: string,
+     *     end_time: string,
+     *     worked_hours: float,
+     *     claimed_hours: float,
+     *     available_hours: float
+     * }>
+     */
+    public function eligibleOvertimeDays(Employee $employee, ?CarbonInterface $referenceDate = null): array
+    {
+        $timezone = config('app.timezone', 'UTC');
+        $to = ($referenceDate ?? now($timezone))->copy()->timezone($timezone)->startOfDay();
+        $from = $to->copy()->subDays(AttendanceSheetService::MAX_DAYS);
+
+        $attendance = $this->attendanceSheetService->build($from, $to, null, $employee->id);
+        $claimedByDate = $this->claimedHoursByDate($employee->id, $from, $to);
+
+        $eligible = [];
+
+        foreach ($attendance['rows'] as $row) {
+            $window = $this->afterDutyOvertimeWindow($row);
+
+            if ($window === null) {
+                continue;
+            }
+
+            $date = $window['overtime_date'];
+            $claimed = (float) ($claimedByDate[$date] ?? 0);
+            $available = round(max(0, $window['worked_hours'] - $claimed), 2);
+
+            if ($available < 0.25) {
+                continue;
+            }
+
+            $eligible[] = [
+                'overtime_date' => $date,
+                'label' => sprintf(
+                    '%s · %s–%s · %s h available',
+                    $date,
+                    $window['start_time'],
+                    $window['end_time'],
+                    number_format($available, 2, '.', ''),
+                ),
+                'duty_end_time' => $window['start_time'],
+                'check_out_time' => $window['end_time'],
+                'start_time' => $window['start_time'],
+                'end_time' => $window['end_time'],
+                'worked_hours' => $window['worked_hours'],
+                'claimed_hours' => $claimed,
+                'available_hours' => $available,
+            ];
+        }
+
+        return array_values(array_reverse($eligible));
+    }
+
+    /**
+     * @return array{
+     *     overtime_date: string,
+     *     start_time: string,
+     *     end_time: string,
+     *     worked_hours: float,
+     *     claimed_hours: float,
+     *     available_hours: float
+     * }|null
+     */
+    public function eligibilityForDate(Employee $employee, CarbonInterface $overtimeDate): ?array
+    {
+        $timezone = config('app.timezone', 'UTC');
+        $date = $overtimeDate->copy()->timezone($timezone)->startOfDay();
+
+        $attendance = $this->attendanceSheetService->build($date, $date, null, $employee->id);
+        $row = collect($attendance['rows'])->firstWhere('date', $date->toDateString());
+
+        if (! is_array($row)) {
+            return null;
+        }
+
+        $window = $this->afterDutyOvertimeWindow($row);
+
+        if ($window === null) {
+            return null;
+        }
+
+        $claimed = $this->claimedHoursForDate($employee->id, $date);
+        $available = round(max(0, $window['worked_hours'] - $claimed), 2);
+
+        if ($available < 0.25) {
+            return null;
+        }
+
+        return [
+            'overtime_date' => $window['overtime_date'],
+            'start_time' => $window['start_time'],
+            'end_time' => $window['end_time'],
+            'worked_hours' => $window['worked_hours'],
+            'claimed_hours' => $claimed,
+            'available_hours' => $available,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     * @return array{overtime_date: string, start_time: string, end_time: string, worked_hours: float}|null
+     */
+    public function afterDutyOvertimeWindow(array $row): ?array
+    {
+        $date = (string) ($row['date'] ?? '');
+        $dutyStart = trim((string) ($row['duty_start_time'] ?? ''));
+        $dutyEnd = trim((string) ($row['duty_end_time'] ?? ''));
+        $checkOutRaw = $row['check_out'] ?? null;
+
+        if ($date === '' || $dutyEnd === '' || $dutyEnd === '—' || ! $checkOutRaw) {
+            return null;
+        }
+
+        $timezone = config('app.timezone', 'UTC');
+
+        try {
+            $dutyEndAt = Carbon::createFromFormat('Y-m-d H:i', $date.' '.substr($dutyEnd, 0, 5), $timezone);
+            $checkOutAt = Carbon::parse($checkOutRaw)->timezone($timezone);
+        } catch (\Throwable) {
+            return null;
+        }
+
+        if (! $dutyEndAt || ! $checkOutAt) {
+            return null;
+        }
+
+        if ($dutyStart !== '' && $dutyStart !== '—' && substr($dutyStart, 0, 5) > substr($dutyEnd, 0, 5)) {
+            $dutyEndAt->addDay();
+        }
+
+        if ($checkOutAt->lte($dutyEndAt)) {
+            return null;
+        }
+
+        $minutes = $dutyEndAt->diffInMinutes($checkOutAt);
+
+        if ($minutes < 15) {
+            return null;
+        }
+
+        return [
+            'overtime_date' => $date,
+            'start_time' => $dutyEndAt->format('H:i'),
+            'end_time' => $checkOutAt->format('H:i'),
+            'worked_hours' => round($minutes / 60, 2),
+        ];
+    }
+
+    /**
+     * @return array<string, float>
+     */
+    protected function claimedHoursByDate(int $employeeId, CarbonInterface $from, CarbonInterface $to): array
+    {
+        return OvertimeRequest::query()
+            ->where('employee_id', $employeeId)
+            ->whereIn('status', [
+                OvertimeRequestStatus::Pending,
+                OvertimeRequestStatus::PendingHr,
+                OvertimeRequestStatus::Approved,
+            ])
+            ->whereBetween('overtime_date', [$from->toDateString(), $to->toDateString()])
+            ->get(['overtime_date', 'hours'])
+            ->groupBy(fn (OvertimeRequest $request) => $request->overtime_date->toDateString())
+            ->map(fn (Collection $group) => round((float) $group->sum('hours'), 2))
+            ->all();
+    }
+
+    protected function claimedHoursForDate(int $employeeId, CarbonInterface $date): float
+    {
+        $hours = OvertimeRequest::query()
+            ->where('employee_id', $employeeId)
+            ->whereIn('status', [
+                OvertimeRequestStatus::Pending,
+                OvertimeRequestStatus::PendingHr,
+                OvertimeRequestStatus::Approved,
+            ])
+            ->whereDate('overtime_date', $date->toDateString())
+            ->sum('hours');
+
+        return round((float) $hours, 2);
+    }
 
     public function generateRecordNumber(?Carbon $issuedAt = null): string
     {

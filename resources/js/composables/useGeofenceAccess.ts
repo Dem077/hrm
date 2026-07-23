@@ -3,11 +3,60 @@ import { computed, ref, type Ref } from 'vue';
 export type GeofenceSite = {
     id: number;
     name: string;
+    latitude?: number;
+    longitude?: number;
+    radius_meters?: number;
+    max_accuracy_meters?: number;
     require_public_ip: boolean;
     allowed_public_ips: string[];
     public_ip_allowed: boolean | null;
-    radius_meters?: number;
 };
+
+export type GeofenceCoords = {
+    latitude: number;
+    longitude: number;
+    accuracy: number | null;
+};
+
+/** Haversine distance in meters — mirrors HasGeofenceSiteRules::distanceMetersFrom. */
+export function distanceMetersBetween(
+    fromLat: number,
+    fromLng: number,
+    toLat: number,
+    toLng: number,
+): number {
+    const earthRadius = 6_371_000;
+    const latFrom = (fromLat * Math.PI) / 180;
+    const latTo = (toLat * Math.PI) / 180;
+    const latDelta = ((toLat - fromLat) * Math.PI) / 180;
+    const lonDelta = ((toLng - fromLng) * Math.PI) / 180;
+
+    const a =
+        Math.sin(latDelta / 2) ** 2 +
+        Math.cos(latFrom) * Math.cos(latTo) * Math.sin(lonDelta / 2) ** 2;
+
+    return 2 * earthRadius * Math.asin(Math.min(1, Math.sqrt(a)));
+}
+
+/** Mirrors HasGeofenceSiteRules::containsCoordinates — radius only, no accuracy buffer. */
+export function siteContainsCoordinates(
+    site: Pick<GeofenceSite, 'latitude' | 'longitude' | 'radius_meters' | 'max_accuracy_meters'>,
+    latitude: number,
+    longitude: number,
+    _accuracyMeters: number | null = null,
+): boolean {
+    if (
+        site.latitude === undefined ||
+        site.longitude === undefined ||
+        site.radius_meters === undefined
+    ) {
+        return false;
+    }
+
+    const distance = distanceMetersBetween(site.latitude, site.longitude, latitude, longitude);
+
+    return distance <= site.radius_meters;
+}
 
 function ipv4ToInt(ip: string): number | null {
     const parts = ip.split('.').map((part) => Number(part));
@@ -51,7 +100,7 @@ export function ipMatchesAllowList(ip: string | null, allowed: string[]): boolea
 }
 
 export function useGeofenceAccess(selectedSite: Ref<GeofenceSite | null | undefined>) {
-    const coords = ref<{ latitude: number; longitude: number; accuracy: number | null } | null>(null);
+    const coords = ref<GeofenceCoords | null>(null);
     const locating = ref(false);
     const publicIp = ref<string | null>(null);
     const publicIpChecking = ref(true);
@@ -78,9 +127,49 @@ export function useGeofenceAccess(selectedSite: Ref<GeofenceSite | null | undefi
         return true;
     });
 
+    const distanceMeters = computed(() => {
+        const site = selectedSite.value;
+        const position = coords.value;
+
+        if (
+            !site ||
+            !position ||
+            site.latitude === undefined ||
+            site.longitude === undefined
+        ) {
+            return null;
+        }
+
+        return distanceMetersBetween(site.latitude, site.longitude, position.latitude, position.longitude);
+    });
+
+    const withinFence = computed(() => {
+        const site = selectedSite.value;
+        const position = coords.value;
+
+        if (!site || !position) {
+            return false;
+        }
+
+        return siteContainsCoordinates(site, position.latitude, position.longitude, position.accuracy);
+    });
+
+    const accuracyTooLow = computed(() => {
+        const site = selectedSite.value;
+        const position = coords.value;
+
+        if (!site || !position || position.accuracy === null || site.max_accuracy_meters === undefined) {
+            return false;
+        }
+
+        return position.accuracy > site.max_accuracy_meters;
+    });
+
     const gpsReady = computed(() => Boolean(coords.value) && !locating.value);
     const wifiReady = computed(() => !networkBlocked.value);
-    const isReady = computed(() => gpsReady.value && wifiReady.value);
+    const isReady = computed(
+        () => gpsReady.value && wifiReady.value && withinFence.value && !accuracyTooLow.value,
+    );
 
     async function refreshPublicIp() {
         publicIpChecking.value = true;
@@ -129,7 +218,7 @@ export function useGeofenceAccess(selectedSite: Ref<GeofenceSite | null | undefi
                 coords.value = null;
                 locating.value = false;
             },
-            { enableHighAccuracy: true, timeout: 20000, maximumAge: 10000 },
+            { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 },
         );
     }
 
@@ -145,6 +234,9 @@ export function useGeofenceAccess(selectedSite: Ref<GeofenceSite | null | undefi
         publicIpChecking,
         publicIpError,
         networkBlocked,
+        distanceMeters,
+        withinFence,
+        accuracyTooLow,
         gpsReady,
         wifiReady,
         isReady,

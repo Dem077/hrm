@@ -97,6 +97,22 @@ it('rejects self punch outside the geofence', function () {
     expect(ZktAttendanceLog::query()->count())->toBe(0);
 });
 
+it('does not expand the geofence by gps accuracy', function () {
+    $this->site->update(['max_accuracy_meters' => 250]);
+
+    // ~220m east of the site pin — outside the 100m radius. Accuracy must not
+    // enlarge the fence (previously radius + accuracy allowed this).
+    $response = $this->actingAs($this->user)->from('/self-punch')->post('/self-punch', selfPunchPayload($this->site, [
+        'latitude' => 4.1755,
+        'longitude' => 73.5113,
+        'accuracy_meters' => 150,
+    ]));
+
+    $response->assertRedirect('/self-punch');
+    $response->assertSessionHasErrors('location');
+    expect(ZktAttendanceLog::query()->count())->toBe(0);
+});
+
 it('rejects self punch when public ip restriction fails', function () {
     $this->site->update([
         'require_public_ip' => true,

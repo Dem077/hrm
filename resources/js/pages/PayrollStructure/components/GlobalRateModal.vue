@@ -35,6 +35,16 @@ const selectedOption = computed(() =>
 
 const isCustomFormula = computed(() => form.calculation_method === 'custom_formula');
 
+const isAttendanceAllowanceComponent = computed(
+    () => props.component?.code === 'attendance_allowance',
+);
+
+const rateSetPerGrade = computed(
+    () =>
+        isAttendanceAllowanceComponent.value &&
+        (form.calculation_method === 'daily' || form.calculation_method === 'hourly'),
+);
+
 const isPercentage = computed(
     () =>
         Boolean(selectedOption.value?.is_percentage_rate) ||
@@ -56,13 +66,32 @@ const formulaVariableOptions = computed(() => {
         'present_days',
         'late_minutes',
         'basic_salary',
+        'gross_salary',
+        'total_deductions',
+        'net_salary',
         'hours_worked',
         'additional_hours_worked',
+        'overtime_hours',
         'working_days',
         'total_days_of_payroll',
     ];
 
-    return variables.map((value) => ({ value, label: value }));
+    const labels: Record<string, string> = {
+        absent_days: 'Absent days',
+        present_days: 'Present days',
+        late_minutes: 'Late minutes',
+        basic_salary: 'Basic salary',
+        gross_salary: 'Gross salary',
+        total_deductions: 'Total deductions',
+        net_salary: 'Net salary',
+        hours_worked: 'Hours worked',
+        additional_hours_worked: 'Additional hours worked',
+        overtime_hours: 'Overtime approved hours',
+        working_days: 'Working days',
+        total_days_of_payroll: 'Total days of payroll',
+    };
+
+    return variables.map((value) => ({ value, label: labels[value] ?? value }));
 });
 
 watch(
@@ -96,7 +125,7 @@ function submit() {
     <UiModal
         :open="open"
         :title="component ? `Configure ${component.name}` : 'Configure company rate'"
-        description="Choose how this deduction is calculated. The value applies to every employee."
+        description="Choose how this component is calculated."
         @close="emit('close')"
     >
         <form v-if="component" class="space-y-4" @submit.prevent="submit">
@@ -124,6 +153,16 @@ function submit() {
                 :error="form.errors.calculation_formula"
             />
 
+            <div
+                v-else-if="rateSetPerGrade"
+                class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600 dark:border-slate-700 dark:bg-surface-elevated dark:text-slate-300"
+            >
+                <p class="font-medium text-slate-800 dark:text-slate-100">Rate is set per designation</p>
+                <p class="mt-1 text-xs text-slate-500">
+                    For days attended / hours worked, set the rate on each designation salary structure like other normal payroll components.
+                </p>
+            </div>
+
             <template v-else>
                 <UiInput
                     v-model.number="form.global_rate"
@@ -140,11 +179,17 @@ function submit() {
                     <template v-if="isPercentage && String(form.calculation_method).includes('late')">
                         Example: 0.01% of basic 20,000 with 30 late minutes → 60 deduction.
                     </template>
+                    <template v-else-if="isPercentage && String(form.calculation_method).includes('overtime')">
+                        Example: 0.5% of basic 20,000 with 4 overtime approved hours → 400 addition.
+                    </template>
                     <template v-else-if="isPercentage">
                         Example: 5% of basic 20,000 with 2 absent days → 2,000 deduction.
                     </template>
                     <template v-else-if="String(form.calculation_method).includes('late')">
                         Example: rate 2 with 30 late minutes → 60 deduction.
+                    </template>
+                    <template v-else-if="String(form.calculation_method).includes('overtime')">
+                        Example: rate 100 with 4 overtime approved hours → 400 addition.
                     </template>
                     <template v-else>
                         Example: rate 500 with 2 absent days → 1,000 deduction.

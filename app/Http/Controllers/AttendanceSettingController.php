@@ -4,15 +4,18 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\StoreAttendanceDutyPolicyRequest;
 use App\Http\Requests\StorePublicHolidayRequest;
+use App\Http\Requests\UpdateApprovalWorkflowRequest;
 use App\Http\Requests\UpdateAttendanceDutyPolicyRequest;
 use App\Http\Requests\UpdateLeaveApprovalWorkflowRequest;
 use App\Http\Requests\UpdatePayrollPeriodRequest;
 use App\Http\Requests\UpdatePublicHolidayRequest;
+use App\Enums\ApprovalWorkflowKind;
 use App\Models\AppSetting;
 use App\Models\AttendanceDutyPolicy;
 use App\Models\AttendanceGeneralSetting;
 use App\Models\Bank;
 use App\Models\PublicHoliday;
+use App\Models\StructureNode;
 use App\Services\Attendance\PayrollPeriodService;
 use App\Services\Leave\LeaveApprovalWorkflowService;
 use Illuminate\Http\RedirectResponse;
@@ -29,7 +32,7 @@ class AttendanceSettingController extends Controller
 
         return Inertia::render('AttendanceSettings/Index', [
             'leaveCarryForwardEnabled' => AppSetting::current()->leave_carry_forward_enabled,
-            'leaveApprovalWorkflow' => $leaveApprovalWorkflowService->presentation(),
+            'approvalWorkflows' => $leaveApprovalWorkflowService->branchWorkflowsPresentation(),
             'banks' => Bank::query()
                 ->ordered()
                 ->get()
@@ -120,9 +123,29 @@ class AttendanceSettingController extends Controller
         UpdateLeaveApprovalWorkflowRequest $request,
         LeaveApprovalWorkflowService $leaveApprovalWorkflowService,
     ): RedirectResponse {
-        $leaveApprovalWorkflowService->save($request->validated('steps'));
+        $leaveApprovalWorkflowService->saveDefault(ApprovalWorkflowKind::Leave, $request->validated('steps'));
 
-        return back()->with('success', 'Leave approval workflow updated successfully.');
+        return back()->with('success', 'Company default leave approval workflow updated successfully.');
+    }
+
+    public function updateApprovalWorkflow(
+        UpdateApprovalWorkflowRequest $request,
+        LeaveApprovalWorkflowService $leaveApprovalWorkflowService,
+    ): RedirectResponse {
+        $kind = ApprovalWorkflowKind::from($request->validated('kind'));
+        $steps = $request->validated('steps');
+        $nodeId = $request->validated('structure_node_id');
+
+        if ($nodeId) {
+            $branch = StructureNode::query()->whereNull('parent_id')->findOrFail($nodeId);
+            $leaveApprovalWorkflowService->saveBranch($branch, $kind, $steps);
+            $target = $branch->name;
+        } else {
+            $leaveApprovalWorkflowService->saveDefault($kind, $steps);
+            $target = 'company default';
+        }
+
+        return back()->with('success', "{$kind->label()} approval workflow updated for {$target}.");
     }
 
     public function storePolicy(StoreAttendanceDutyPolicyRequest $request): RedirectResponse

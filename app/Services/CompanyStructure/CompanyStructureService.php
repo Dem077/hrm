@@ -224,6 +224,10 @@ class CompanyStructureService
             $this->syncHeadGrades($node, $headGradeIds, $parentId);
         }
 
+        if ($node->parent_id === null) {
+            app(\App\Services\Leave\LeaveApprovalWorkflowService::class)->seedBranchWorkflows($node->fresh() ?? $node);
+        }
+
         return $node->load(['headGrades']);
     }
 

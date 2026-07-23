@@ -77,7 +77,7 @@ function submit() {
 <template>
     <UiModal
         :open="open"
-        :title="grade ? `Payroll package · ${grade.label}` : 'Payroll package'"
+        :title="grade ? `Designation salary structure · ${grade.label}` : 'Designation salary structure'"
         :description="grade?.path_label"
         max-width="xl"
         @close="emit('close')"
@@ -95,7 +95,7 @@ function submit() {
 
             <div class="flex justify-end gap-2">
                 <UiButton type="button" variant="ghost" @click="emit('close')">Cancel</UiButton>
-                <UiButton type="submit" variant="primary" :disabled="form.processing">Save package</UiButton>
+                <UiButton type="submit" variant="primary" :disabled="form.processing">Save structure</UiButton>
             </div>
         </form>
     </UiModal>

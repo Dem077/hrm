@@ -2,6 +2,9 @@
 
 namespace App\Models;
 
+use App\Enums\EmploymentType;
+use App\Enums\PayrollApplicabilityField;
+use App\Enums\PayrollApplicabilityOperator;
 use App\Enums\PayrollComponentCalculationMethod;
 use App\Enums\PayrollComponentType;
 use App\Services\Payroll\PayrollFormulaEvaluator;
@@ -17,6 +20,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
     'global_rate',
     'calculation_formula',
     'is_mandatory',
+    'applicability_rules',
     'sort_order',
     'is_active',
 ])]
@@ -30,6 +34,8 @@ class PayrollComponent extends Model
 
     public const OVERTIME_CODE = 'overtime';
 
+    public const ATTENDANCE_ALLOWANCE_CODE = 'attendance_allowance';
+
     /**
      * @return list<string>
      */
@@ -37,6 +43,21 @@ class PayrollComponent extends Model
     {
         return [
             self::BASIC_SALARY_CODE,
+            self::LATE_FINE_CODE,
+            self::ABSENT_FEE_CODE,
+            self::OVERTIME_CODE,
+            self::ATTENDANCE_ALLOWANCE_CODE,
+        ];
+    }
+
+    /**
+     * System components that always use a company-wide rate/formula.
+     *
+     * @return list<string>
+     */
+    public static function globalRateCodes(): array
+    {
+        return [
             self::LATE_FINE_CODE,
             self::ABSENT_FEE_CODE,
             self::OVERTIME_CODE,
@@ -50,6 +71,7 @@ class PayrollComponent extends Model
             'calculation_method' => PayrollComponentCalculationMethod::class,
             'global_rate' => 'decimal:2',
             'is_mandatory' => 'boolean',
+            'applicability_rules' => 'array',
             'sort_order' => 'integer',
             'is_active' => 'boolean',
         ];
@@ -69,8 +91,19 @@ class PayrollComponent extends Model
 
     public function usesGlobalRate(): bool
     {
+        // Days attended / hours worked: rate is set per grade like normal components.
+        // Custom formula: company-wide, same pattern as overtime.
+        if ($this->code === self::ATTENDANCE_ALLOWANCE_CODE) {
+            return $this->calculation_method->isCustomFormula();
+        }
+
         return $this->calculation_method->usesGlobalRate()
-            || in_array($this->code, [self::LATE_FINE_CODE, self::ABSENT_FEE_CODE, self::OVERTIME_CODE], true);
+            || in_array($this->code, self::globalRateCodes(), true);
+    }
+
+    public function isConfigurableSystemComponent(): bool
+    {
+        return $this->allowedCalculationMethods() !== [];
     }
 
     /**
@@ -82,6 +115,7 @@ class PayrollComponent extends Model
             self::LATE_FINE_CODE => PayrollComponentCalculationMethod::lateFineOptions(),
             self::ABSENT_FEE_CODE => PayrollComponentCalculationMethod::absentFeeOptions(),
             self::OVERTIME_CODE => PayrollComponentCalculationMethod::overtimeOptions(),
+            self::ATTENDANCE_ALLOWANCE_CODE => PayrollComponentCalculationMethod::attendanceAllowanceOptions(),
             default => [],
         };
     }
@@ -89,6 +123,107 @@ class PayrollComponent extends Model
     public function isLoan(): bool
     {
         return $this->type->isLoan();
+    }
+
+    public function hasApplicabilityRules(): bool
+    {
+        $rules = $this->applicability_rules;
+
+        return is_array($rules)
+            && isset($rules['all'])
+            && is_array($rules['all'])
+            && $rules['all'] !== [];
+    }
+
+    /**
+     * Whether this component should be applied to the employee during payroll.
+     * Empty rules mean everyone.
+     */
+    public function appliesToEmployee(Employee $employee): bool
+    {
+        if (! $this->hasApplicabilityRules()) {
+            return true;
+        }
+
+        foreach ($this->applicability_rules['all'] as $rule) {
+            if (! is_array($rule)) {
+                return false;
+            }
+
+            $field = PayrollApplicabilityField::tryFrom((string) ($rule['field'] ?? ''));
+            $operator = PayrollApplicabilityOperator::tryFrom((string) ($rule['operator'] ?? PayrollApplicabilityOperator::Equals->value))
+                ?? PayrollApplicabilityOperator::Equals;
+            $expected = trim((string) ($rule['value'] ?? ''));
+
+            if (! $field || $expected === '') {
+                continue;
+            }
+
+            $actual = match ($field) {
+                PayrollApplicabilityField::Nationality => trim((string) ($employee->nationality ?? '')),
+                PayrollApplicabilityField::EmploymentType => $employee->employment_type instanceof EmploymentType
+                    ? $employee->employment_type->value
+                    : trim((string) ($employee->employment_type ?? '')),
+            };
+
+            $matches = $actual !== '' && strcasecmp($actual, $expected) === 0;
+
+            $passes = match ($operator) {
+                PayrollApplicabilityOperator::Equals => $matches,
+                PayrollApplicabilityOperator::NotEquals => ! $matches,
+            };
+
+            if (! $passes) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * @return list<array{field: string, field_label: string, operator: string, operator_label: string, operator_symbol: string, value: string, value_label: string}>
+     */
+    public function applicabilityRulesPresentation(): array
+    {
+        if (! $this->hasApplicabilityRules()) {
+            return [];
+        }
+
+        $rows = [];
+
+        foreach ($this->applicability_rules['all'] as $rule) {
+            if (! is_array($rule)) {
+                continue;
+            }
+
+            $field = PayrollApplicabilityField::tryFrom((string) ($rule['field'] ?? ''));
+            $operator = PayrollApplicabilityOperator::tryFrom((string) ($rule['operator'] ?? PayrollApplicabilityOperator::Equals->value))
+                ?? PayrollApplicabilityOperator::Equals;
+            $value = trim((string) ($rule['value'] ?? ''));
+
+            if (! $field || $value === '') {
+                continue;
+            }
+
+            $valueLabel = $value;
+
+            if ($field === PayrollApplicabilityField::EmploymentType) {
+                $valueLabel = EmploymentType::tryFrom($value)?->label() ?? $value;
+            }
+
+            $rows[] = [
+                'field' => $field->value,
+                'field_label' => $field->label(),
+                'operator' => $operator->value,
+                'operator_label' => $operator->label(),
+                'operator_symbol' => $operator->symbol(),
+                'value' => $value,
+                'value_label' => $valueLabel,
+            ];
+        }
+
+        return $rows;
     }
 
     /**
@@ -144,10 +279,12 @@ class PayrollComponent extends Model
             'amount_label' => $this->calculation_method->amountLabel(),
             'global_rate' => $this->usesGlobalRate() ? (float) ($this->global_rate ?? 0) : null,
             'calculation_formula' => $this->calculation_formula,
-            'uses_global_rate' => $this->usesGlobalRate()
-                || in_array($this->code, [self::LATE_FINE_CODE, self::ABSENT_FEE_CODE, self::OVERTIME_CODE], true),
+            'uses_global_rate' => $this->usesGlobalRate(),
             'is_percentage_rate' => $this->calculation_method->isPercentageOfBasicSalary(),
             'is_custom_formula' => $this->calculation_method->isCustomFormula(),
+            'is_configurable' => $this->isConfigurableSystemComponent(),
+            'rate_set_per_grade' => $this->code === self::ATTENDANCE_ALLOWANCE_CODE
+                && $this->calculation_method->isAttendanceAllowance(),
             'allowed_calculation_methods' => PayrollComponentCalculationMethod::optionsPayload(
                 $this->allowedCalculationMethods(),
             ),
@@ -155,6 +292,17 @@ class PayrollComponent extends Model
             'formula_variable_options' => PayrollFormulaEvaluator::variableOptions(),
             'is_mandatory' => $this->is_mandatory,
             'is_system_mandatory' => $this->isSystemMandatory(),
+            'applicability_rules' => [
+                'all' => collect($this->applicabilityRulesPresentation())
+                    ->map(fn (array $rule) => [
+                        'field' => $rule['field'],
+                        'operator' => $rule['operator'],
+                        'value' => $rule['value'],
+                    ])
+                    ->values()
+                    ->all(),
+            ],
+            'applicability_summary' => $this->applicabilityRulesPresentation(),
             'sort_order' => $this->sort_order,
             'is_active' => $this->is_active,
             'grades_count' => $this->grades_count ?? $this->grades()->count(),

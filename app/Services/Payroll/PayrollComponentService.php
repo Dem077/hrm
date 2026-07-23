@@ -2,6 +2,9 @@
 
 namespace App\Services\Payroll;
 
+use App\Enums\EmploymentType;
+use App\Enums\PayrollApplicabilityField;
+use App\Enums\PayrollApplicabilityOperator;
 use App\Enums\PayrollComponentCalculationMethod;
 use App\Models\PayrollComponent;
 use Illuminate\Support\Facades\DB;
@@ -40,6 +43,8 @@ class PayrollComponentService
                 $data['calculation_formula'] = null;
             }
 
+            $data['applicability_rules'] = $this->normalizeApplicabilityRules($data['applicability_rules'] ?? null);
+
             $component = PayrollComponent::query()->create($data);
             $this->gradePayrollService->attachMandatoryComponentToAllGrades($component);
 
@@ -62,7 +67,7 @@ class PayrollComponentService
             && $method->usesGlobalRate()
             && ! $method->isCustomFormula()
         ) {
-            return 'Late fine and absent fee calculation methods are reserved for system components.';
+            return 'Late fine, absent fee, overtime, and attendance allowance calculation methods are reserved for system components.';
         }
 
         $wasMandatory = $component->is_mandatory;
@@ -73,6 +78,10 @@ class PayrollComponentService
                 && PayrollComponentCalculationMethod::tryFrom((string) $data['calculation_method'])?->isCustomFormula()
             ) {
                 $data['global_rate'] = null;
+            }
+
+            if (array_key_exists('applicability_rules', $data)) {
+                $data['applicability_rules'] = $this->normalizeApplicabilityRules($data['applicability_rules']);
             }
 
             $component->update($data);
@@ -91,7 +100,7 @@ class PayrollComponentService
     public function updateGlobalRate(PayrollComponent $component, array $data): ?string
     {
         if (! $component->isSystemMandatory() || $component->allowedCalculationMethods() === []) {
-            return 'Only Late Fine and Absent Fee rates can be updated this way.';
+            return 'Only system company-rate components can be updated this way.';
         }
 
         $method = PayrollComponentCalculationMethod::from((string) $data['calculation_method']);
@@ -104,9 +113,12 @@ class PayrollComponentService
             return 'That calculation method is not allowed for '.$component->name.'.';
         }
 
+        $rateSetPerGrade = $component->code === PayrollComponent::ATTENDANCE_ALLOWANCE_CODE
+            && $method->isAttendanceAllowance();
+
         $component->update([
             'calculation_method' => $method,
-            'global_rate' => $method->isCustomFormula()
+            'global_rate' => ($method->isCustomFormula() || $rateSetPerGrade)
                 ? null
                 : round((float) ($data['global_rate'] ?? 0), 2),
             'calculation_formula' => $method->isCustomFormula()
@@ -160,8 +172,60 @@ class PayrollComponentService
             'formula_variables' => PayrollFormulaEvaluator::VARIABLES,
             'formula_variable_options' => PayrollFormulaEvaluator::variableOptions(),
             'is_mandatory' => false,
+            'applicability_rules' => ['all' => []],
+            'applicability_summary' => [],
             'sort_order' => 0,
             'is_active' => true,
         ];
+    }
+
+    /**
+     * @param  mixed  $rules
+     * @return array{all: list<array{field: string, operator: string, value: string}>}|null
+     */
+    public function normalizeApplicabilityRules(mixed $rules): ?array
+    {
+        if (! is_array($rules) || ! isset($rules['all']) || ! is_array($rules['all'])) {
+            return null;
+        }
+
+        $normalized = [];
+        $seen = [];
+
+        foreach ($rules['all'] as $rule) {
+            if (! is_array($rule)) {
+                continue;
+            }
+
+            $field = PayrollApplicabilityField::tryFrom((string) ($rule['field'] ?? ''));
+            $operator = PayrollApplicabilityOperator::tryFrom((string) ($rule['operator'] ?? PayrollApplicabilityOperator::Equals->value))
+                ?? PayrollApplicabilityOperator::Equals;
+            $value = trim((string) ($rule['value'] ?? ''));
+
+            if (! $field || $value === '') {
+                continue;
+            }
+
+            if ($field === PayrollApplicabilityField::EmploymentType
+                && EmploymentType::tryFrom($value) === null
+            ) {
+                continue;
+            }
+
+            $key = $field->value.'|'.$operator->value.'|'.mb_strtolower($value);
+
+            if (isset($seen[$key])) {
+                continue;
+            }
+
+            $seen[$key] = true;
+            $normalized[] = [
+                'field' => $field->value,
+                'operator' => $operator->value,
+                'value' => $value,
+            ];
+        }
+
+        return $normalized === [] ? null : ['all' => $normalized];
     }
 }

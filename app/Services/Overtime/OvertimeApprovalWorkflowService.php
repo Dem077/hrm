@@ -2,6 +2,7 @@
 
 namespace App\Services\Overtime;
 
+use App\Enums\ApprovalWorkflowKind;
 use App\Enums\LeaveApprovalStepKey;
 use App\Enums\LeaveApprovalStepStatus;
 use App\Enums\OvertimeRequestStatus;
@@ -11,7 +12,7 @@ use App\Models\OvertimeRequestApprovalStep;
 use App\Services\Leave\LeaveApprovalWorkflowService;
 
 /**
- * Reuses the configured leave approval workflow for overtime requests.
+ * Uses each employee's top-level branch overtime workflow (separate from leave).
  */
 class OvertimeApprovalWorkflowService
 {
@@ -21,7 +22,7 @@ class OvertimeApprovalWorkflowService
 
     public function resolveFirstApprover(Employee $employee): ?Employee
     {
-        return $this->leaveApprovalWorkflowService->resolveFirstApprover($employee);
+        return $this->leaveApprovalWorkflowService->resolveFirstApprover($employee, ApprovalWorkflowKind::Overtime);
     }
 
     public function resolveLegacyApprover(Employee $employee): ?Employee
@@ -33,7 +34,7 @@ class OvertimeApprovalWorkflowService
     {
         $overtimeRequest->approvalSteps()->delete();
 
-        $plan = $this->leaveApprovalWorkflowService->planSteps($employee);
+        $plan = $this->leaveApprovalWorkflowService->planSteps($employee, ApprovalWorkflowKind::Overtime);
         $order = 1;
         $firstApprover = null;
 

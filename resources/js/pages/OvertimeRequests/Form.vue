@@ -1,15 +1,30 @@
 <script setup lang="ts">
 import { Head, useForm } from '@inertiajs/vue3';
-import { watch } from 'vue';
+import { computed, watch } from 'vue';
 
 import PageHeader from '@/components/ui/PageHeader.vue';
+import UiAlert from '@/components/ui/UiAlert.vue';
 import UiButton from '@/components/ui/UiButton.vue';
 import UiCard from '@/components/ui/UiCard.vue';
 import UiInput from '@/components/ui/UiInput.vue';
+import UiSelect from '@/components/ui/UiSelect.vue';
 import AppLayout from '@/layouts/AppLayout.vue';
+
+type EligibleDay = {
+    overtime_date: string;
+    label: string;
+    duty_end_time: string;
+    check_out_time: string;
+    start_time: string;
+    end_time: string;
+    worked_hours: number;
+    claimed_hours: number;
+    available_hours: number;
+};
 
 const props = defineProps<{
     approver: { id: number; name: string; staff_id: string } | null;
+    eligibleDays: EligibleDay[];
     request: {
         overtime_date: string;
         start_time: string;
@@ -21,41 +36,21 @@ const props = defineProps<{
 
 const form = useForm({
     overtime_date: props.request.overtime_date,
-    start_time: props.request.start_time,
-    end_time: props.request.end_time,
     hours: props.request.hours,
     reason: props.request.reason,
 });
 
-function hoursBetween(start: string, end: string): number | null {
-    if (!start || !end) {
-        return null;
-    }
-
-    const [sh, sm] = start.split(':').map(Number);
-    const [eh, em] = end.split(':').map(Number);
-
-    if ([sh, sm, eh, em].some((n) => Number.isNaN(n))) {
-        return null;
-    }
-
-    const startMinutes = sh * 60 + sm;
-    const endMinutes = eh * 60 + em;
-
-    if (endMinutes <= startMinutes) {
-        return null;
-    }
-
-    return Math.round(((endMinutes - startMinutes) / 60) * 100) / 100;
-}
+const selectedDay = computed(() =>
+    props.eligibleDays.find((day) => day.overtime_date === form.overtime_date) ?? null,
+);
 
 watch(
-    () => [form.start_time, form.end_time] as const,
-    ([start, end]) => {
-        const computed = hoursBetween(String(start), String(end));
+    () => form.overtime_date,
+    (date) => {
+        const day = props.eligibleDays.find((item) => item.overtime_date === date);
 
-        if (computed !== null) {
-            form.hours = computed;
+        if (day) {
+            form.hours = day.available_hours;
         }
     },
 );
@@ -71,7 +66,7 @@ function submit() {
     <AppLayout>
         <PageHeader
             title="Apply for overtime"
-            description="Request pay for extra hours worked after your regular duty. Approvals follow the same workflow as leave."
+            description="Select extra hours you already worked after duty end. You cannot invent overtime times."
         >
             <template #actions>
                 <UiButton href="/overtime-requests" variant="ghost">Back</UiButton>
@@ -79,18 +74,59 @@ function submit() {
         </PageHeader>
 
         <form class="max-w-3xl space-y-6" @submit.prevent="submit">
+            <UiAlert
+                tone="info"
+                message="Only days where your check-out was after duty end are listed. Hours already requested or approved are deducted."
+            />
+
             <UiCard title="Overtime details">
                 <div class="grid gap-5 md:grid-cols-2">
+                    <div class="md:col-span-2">
+                        <UiSelect v-model="form.overtime_date" label="Extra hours worked" required :error="form.errors.overtime_date">
+                            <option v-for="day in eligibleDays" :key="day.overtime_date" :value="day.overtime_date">
+                                {{ day.label }}
+                            </option>
+                        </UiSelect>
+                    </div>
+
+                    <div
+                        v-if="selectedDay"
+                        class="md:col-span-2 grid gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm dark:border-slate-700 dark:bg-surface-elevated sm:grid-cols-3"
+                    >
+                        <div>
+                            <p class="text-xs uppercase tracking-wide text-slate-500">Duty end</p>
+                            <p class="mt-1 font-medium text-slate-800 dark:text-slate-100">{{ selectedDay.duty_end_time }}</p>
+                        </div>
+                        <div>
+                            <p class="text-xs uppercase tracking-wide text-slate-500">Check-out</p>
+                            <p class="mt-1 font-medium text-slate-800 dark:text-slate-100">{{ selectedDay.check_out_time }}</p>
+                        </div>
+                        <div>
+                            <p class="text-xs uppercase tracking-wide text-slate-500">Worked after duty</p>
+                            <p class="mt-1 font-medium text-slate-800 dark:text-slate-100">{{ selectedDay.worked_hours }} h</p>
+                        </div>
+                    </div>
+
                     <UiInput
-                        v-model="form.overtime_date"
-                        label="Date worked"
-                        type="date"
+                        v-model="form.hours"
+                        label="Hours to claim"
+                        type="number"
+                        step="0.25"
+                        min="0.25"
+                        :max="selectedDay?.available_hours ?? undefined"
                         required
-                        :error="form.errors.overtime_date"
+                        :error="form.errors.hours"
                     />
-                    <UiInput v-model="form.hours" label="Hours" type="number" step="0.25" min="0.25" max="24" required :error="form.errors.hours" />
-                    <UiInput v-model="form.start_time" label="Start time (optional)" type="time" :error="form.errors.start_time" />
-                    <UiInput v-model="form.end_time" label="End time (optional)" type="time" :error="form.errors.end_time" />
+                    <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm dark:border-slate-700 dark:bg-surface-elevated">
+                        <p class="font-medium text-slate-700 dark:text-slate-300">Available to claim</p>
+                        <p class="mt-1 text-slate-600 dark:text-slate-400">
+                            {{ selectedDay ? `${selectedDay.available_hours} h` : '—' }}
+                            <span v-if="selectedDay && selectedDay.claimed_hours > 0" class="text-xs text-slate-500">
+                                ({{ selectedDay.claimed_hours }} h already claimed)
+                            </span>
+                        </p>
+                    </div>
+
                     <div class="md:col-span-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm dark:border-slate-700 dark:bg-surface-elevated">
                         <p class="font-medium text-slate-700 dark:text-slate-300">First structure approver</p>
                         <p class="mt-1 text-slate-600 dark:text-slate-400">
@@ -99,9 +135,6 @@ function submit() {
                                     ? `${approver.name} (${approver.staff_id})`
                                     : 'No structure approver found — request will go directly to HR'
                             }}
-                        </p>
-                        <p class="mt-1 text-xs text-slate-500">
-                            Uses the leave approval workflow from Global settings. HR always gives the final decision.
                         </p>
                     </div>
                 </div>
@@ -121,7 +154,7 @@ function submit() {
 
             <div class="flex justify-end gap-2">
                 <UiButton href="/overtime-requests" variant="ghost">Cancel</UiButton>
-                <UiButton type="submit" variant="primary" :disabled="form.processing">Submit request</UiButton>
+                <UiButton type="submit" variant="primary" :disabled="form.processing || !selectedDay">Submit request</UiButton>
             </div>
         </form>
     </AppLayout>

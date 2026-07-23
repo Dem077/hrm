@@ -73,6 +73,9 @@ const {
     publicIpChecking,
     publicIpError,
     networkBlocked,
+    distanceMeters,
+    withinFence,
+    accuracyTooLow,
     gpsReady,
     wifiReady,
     isReady,
@@ -310,9 +313,12 @@ function stopDoorCooldown() {
                             :selected-site="selectedPunchSite"
                             :gps-ready="gpsReady"
                             :wifi-ready="wifiReady"
+                            :within-fence="withinFence"
+                            :accuracy-too-low="accuracyTooLow"
                             :locating="locating"
                             :public-ip-checking="publicIpChecking"
                             :network-blocked="networkBlocked"
+                            :distance-meters="distanceMeters"
                             :coords="coords"
                             ready-label="You're ready to punch"
                             :not-ready-messages="{ gps: 'Allow location access to punch' }"
@@ -413,9 +419,12 @@ function stopDoorCooldown() {
                             :selected-site="selectedDoorSite"
                             :gps-ready="gpsReady"
                             :wifi-ready="wifiReady"
+                            :within-fence="withinFence"
+                            :accuracy-too-low="accuracyTooLow"
                             :locating="locating"
                             :public-ip-checking="publicIpChecking"
                             :network-blocked="networkBlocked"
+                            :distance-meters="distanceMeters"
                             :coords="coords"
                             ready-label="You're ready to open the door"
                             :not-ready-messages="{ gps: 'Allow location access to open the door' }"

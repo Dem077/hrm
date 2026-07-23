@@ -12,6 +12,7 @@ it('builds formula variables from actual attendance figures and payroll period l
         app(AttendanceSheetService::class),
         app(PayrollPeriodService::class),
         app(PayrollFormulaEvaluator::class),
+        app(\App\Services\Overtime\OvertimeRequestService::class),
     );
 
     $from = Carbon::parse('2026-06-01');
@@ -62,8 +63,12 @@ it('builds formula variables from actual attendance figures and payroll period l
         'present_days' => 3, // Present + Late (+ Incomplete if any)
         'late_minutes' => 35,
         'basic_salary' => 30000.0,
+        'gross_salary' => 0.0,
+        'total_deductions' => 0.0,
+        'net_salary' => 0.0,
         'hours_worked' => 27.0, // (540+480+600)/60
         'additional_hours_worked' => 3.0, // 1h + 0h + 2h
+        'overtime_hours' => 0.0,
         'working_days' => 4, // excludes holiday
         'total_days_of_payroll' => 10, // payroll period length, not calendar month
     ]);

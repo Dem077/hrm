@@ -285,28 +285,30 @@ class GradePayrollService
      */
     public function groupPayrollItems(Collection $items): array
     {
-        $isAttendanceAllowance = fn (array $item): bool => in_array(
-            $item['calculation_method'],
-            [
-                PayrollComponentCalculationMethod::Daily->value,
-                PayrollComponentCalculationMethod::Hourly->value,
-            ],
-            true,
-        );
+        $isAttendanceAllowance = fn (array $item): bool => ! (bool) ($item['uses_global_rate'] ?? false)
+            && in_array(
+                $item['calculation_method'],
+                [
+                    PayrollComponentCalculationMethod::Daily->value,
+                    PayrollComponentCalculationMethod::Hourly->value,
+                ],
+                true,
+            );
 
-        $usesGlobalRate = fn (array $item): bool => in_array(
-            $item['calculation_method'],
-            [
-                PayrollComponentCalculationMethod::PerLateMinute->value,
-                PayrollComponentCalculationMethod::PerLateMinuteOfBasic->value,
-                PayrollComponentCalculationMethod::PerAbsentDay->value,
-                PayrollComponentCalculationMethod::PerAbsentDayOfBasic->value,
-                PayrollComponentCalculationMethod::PerOvertimeHour->value,
-                PayrollComponentCalculationMethod::PerOvertimeHourOfBasic->value,
-                PayrollComponentCalculationMethod::CustomFormula->value,
-            ],
-            true,
-        );
+        $usesGlobalRate = fn (array $item): bool => (bool) ($item['uses_global_rate'] ?? false)
+            || in_array(
+                $item['calculation_method'],
+                [
+                    PayrollComponentCalculationMethod::PerLateMinute->value,
+                    PayrollComponentCalculationMethod::PerLateMinuteOfBasic->value,
+                    PayrollComponentCalculationMethod::PerAbsentDay->value,
+                    PayrollComponentCalculationMethod::PerAbsentDayOfBasic->value,
+                    PayrollComponentCalculationMethod::PerOvertimeHour->value,
+                    PayrollComponentCalculationMethod::PerOvertimeHourOfBasic->value,
+                    PayrollComponentCalculationMethod::CustomFormula->value,
+                ],
+                true,
+            );
 
         return [
             'mandatory' => $items

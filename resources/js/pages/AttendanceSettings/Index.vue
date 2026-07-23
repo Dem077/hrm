@@ -11,20 +11,16 @@ import { usePermissions } from '@/composables/usePermissions';
 import AppLayout from '@/layouts/AppLayout.vue';
 import BanksCard from '@/pages/AttendanceSettings/components/BanksCard.vue';
 import type { BankRow } from '@/pages/AttendanceSettings/components/BanksCard.vue';
+import BranchApprovalWorkflowsCard from '@/pages/AttendanceSettings/components/BranchApprovalWorkflowsCard.vue';
+import type { ApprovalWorkflowsPayload } from '@/pages/AttendanceSettings/components/BranchApprovalWorkflowsCard.vue';
 import { formatDate } from '@/lib/format';
 import type { AttendanceDutyPolicy, PayrollPeriodSettings, PublicHoliday } from '@/types/attendance';
 
-type SettingsTab = 'payroll' | 'leave' | 'duty' | 'holidays';
+type SettingsTab = 'payroll' | 'leave' | 'approvals' | 'duty' | 'holidays';
 
 const props = defineProps<{
     leaveCarryForwardEnabled: boolean;
-    leaveApprovalWorkflow: Array<{
-        key: string;
-        label: string;
-        description: string;
-        enabled: boolean;
-        locked: boolean;
-    }>;
+    approvalWorkflows: ApprovalWorkflowsPayload;
     banks: BankRow[];
     policies: AttendanceDutyPolicy[];
     tempPolicies: AttendanceDutyPolicy[];
@@ -41,6 +37,7 @@ const { can } = usePermissions();
 const tabs: Array<{ id: SettingsTab; label: string }> = [
     { id: 'payroll', label: 'Payroll' },
     { id: 'leave', label: 'Leave' },
+    { id: 'approvals', label: 'Approvals' },
     { id: 'duty', label: 'Duty policies' },
     { id: 'holidays', label: 'Public holidays' },
 ];
@@ -63,15 +60,6 @@ const payrollForm = useForm({
 });
 const leaveCarryForwardForm = useForm({
     leave_carry_forward_enabled: props.leaveCarryForwardEnabled ? '1' : '0',
-});
-const leaveWorkflowForm = useForm({
-    steps: props.leaveApprovalWorkflow.map((step) => ({
-        key: step.key,
-        enabled: step.enabled,
-        label: step.label,
-        description: step.description,
-        locked: step.locked,
-    })),
 });
 
 function focusTab(tabId: SettingsTab) {
@@ -111,37 +99,6 @@ function submitLeaveCarryForwardSetting() {
         preserveScroll: true,
         forceFormData: true,
     });
-}
-
-function submitLeaveWorkflowSetting() {
-    leaveWorkflowForm
-        .transform((data) => ({
-            steps: data.steps
-                .filter((step) => step.key !== 'hr')
-                .map((step) => ({
-                    key: step.key,
-                    enabled: step.enabled,
-                })),
-        }))
-        .put('/attendance-settings/leave-approval-workflow', {
-            preserveScroll: true,
-        });
-}
-
-function moveWorkflowStep(index: number, direction: -1 | 1) {
-    const target = index + direction;
-    if (target < 0 || target >= leaveWorkflowForm.steps.length) {
-        return;
-    }
-
-    if (leaveWorkflowForm.steps[index]?.locked || leaveWorkflowForm.steps[target]?.locked) {
-        return;
-    }
-
-    const steps = [...leaveWorkflowForm.steps];
-    const [item] = steps.splice(index, 1);
-    steps.splice(target, 0, item);
-    leaveWorkflowForm.steps = steps;
 }
 
 function openAddPolicyModal() {
@@ -433,66 +390,10 @@ function payrollEndLabel(startDay: number, endDay: number | null): string {
                         </div>
                     </form>
                 </UiCard>
+            </div>
 
-                <UiCard
-                    title="Leave approval workflow"
-                    description="Choose how leave and overtime move through the company structure before final HR approval. Steps without a matching head are skipped automatically."
-                >
-                    <form class="space-y-4" @submit.prevent="submitLeaveWorkflowSetting">
-                        <ol class="space-y-2">
-                            <li
-                                v-for="(step, index) in leaveWorkflowForm.steps"
-                                :key="step.key"
-                                class="rounded-xl border border-slate-200 px-4 py-3 dark:border-slate-700"
-                            >
-                                <div class="flex flex-wrap items-start justify-between gap-3">
-                                    <label class="flex min-w-0 flex-1 items-start gap-3">
-                                        <input
-                                            v-model="step.enabled"
-                                            type="checkbox"
-                                            class="mt-1 rounded border-slate-300"
-                                            :disabled="step.locked || !can('attendance-settings.leave-workflow.update')"
-                                        />
-                                        <span>
-                                            <span class="block text-sm font-medium text-slate-900 dark:text-slate-100">
-                                                {{ index + 1 }}. {{ step.label }}
-                                            </span>
-                                            <span class="mt-0.5 block text-xs text-slate-500">{{ step.description }}</span>
-                                        </span>
-                                    </label>
-                                    <div v-if="!step.locked && can('attendance-settings.leave-workflow.update')" class="flex gap-1">
-                                        <UiButton
-                                            type="button"
-                                            size="sm"
-                                            variant="ghost"
-                                            :disabled="index === 0"
-                                            @click="moveWorkflowStep(index, -1)"
-                                        >
-                                            Up
-                                        </UiButton>
-                                        <UiButton
-                                            type="button"
-                                            size="sm"
-                                            variant="ghost"
-                                            :disabled="index >= leaveWorkflowForm.steps.filter((item) => !item.locked).length - 1"
-                                            @click="moveWorkflowStep(index, 1)"
-                                        >
-                                            Down
-                                        </UiButton>
-                                    </div>
-                                </div>
-                            </li>
-                        </ol>
-                        <p v-if="leaveWorkflowForm.errors.steps" class="text-xs text-red-600 dark:text-red-400">
-                            {{ leaveWorkflowForm.errors.steps }}
-                        </p>
-                        <div v-if="can('attendance-settings.leave-workflow.update')" class="flex justify-end">
-                            <UiButton type="submit" variant="primary" :disabled="leaveWorkflowForm.processing">
-                                Save workflow
-                            </UiButton>
-                        </div>
-                    </form>
-                </UiCard>
+            <div v-show="activeTab === 'approvals'" class="space-y-6">
+                <BranchApprovalWorkflowsCard :approval-workflows="approvalWorkflows" />
             </div>
 
             <div v-show="activeTab === 'duty'">

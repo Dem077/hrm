@@ -327,7 +327,7 @@ function destroyDoorSite(id: number, name: string) {
                         type="number"
                         min="10"
                         required
-                        hint="Allow weaker GPS readings up to this accuracy (phones often report ±100–150m)"
+                        hint="Separate from the map radius. Rejects blurry GPS readings worse than this (phones often report ±100–150m). Does not enlarge the fence."
                         :error="form.errors.max_accuracy_meters"
                     />
 
@@ -473,7 +473,15 @@ function destroyDoorSite(id: number, name: string) {
                         />
                     </div>
 
-                    <UiInput v-model="doorForm.max_accuracy_meters" label="Max GPS accuracy (m)" type="number" min="10" required :error="doorForm.errors.max_accuracy_meters" />
+                    <UiInput
+                        v-model="doorForm.max_accuracy_meters"
+                        label="Max GPS accuracy (m)"
+                        type="number"
+                        min="10"
+                        required
+                        hint="Separate from the map radius. Rejects blurry GPS readings worse than this. Does not enlarge the fence."
+                        :error="doorForm.errors.max_accuracy_meters"
+                    />
                     <UiInput v-model="doorForm.sort_order" label="Sort order" type="number" min="0" :error="doorForm.errors.sort_order" />
 
                     <label class="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm dark:border-slate-700 dark:bg-surface-elevated">

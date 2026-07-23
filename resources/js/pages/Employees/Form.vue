@@ -9,6 +9,7 @@ import type { GradeOption } from '@/components/ui/GradeSelect.vue';
 import UiButton from '@/components/ui/UiButton.vue';
 import UiCard from '@/components/ui/UiCard.vue';
 import UiInput from '@/components/ui/UiInput.vue';
+import UiManagedSelect from '@/components/ui/UiManagedSelect.vue';
 import UiSelect from '@/components/ui/UiSelect.vue';
 import UiTextarea from '@/components/ui/UiTextarea.vue';
 import AppLayout from '@/layouts/AppLayout.vue';
@@ -28,6 +29,7 @@ const props = defineProps<{
     employmentTypes: EnumOption[];
     dutyTypes: DutyTypeOption[];
     banks: EnumOption[];
+    nationalities: EnumOption[];
     roles: Array<{ id: number; name: string }>;
     canAssignRoles: boolean;
 }>();
@@ -446,7 +448,19 @@ watch(
                             </option>
                         </UiSelect>
                         <UiInput v-model="form.date_of_birth" label="Date of birth" type="date" :error="form.errors.date_of_birth" />
-                        <UiInput v-model="form.nationality" label="Nationality" :error="form.errors.nationality" />
+                        <UiManagedSelect
+                            v-model="form.nationality"
+                            label="Nationality"
+                            :options="nationalities"
+                            placeholder="Search nationality..."
+                            empty-label="Not specified"
+                            record-label="Nationality"
+                            create-modal-title="Create nationality"
+                            manage-modal-title="Manage nationalities"
+                            store-url="/nationalities"
+                            :destroy-url="(value) => `/nationalities/${encodeURIComponent(value)}`"
+                            :error="form.errors.nationality"
+                        />
                         <UiInput v-model="form.religion" label="Religion" :error="form.errors.religion" />
                         <UiInput v-model="form.work_location" label="Work location" :error="form.errors.work_location" />
                         <UiInput v-model="form.qualification" label="Qualification" :error="form.errors.qualification" />

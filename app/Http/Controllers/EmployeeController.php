@@ -12,6 +12,7 @@ use App\Http\Requests\StoreEmployeeRequest;
 use App\Http\Requests\UpdateEmployeeRequest;
 use App\Models\Bank;
 use App\Models\Employee;
+use App\Models\Nationality;
 use App\Models\User;
 use App\Models\ZktLocationGroup;
 use App\Services\CompanyStructure\CompanyStructureService;
@@ -340,6 +341,7 @@ class EmployeeController extends Controller
             'employmentTypes' => EmploymentType::options(),
             'dutyTypes' => DutyType::options(),
             'banks' => Bank::options(),
+            'nationalities' => Nationality::options(),
             'devicePrivileges' => ZktDevicePrivilege::options(),
             'roles' => $this->assignableRoles($employee),
             'canAssignRoles' => $this->canAssignRoles(),

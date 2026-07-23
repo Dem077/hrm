@@ -71,6 +71,8 @@ class PayrollProcessingService
                 'staff_id',
                 'name',
                 'national_id',
+                'nationality',
+                'employment_type',
                 'grade_id',
                 'bank_name',
                 'account_name',
@@ -99,8 +101,10 @@ class PayrollProcessingService
             $presentDays = (int) ($summary['present_days'] ?? $daysAttended);
             $overtimeHours = $this->overtimeRequestService->approvedHoursInPeriod($employee->id, $from, $to);
 
-            $components = $employee->grade?->payrollComponents ?? collect();
-            $basicSalary = (float) ($components
+            $components = ($employee->grade?->payrollComponents ?? collect())
+                ->filter(fn (PayrollComponent $component) => $component->appliesToEmployee($employee))
+                ->values();
+            $basicSalary = (float) (($employee->grade?->payrollComponents ?? collect())
                 ->firstWhere('code', PayrollComponent::BASIC_SALARY_CODE)
                 ?->pivot
                 ?->amount ?? 0);
@@ -118,6 +122,11 @@ class PayrollProcessingService
             $details = [];
 
             foreach ($components as $component) {
+                // Running totals for custom formulas (components earlier in sort order only).
+                $formulaVariables['gross_salary'] = round($gross, 2);
+                $formulaVariables['total_deductions'] = round($deductions, 2);
+                $formulaVariables['net_salary'] = round($gross - $deductions, 2);
+
                 $rate = $component->usesGlobalRate()
                     ? (float) ($component->global_rate ?? 0)
                     : (float) ($component->pivot->amount ?? 0);
@@ -297,6 +306,9 @@ class PayrollProcessingService
      *     present_days: int,
      *     late_minutes: int,
      *     basic_salary: float,
+     *     gross_salary: float,
+     *     total_deductions: float,
+     *     net_salary: float,
      *     hours_worked: float,
      *     additional_hours_worked: float,
      *     overtime_hours: float,
@@ -340,6 +352,9 @@ class PayrollProcessingService
             'present_days' => $presentDays,
             'late_minutes' => $lateMinutes,
             'basic_salary' => round($basicSalary, 2),
+            'gross_salary' => 0.0,
+            'total_deductions' => 0.0,
+            'net_salary' => 0.0,
             'hours_worked' => $hoursWorked,
             'additional_hours_worked' => $this->additionalHoursWorked($rows),
             'overtime_hours' => round($overtimeHours, 2),
@@ -411,13 +426,13 @@ class PayrollProcessingService
                 ['key' => 'absent_days', 'label' => 'Absent days', 'value' => $absentDays],
             ],
             PayrollComponentCalculationMethod::PerOvertimeHour => [
-                ['key' => 'rate', 'label' => 'Rate / overtime hour', 'value' => $rate],
-                ['key' => 'overtime_hours', 'label' => 'Approved overtime hours', 'value' => $overtimeHours],
+                ['key' => 'rate', 'label' => 'Rate / overtime approved hours', 'value' => $rate],
+                ['key' => 'overtime_hours', 'label' => 'Overtime approved hours', 'value' => $overtimeHours],
             ],
             PayrollComponentCalculationMethod::PerOvertimeHourOfBasic => [
                 ['key' => 'basic_salary', 'label' => 'Basic salary', 'value' => $basicSalary],
-                ['key' => 'rate', 'label' => '% of basic / overtime hour', 'value' => $rate],
-                ['key' => 'overtime_hours', 'label' => 'Approved overtime hours', 'value' => $overtimeHours],
+                ['key' => 'rate', 'label' => '% of basic / overtime approved hours', 'value' => $rate],
+                ['key' => 'overtime_hours', 'label' => 'Overtime approved hours', 'value' => $overtimeHours],
             ],
             PayrollComponentCalculationMethod::CustomFormula => $this->customFormulaInputs(
                 (string) $formula,
@@ -435,18 +450,7 @@ class PayrollProcessingService
         $entries = collect($formulaVariables)
             ->map(fn ($value, string $key) => [
                 'key' => $key,
-                'label' => match ($key) {
-                    'absent_days' => 'Absent days',
-                    'present_days' => 'Present days',
-                    'late_minutes' => 'Late minutes',
-                    'basic_salary' => 'Basic salary',
-                    'hours_worked' => 'Hours worked',
-                    'additional_hours_worked' => 'Additional hours worked',
-                    'overtime_hours' => 'Approved overtime hours',
-                    'working_days' => 'Number of working days',
-                    'total_days_of_payroll' => 'Total days of payroll',
-                    default => str_replace('_', ' ', $key),
-                },
+                'label' => PayrollFormulaEvaluator::labelFor($key),
                 'value' => $value,
             ]);
 
@@ -484,8 +488,8 @@ class PayrollProcessingService
             PayrollComponentCalculationMethod::PerLateMinuteOfBasic => "({$money($basicSalary)} × {$qty($rate)}%) × {$qty($lateMinutes)} late minutes = {$money($amount)}",
             PayrollComponentCalculationMethod::PerAbsentDay => "{$money($rate)} × {$qty($absentDays)} absent days = {$money($amount)}",
             PayrollComponentCalculationMethod::PerAbsentDayOfBasic => "({$money($basicSalary)} × {$qty($rate)}%) × {$qty($absentDays)} absent days = {$money($amount)}",
-            PayrollComponentCalculationMethod::PerOvertimeHour => "{$money($rate)} × {$qty($overtimeHours)} overtime hours = {$money($amount)}",
-            PayrollComponentCalculationMethod::PerOvertimeHourOfBasic => "({$money($basicSalary)} × {$qty($rate)}%) × {$qty($overtimeHours)} overtime hours = {$money($amount)}",
+            PayrollComponentCalculationMethod::PerOvertimeHour => "{$money($rate)} × {$qty($overtimeHours)} overtime approved hours = {$money($amount)}",
+            PayrollComponentCalculationMethod::PerOvertimeHourOfBasic => "({$money($basicSalary)} × {$qty($rate)}%) × {$qty($overtimeHours)} overtime approved hours = {$money($amount)}",
             PayrollComponentCalculationMethod::CustomFormula => trim((string) $formula) !== ''
                 ? "Formula ({$formula}) = {$money($amount)}"
                 : "Custom formula = {$money($amount)}",

@@ -7,6 +7,8 @@ use Illuminate\Validation\ValidationException;
 class PayrollFormulaEvaluator
 {
     /**
+     * Canonical formula variable names (snake_case identifiers used in formulas).
+     *
      * @var list<string>
      */
     public const VARIABLES = [
@@ -14,6 +16,9 @@ class PayrollFormulaEvaluator
         'present_days',
         'late_minutes',
         'basic_salary',
+        'gross_salary',
+        'total_deductions',
+        'net_salary',
         'hours_worked',
         'additional_hours_worked',
         'overtime_hours',
@@ -22,21 +27,42 @@ class PayrollFormulaEvaluator
     ];
 
     /**
+     * Display labels for formula variables (single source of truth).
+     *
+     * @var array<string, string>
+     */
+    public const VARIABLE_LABELS = [
+        'absent_days' => 'Absent days',
+        'present_days' => 'Present days',
+        'late_minutes' => 'Late minutes',
+        'basic_salary' => 'Basic salary',
+        'gross_salary' => 'Gross salary',
+        'total_deductions' => 'Total deductions',
+        'net_salary' => 'Net salary',
+        'hours_worked' => 'Hours worked',
+        'additional_hours_worked' => 'Additional hours worked',
+        'overtime_hours' => 'Overtime approved hours',
+        'working_days' => 'Working days',
+        'total_days_of_payroll' => 'Total days of payroll',
+    ];
+
+    /**
      * @return list<array{value: string, label: string}>
      */
     public static function variableOptions(): array
     {
-        return [
-            ['value' => 'absent_days', 'label' => 'Absent days'],
-            ['value' => 'present_days', 'label' => 'Present days'],
-            ['value' => 'late_minutes', 'label' => 'Late minutes'],
-            ['value' => 'basic_salary', 'label' => 'Basic salary'],
-            ['value' => 'hours_worked', 'label' => 'Hours worked'],
-            ['value' => 'additional_hours_worked', 'label' => 'Additional hours worked'],
-            ['value' => 'overtime_hours', 'label' => 'Approved overtime hours'],
-            ['value' => 'working_days', 'label' => 'Number of working days'],
-            ['value' => 'total_days_of_payroll', 'label' => 'Total days of payroll'],
-        ];
+        return collect(self::VARIABLES)
+            ->map(fn (string $name) => [
+                'value' => $name,
+                'label' => self::labelFor($name),
+            ])
+            ->values()
+            ->all();
+    }
+
+    public static function labelFor(string $name): string
+    {
+        return self::VARIABLE_LABELS[$name] ?? str_replace('_', ' ', $name);
     }
 
     /**
@@ -91,10 +117,24 @@ class PayrollFormulaEvaluator
         return $formula;
     }
 
+    /**
+     * Longer names first so e.g. gross_salary is not partially matched.
+     *
+     * @return list<string>
+     */
+    protected function variablesByLength(): array
+    {
+        $names = self::VARIABLES;
+        usort($names, fn (string $a, string $b) => strlen($b) <=> strlen($a));
+
+        return $names;
+    }
+
     protected function assertValidSyntax(string $formula): void
     {
+        $names = $this->variablesByLength();
         $pattern = '/^(?:'
-            .implode('|', array_map(fn (string $name) => preg_quote($name, '/'), self::VARIABLES))
+            .implode('|', array_map(fn (string $name) => preg_quote($name, '/'), $names))
             .'|\d+(?:\.\d+)?'
             .'|[\+\-\*\/\(\)]'
             .')+$/';
@@ -112,8 +152,10 @@ class PayrollFormulaEvaluator
      */
     protected function tokenize(string $formula): array
     {
+        $names = $this->variablesByLength();
+
         preg_match_all(
-            '/'.implode('|', array_map(fn (string $name) => preg_quote($name, '/'), self::VARIABLES))
+            '/'.implode('|', array_map(fn (string $name) => preg_quote($name, '/'), $names))
             .'|\d+(?:\.\d+)?|[\+\-\*\/\(\)]/',
             $formula,
             $matches,

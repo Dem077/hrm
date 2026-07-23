@@ -31,12 +31,18 @@ export function usesGlobalRateCalculation(method: PayrollComponentCalculationMet
         method === 'per_late_minute_of_basic' ||
         method === 'per_absent_day' ||
         method === 'per_absent_day_of_basic' ||
+        method === 'per_overtime_hour' ||
+        method === 'per_overtime_hour_of_basic' ||
         method === 'custom_formula'
     );
 }
 
 export function isPercentageOfBasicCalculation(method: PayrollComponentCalculationMethod | string): boolean {
-    return method === 'per_late_minute_of_basic' || method === 'per_absent_day_of_basic';
+    return (
+        method === 'per_late_minute_of_basic' ||
+        method === 'per_absent_day_of_basic' ||
+        method === 'per_overtime_hour_of_basic'
+    );
 }
 
 export function isCustomFormulaCalculation(method: PayrollComponentCalculationMethod | string): boolean {
@@ -78,6 +84,14 @@ export function amountFieldLabel(item: DesignationPayrollItem): string {
 
     if (item.calculation_method === 'per_absent_day_of_basic') {
         return '% of basic salary / absent day';
+    }
+
+    if (item.calculation_method === 'per_overtime_hour') {
+        return 'Rate / overtime approved hours';
+    }
+
+    if (item.calculation_method === 'per_overtime_hour_of_basic') {
+        return '% of basic salary / overtime approved hours';
     }
 
     if (item.calculation_method === 'custom_formula') {
@@ -123,12 +137,18 @@ export type PayrollItemGroups = {
 };
 
 export function groupPayrollItems(items: DesignationPayrollItem[]): PayrollItemGroups {
+    const usesGlobalRate = (item: DesignationPayrollItem): boolean =>
+        Boolean(item.uses_global_rate) || usesGlobalRateCalculation(item.calculation_method);
+
+    const isPerGradeAttendanceAllowance = (item: DesignationPayrollItem): boolean =>
+        !usesGlobalRate(item) && isAttendanceAllowanceCalculation(item.calculation_method);
+
     return {
         mandatory: items.filter(
             (item) =>
                 item.is_mandatory &&
-                !isAttendanceAllowanceCalculation(item.calculation_method) &&
-                !usesGlobalRateCalculation(item.calculation_method) &&
+                !isPerGradeAttendanceAllowance(item) &&
+                !usesGlobalRate(item) &&
                 !isLoanType(item.type),
         ),
         fixed_additions: items.filter(
@@ -137,10 +157,8 @@ export function groupPayrollItems(items: DesignationPayrollItem[]): PayrollItemG
         fixed_deductions: items.filter(
             (item) => !item.is_mandatory && item.calculation_method === 'fixed' && item.type === 'deduction',
         ),
-        attendance_allowance: items.filter((item) =>
-            isAttendanceAllowanceCalculation(item.calculation_method),
-        ),
-        company_penalties: items.filter((item) => usesGlobalRateCalculation(item.calculation_method)),
+        attendance_allowance: items.filter((item) => isPerGradeAttendanceAllowance(item)),
+        company_penalties: items.filter((item) => usesGlobalRate(item)),
         loans: items.filter((item) => item.type === 'loan'),
     };
 }

@@ -25,8 +25,8 @@ enum PayrollComponentCalculationMethod: string
             self::PerLateMinuteOfBasic => '% of basic salary per late minute',
             self::PerAbsentDay => 'Fixed rate per absent day',
             self::PerAbsentDayOfBasic => '% of basic salary per absent day',
-            self::PerOvertimeHour => 'Fixed rate per overtime hour',
-            self::PerOvertimeHourOfBasic => '% of basic salary per overtime hour',
+            self::PerOvertimeHour => 'Fixed rate per overtime approved hours',
+            self::PerOvertimeHourOfBasic => '% of basic salary per overtime approved hours',
             self::CustomFormula => 'Custom formula',
         };
     }
@@ -41,8 +41,8 @@ enum PayrollComponentCalculationMethod: string
             self::PerLateMinuteOfBasic => '% of basic salary / late minute',
             self::PerAbsentDay => 'Rate / absent day',
             self::PerAbsentDayOfBasic => '% of basic salary / absent day',
-            self::PerOvertimeHour => 'Rate / overtime hour',
-            self::PerOvertimeHourOfBasic => '% of basic salary / overtime hour',
+            self::PerOvertimeHour => 'Rate / overtime approved hours',
+            self::PerOvertimeHourOfBasic => '% of basic salary / overtime approved hours',
             self::CustomFormula => 'Formula',
         };
     }
@@ -130,6 +130,14 @@ enum PayrollComponentCalculationMethod: string
     public static function overtimeOptions(): array
     {
         return [self::PerOvertimeHour, self::PerOvertimeHourOfBasic, self::CustomFormula];
+    }
+
+    /**
+     * @return list<self>
+     */
+    public static function attendanceAllowanceOptions(): array
+    {
+        return [self::Daily, self::Hourly, self::CustomFormula];
     }
 
     /**

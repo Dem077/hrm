@@ -173,7 +173,12 @@ class StoreEmployeeRequest extends FormRequest
             'marital_status' => ['nullable', Rule::enum(MaritalStatus::class)],
             'blood_group' => ['nullable', Rule::enum(BloodGroup::class)],
             'date_of_birth' => ['nullable', 'date', 'before_or_equal:today'],
-            'nationality' => ['nullable', 'string', 'max:100'],
+            'nationality' => [
+                'nullable',
+                'string',
+                'max:100',
+                Rule::exists('nationalities', 'name'),
+            ],
             'religion' => ['nullable', 'string', 'max:100'],
             'work_location' => ['nullable', 'string', 'max:255'],
             'qualification' => ['nullable', 'string', 'max:255'],

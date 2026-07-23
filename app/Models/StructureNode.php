@@ -16,6 +16,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'description',
     'is_active',
     'sort_order',
+    'leave_approval_workflow',
+    'overtime_approval_workflow',
 ])]
 class StructureNode extends Model
 {
@@ -24,6 +26,8 @@ class StructureNode extends Model
         return [
             'is_active' => 'boolean',
             'sort_order' => 'integer',
+            'leave_approval_workflow' => 'array',
+            'overtime_approval_workflow' => 'array',
         ];
     }
 

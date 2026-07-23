@@ -105,9 +105,13 @@ const variableLabels: Record<string, string> = {
     present_days: 'Present days',
     late_minutes: 'Late minutes',
     basic_salary: 'Basic salary',
+    gross_salary: 'Gross salary',
+    total_deductions: 'Total deductions',
+    net_salary: 'Net salary',
     hours_worked: 'Hours worked',
     additional_hours_worked: 'Additional hours worked',
-    working_days: 'Number of working days',
+    overtime_hours: 'Overtime approved hours',
+    working_days: 'Working days',
     total_days_of_payroll: 'Total days of payroll',
 };
 
@@ -297,6 +301,27 @@ const selectedCalculationInputs = computed(() => {
                 { key: 'rate', label: '% of basic / absent day', value: formatNumber(detail.rate) },
                 { key: 'absent_days', label: 'Absent days', value: formatNumber(absentDays) },
             ];
+        case 'per_overtime_hour': {
+            const overtimeHours =
+                readInputValue(detail.calculation_inputs, 'overtime_hours') ??
+                Number(summaryVars.overtime_hours ?? 0);
+
+            return [
+                { key: 'rate', label: 'Rate / overtime approved hours', value: formatNumber(detail.rate) },
+                { key: 'overtime_hours', label: 'Overtime approved hours', value: formatNumber(overtimeHours) },
+            ];
+        }
+        case 'per_overtime_hour_of_basic': {
+            const overtimeHours =
+                readInputValue(detail.calculation_inputs, 'overtime_hours') ??
+                Number(summaryVars.overtime_hours ?? 0);
+
+            return [
+                { key: 'basic_salary', label: 'Basic salary', value: formatNumber(basicSalary) },
+                { key: 'rate', label: '% of basic / overtime approved hours', value: formatNumber(detail.rate) },
+                { key: 'overtime_hours', label: 'Overtime approved hours', value: formatNumber(overtimeHours) },
+            ];
+        }
         case 'custom_formula':
             return selectedFormulaVariables.value;
         default:
@@ -347,6 +372,19 @@ const selectedCalculationSummary = computed(() => {
             inputs.find((input) => input.key === 'basic_salary')?.value ??
             formatMoney(Number(detail.basic_salary ?? 0));
         return `(${basic} × ${formatNumber(detail.rate)}%) × ${absent} absent days = ${amount}`;
+    }
+
+    if (detail.method === 'per_overtime_hour') {
+        const hours = inputs.find((input) => input.key === 'overtime_hours')?.value ?? '0';
+        return `${formatMoney(detail.rate)} × ${hours} overtime approved hours = ${amount}`;
+    }
+
+    if (detail.method === 'per_overtime_hour_of_basic') {
+        const hours = inputs.find((input) => input.key === 'overtime_hours')?.value ?? '0';
+        const basic =
+            inputs.find((input) => input.key === 'basic_salary')?.value ??
+            formatMoney(Number(detail.basic_salary ?? 0));
+        return `(${basic} × ${formatNumber(detail.rate)}%) × ${hours} overtime approved hours = ${amount}`;
     }
 
     if (detail.calculation_summary) {

@@ -19,7 +19,7 @@ class UpdatePayrollComponentGlobalRateRequest extends FormRequest
 
         if (! $component->isSystemMandatory() || $component->allowedCalculationMethods() === []) {
             throw new HttpResponseException(
-                redirect()->back()->with('error', 'Only Late Fine and Absent Fee rates can be updated this way.')
+                redirect()->back()->with('error', 'Only system company-rate components can be updated this way.')
             );
         }
 
@@ -30,7 +30,7 @@ class UpdatePayrollComponentGlobalRateRequest extends FormRequest
     {
         $method = PayrollComponentCalculationMethod::tryFrom((string) $this->input('calculation_method'));
 
-        if ($method?->isCustomFormula() && ! $this->filled('global_rate')) {
+        if (($method?->isCustomFormula() || $this->rateSetPerGrade($method)) && ! $this->filled('global_rate')) {
             $this->merge(['global_rate' => 0]);
         }
     }
@@ -50,10 +50,11 @@ class UpdatePayrollComponentGlobalRateRequest extends FormRequest
 
         $method = PayrollComponentCalculationMethod::tryFrom((string) $this->input('calculation_method'));
         $isCustom = $method?->isCustomFormula() ?? false;
+        $ratePerGrade = $this->rateSetPerGrade($method);
 
         return [
             'calculation_method' => ['required', 'string', Rule::in($allowed)],
-            'global_rate' => [$isCustom ? 'nullable' : 'required', 'numeric', 'min:0'],
+            'global_rate' => [$isCustom || $ratePerGrade ? 'nullable' : 'required', 'numeric', 'min:0'],
             'calculation_formula' => [$isCustom ? 'required' : 'nullable', 'string', 'max:1000'],
         ];
     }
@@ -87,5 +88,14 @@ class UpdatePayrollComponentGlobalRateRequest extends FormRequest
                 }
             }
         });
+    }
+
+    protected function rateSetPerGrade(?PayrollComponentCalculationMethod $method): bool
+    {
+        /** @var PayrollComponent $component */
+        $component = $this->route('payroll_component');
+
+        return $component->code === PayrollComponent::ATTENDANCE_ALLOWANCE_CODE
+            && ($method?->isAttendanceAllowance() ?? false);
     }
 }

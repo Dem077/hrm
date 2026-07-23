@@ -43,13 +43,10 @@ trait HasGeofenceSiteRules
 
     public function containsCoordinates(float $latitude, float $longitude, ?float $accuracyMeters = null): bool
     {
-        $distance = $this->distanceMetersFrom($latitude, $longitude);
-
-        $buffer = 0.0;
-        if ($accuracyMeters !== null && $accuracyMeters > 0) {
-            $buffer = min($accuracyMeters, (float) $this->max_accuracy_meters);
-        }
-
-        return $distance <= ($this->radius_meters + $buffer);
+        // Radius is enforced strictly against the configured circle.
+        // GPS accuracy is validated separately (max_accuracy_meters) and must not
+        // expand the fence — otherwise phones with ±100–150m readings accept punches
+        // far outside the drawn radius.
+        return $this->distanceMetersFrom($latitude, $longitude) <= (float) $this->radius_meters;
     }
 }

@@ -3,21 +3,26 @@ import { computed } from 'vue';
 
 import type { GeofenceSite } from '@/composables/useGeofenceAccess';
 
-type StatusTone = 'loading' | 'ready' | 'error';
+type StatusTone = 'loading' | 'ready' | 'error' | 'warn';
 
 const props = defineProps<{
     selectedSite: GeofenceSite | null;
     gpsReady: boolean;
     wifiReady: boolean;
+    withinFence: boolean;
+    accuracyTooLow: boolean;
     locating: boolean;
     publicIpChecking: boolean;
     networkBlocked: boolean;
+    distanceMeters: number | null;
     coords: { latitude: number; longitude: number; accuracy: number | null } | null;
     readyLabel: string;
     notReadyMessages?: {
         locating?: string;
         wifi?: string;
         gps?: string;
+        fence?: string;
+        accuracy?: string;
     };
 }>();
 
@@ -26,11 +31,42 @@ const gpsStatus = computed<{ tone: StatusTone; label: string }>(() => {
         return { tone: 'loading', label: 'Finding your location…' };
     }
 
-    if (props.coords) {
-        return { tone: 'ready', label: `Location ready (±${Math.round(props.coords.accuracy ?? 0)}m)` };
+    if (!props.coords) {
+        return { tone: 'error', label: 'Location unavailable' };
     }
 
-    return { tone: 'error', label: 'Location unavailable' };
+    const accuracyLabel = `±${Math.round(props.coords.accuracy ?? 0)}m`;
+
+    if (props.accuracyTooLow) {
+        const maxAccuracy = props.selectedSite?.max_accuracy_meters ?? 0;
+        return {
+            tone: 'error',
+            label: `GPS too inaccurate (${accuracyLabel}). Need ≤${maxAccuracy}m`,
+        };
+    }
+
+    if (!props.withinFence) {
+        const distance = props.distanceMeters !== null ? Math.round(props.distanceMeters) : null;
+        const radius = props.selectedSite?.radius_meters ?? null;
+
+        if (distance !== null && radius !== null) {
+            return {
+                tone: 'warn',
+                label: `Outside site — ${distance}m away (radius ${radius}m)`,
+            };
+        }
+
+        return { tone: 'warn', label: 'Outside the site geofence' };
+    }
+
+    const distance = props.distanceMeters !== null ? Math.round(props.distanceMeters) : null;
+    const radius = props.selectedSite?.radius_meters ?? null;
+
+    if (distance !== null && radius !== null) {
+        return { tone: 'ready', label: `Inside site — ${distance}m of ${radius}m (${accuracyLabel})` };
+    }
+
+    return { tone: 'ready', label: `Inside site (${accuracyLabel})` };
 });
 
 const wifiStatus = computed<{ tone: StatusTone; label: string; hidden: boolean }>(() => {
@@ -64,10 +100,31 @@ const statusMessage = computed(() => {
         return messages.gps ?? 'Allow location access to continue';
     }
 
+    if (props.accuracyTooLow) {
+        return messages.accuracy ?? 'GPS accuracy is too low — move outdoors or wait for a better signal';
+    }
+
+    if (!props.withinFence) {
+        const distance = props.distanceMeters !== null ? Math.round(props.distanceMeters) : null;
+        const radius = props.selectedSite?.radius_meters ?? null;
+
+        if (messages.fence) {
+            return messages.fence;
+        }
+
+        if (distance !== null && radius !== null) {
+            return `About ${distance}m from ${props.selectedSite?.name ?? 'the site'} — move within ${radius}m to continue`;
+        }
+
+        return 'Move closer to the site to continue';
+    }
+
     return props.readyLabel;
 });
 
-const isReady = computed(() => props.gpsReady && props.wifiReady);
+const isReady = computed(
+    () => props.gpsReady && props.wifiReady && props.withinFence && !props.accuracyTooLow,
+);
 </script>
 
 <template>
@@ -95,6 +152,7 @@ const isReady = computed(() => props.gpsReady && props.wifiReady);
                     :class="{
                         'status-dot--loading': gpsStatus.tone === 'loading',
                         'bg-emerald-500': gpsStatus.tone === 'ready',
+                        'bg-amber-500': gpsStatus.tone === 'warn',
                         'bg-red-500': gpsStatus.tone === 'error',
                     }"
                 />
