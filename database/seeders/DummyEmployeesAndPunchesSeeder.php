@@ -25,7 +25,7 @@ class DummyEmployeesAndPunchesSeeder extends Seeder
 {
     private const STAFF_PREFIX = 'DEMO';
 
-    private const EMPLOYEE_COUNT = 12;
+    private const EMPLOYEE_COUNT = 40;
 
     /** Months of punch history ending today (inclusive of current month). */
     private const PUNCH_MONTHS = 3;
@@ -71,12 +71,11 @@ class DummyEmployeesAndPunchesSeeder extends Seeder
     }
 
     /**
-     * @param  list<int>  $gradeIds
-     * @return list<Employee>
+     * @return list<array{name: string, gender: Gender, employment_type: EmploymentType}>
      */
-    protected function ensureDemoEmployees(array $gradeIds): array
+    protected function profiles(): array
     {
-        $profiles = [
+        return [
             ['name' => 'Aisha Mohamed', 'gender' => Gender::Female, 'employment_type' => EmploymentType::Permanent],
             ['name' => 'Hassan Ali', 'gender' => Gender::Male, 'employment_type' => EmploymentType::Permanent],
             ['name' => 'Fathimath Risha', 'gender' => Gender::Female, 'employment_type' => EmploymentType::Contract],
@@ -89,11 +88,47 @@ class DummyEmployeesAndPunchesSeeder extends Seeder
             ['name' => 'Ismail Shareef', 'gender' => Gender::Male, 'employment_type' => EmploymentType::Temporary],
             ['name' => 'Sanaa Abdulla', 'gender' => Gender::Female, 'employment_type' => EmploymentType::Permanent],
             ['name' => 'Yoosuf Rilwan', 'gender' => Gender::Male, 'employment_type' => EmploymentType::Intern],
+            ['name' => 'Hawwa Nishana', 'gender' => Gender::Female, 'employment_type' => EmploymentType::Permanent],
+            ['name' => 'Ali Waheed', 'gender' => Gender::Male, 'employment_type' => EmploymentType::Permanent],
+            ['name' => 'Zainab Manik', 'gender' => Gender::Female, 'employment_type' => EmploymentType::Contract],
+            ['name' => 'Hussain Faisal', 'gender' => Gender::Male, 'employment_type' => EmploymentType::Permanent],
+            ['name' => 'Mariyam Nashwa', 'gender' => Gender::Female, 'employment_type' => EmploymentType::Permanent],
+            ['name' => 'Ahmed Shiyan', 'gender' => Gender::Male, 'employment_type' => EmploymentType::Probation],
+            ['name' => 'Fathmath Latheefa', 'gender' => Gender::Female, 'employment_type' => EmploymentType::Permanent],
+            ['name' => 'Mohamed Imran', 'gender' => Gender::Male, 'employment_type' => EmploymentType::Permanent],
+            ['name' => 'Aishath Reesha', 'gender' => Gender::Female, 'employment_type' => EmploymentType::Contract],
+            ['name' => 'Ibrahim Naif', 'gender' => Gender::Male, 'employment_type' => EmploymentType::Permanent],
+            ['name' => 'Aminath Laila', 'gender' => Gender::Female, 'employment_type' => EmploymentType::Permanent],
+            ['name' => 'Hassan Thoha', 'gender' => Gender::Male, 'employment_type' => EmploymentType::Temporary],
+            ['name' => 'Mariyam Shimla', 'gender' => Gender::Female, 'employment_type' => EmploymentType::Permanent],
+            ['name' => 'Ahmed Mauroof', 'gender' => Gender::Male, 'employment_type' => EmploymentType::Permanent],
+            ['name' => 'Fathimath Zuhudha', 'gender' => Gender::Female, 'employment_type' => EmploymentType::Contract],
+            ['name' => 'Mohamed Habeeb', 'gender' => Gender::Male, 'employment_type' => EmploymentType::Permanent],
+            ['name' => 'Aishath Solih', 'gender' => Gender::Female, 'employment_type' => EmploymentType::Permanent],
+            ['name' => 'Ibrahim Athif', 'gender' => Gender::Male, 'employment_type' => EmploymentType::Intern],
+            ['name' => 'Hawwa Samha', 'gender' => Gender::Female, 'employment_type' => EmploymentType::Permanent],
+            ['name' => 'Ali Shareef', 'gender' => Gender::Male, 'employment_type' => EmploymentType::Permanent],
+            ['name' => 'Mariyam Lubna', 'gender' => Gender::Female, 'employment_type' => EmploymentType::Probation],
+            ['name' => 'Hussain Rifath', 'gender' => Gender::Male, 'employment_type' => EmploymentType::Permanent],
+            ['name' => 'Aminath Reesha', 'gender' => Gender::Female, 'employment_type' => EmploymentType::Contract],
+            ['name' => 'Ahmed Zayan', 'gender' => Gender::Male, 'employment_type' => EmploymentType::Permanent],
+            ['name' => 'Fathmath Nazima', 'gender' => Gender::Female, 'employment_type' => EmploymentType::Permanent],
+            ['name' => 'Mohamed Sinan', 'gender' => Gender::Male, 'employment_type' => EmploymentType::Temporary],
+            ['name' => 'Aishath Inasha', 'gender' => Gender::Female, 'employment_type' => EmploymentType::Permanent],
+            ['name' => 'Yoosuf Naushad', 'gender' => Gender::Male, 'employment_type' => EmploymentType::Permanent],
         ];
+    }
 
+    /**
+     * @param  list<int>  $gradeIds
+     * @return list<Employee>
+     */
+    protected function ensureDemoEmployees(array $gradeIds): array
+    {
+        $profiles = array_slice($this->profiles(), 0, self::EMPLOYEE_COUNT);
         $employees = [];
 
-        foreach (array_slice($profiles, 0, self::EMPLOYEE_COUNT) as $index => $profile) {
+        foreach ($profiles as $index => $profile) {
             $n = $index + 1;
             $staffId = sprintf('%s%03d', self::STAFF_PREFIX, $n);
             $nationalId = sprintf('A%07d', 9000000 + $n);
@@ -124,10 +159,14 @@ class DummyEmployeesAndPunchesSeeder extends Seeder
             $employees[] = $employee;
         }
 
-        // Wire a couple of manager relationships among demo staff only.
+        // Wire manager relationships among demo staff only.
         if (count($employees) >= 4) {
             $manager = $employees[0];
-            foreach ([1, 2, 3] as $i) {
+            foreach ([1, 2, 3, 4, 5] as $i) {
+                if (! isset($employees[$i])) {
+                    break;
+                }
+
                 if ((int) $employees[$i]->manager_id !== (int) $manager->id) {
                     $employees[$i]->update(['manager_id' => $manager->id]);
                 }

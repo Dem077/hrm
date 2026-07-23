@@ -1,20 +1,54 @@
 <script setup lang="ts">
 import { Head, Link } from '@inertiajs/vue3';
+import { computed, ref } from 'vue';
 
 import EmptyState from '@/components/ui/EmptyState.vue';
 import EmployeeAvatar from '@/components/ui/EmployeeAvatar.vue';
 import PageHeader from '@/components/ui/PageHeader.vue';
 import UiButton from '@/components/ui/UiButton.vue';
+import UiInput from '@/components/ui/UiInput.vue';
 import { usePermissions } from '@/composables/usePermissions';
 import AppLayout from '@/layouts/AppLayout.vue';
 import { formatDate } from '@/lib/format';
 import type { Employee } from '@/types/hrm';
 
-defineProps<{
+const props = defineProps<{
     employees: Employee[];
 }>();
 
 const { can } = usePermissions();
+const searchText = ref('');
+
+const filteredEmployees = computed(() => {
+    const needle = searchText.value.trim().toLowerCase();
+
+    if (needle === '') {
+        return props.employees;
+    }
+
+    return props.employees.filter((employee) => {
+        const haystack = [
+            employee.name,
+            employee.staff_id,
+            employee.national_id,
+            employee.email,
+            employee.mobile_number,
+            employee.manager?.name,
+            employee.manager?.staff_id,
+            employee.grade?.label,
+            employee.grade?.path_label,
+            employee.department?.name,
+        ]
+            .filter(Boolean)
+            .join(' ')
+            .toLowerCase();
+
+        return haystack.includes(needle);
+    });
+});
+
+const hasEmployees = computed(() => props.employees.length > 0);
+const hasMatches = computed(() => filteredEmployees.value.length > 0);
 </script>
 
 <template>
@@ -30,8 +64,19 @@ const { can } = usePermissions();
             </template>
         </PageHeader>
 
+        <div v-if="hasEmployees" class="mb-4 max-w-md">
+            <UiInput
+                v-model="searchText"
+                label="Search"
+                placeholder="Name, staff ID, NID, email, or manager"
+            />
+            <p v-if="searchText.trim()" class="mt-2 text-xs text-slate-500">
+                Showing {{ filteredEmployees.length }} of {{ employees.length }}
+            </p>
+        </div>
+
         <EmptyState
-            v-if="employees.length === 0"
+            v-if="!hasEmployees"
             title="No employees yet"
             description="Add your first employee to start building departments and approval hierarchies."
         >
@@ -45,9 +90,29 @@ const { can } = usePermissions();
             </template>
         </EmptyState>
 
+        <EmptyState
+            v-else-if="!hasMatches"
+            title="No matching employees"
+            description="Try a different name, staff ID, or email."
+        >
+            <template #icon>
+                <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="1.8"
+                        d="M21 21l-4.35-4.35M11 18a7 7 0 100-14 7 7 0 000 14z"
+                    />
+                </svg>
+            </template>
+            <template #action>
+                <UiButton variant="ghost" @click="searchText = ''">Clear search</UiButton>
+            </template>
+        </EmptyState>
+
         <div v-else class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
             <article
-                v-for="employee in employees"
+                v-for="employee in filteredEmployees"
                 :key="employee.id ?? employee.staff_id"
                 class="rounded-xl border border-slate-200 bg-surface p-4 shadow-sm transition hover:border-brand-500/30 dark:border-slate-800 dark:hover:border-brand-500/20"
             >
