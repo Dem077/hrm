@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { Head, router, useForm } from '@inertiajs/vue3';
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 
 import PageHeader from '@/components/ui/PageHeader.vue';
 import UiButton from '@/components/ui/UiButton.vue';
 import UiCard from '@/components/ui/UiCard.vue';
 import UiInput from '@/components/ui/UiInput.vue';
+import UiModal from '@/components/ui/UiModal.vue';
 import UiSelect from '@/components/ui/UiSelect.vue';
 import { usePermissions } from '@/composables/usePermissions';
 import AppLayout from '@/layouts/AppLayout.vue';
@@ -19,12 +20,35 @@ type Adjustment = {
     created_at: string | null;
 };
 
+type FormulaVariables = Record<string, number | string | null>;
+
+type CalculationInput = {
+    key: string;
+    label: string;
+    value: number | string;
+};
+
 type DetailLine = {
     component: string;
     method: string;
+    method_label?: string | null;
     rate: number;
     amount: number;
     type: string;
+    basic_salary?: number | null;
+    formula?: string | null;
+    formula_variables?: FormulaVariables | null;
+    calculation_inputs?: CalculationInput[] | null;
+    calculation_summary?: string | null;
+};
+
+type AttendanceSummary = {
+    days_attended?: number | null;
+    hours_worked?: number | null;
+    late_minutes?: number | null;
+    absent_days?: number | null;
+    present_days?: number | null;
+    formula_variables?: FormulaVariables | null;
 };
 
 const props = defineProps<{
@@ -53,12 +77,16 @@ const props = defineProps<{
         deductions: number;
         net: number;
         details: DetailLine[];
+        attendance_summary?: AttendanceSummary;
     };
     adjustments: Adjustment[];
     can_edit: boolean;
 }>();
 
 const { can } = usePermissions();
+
+const selectedDetail = ref<DetailLine | null>(null);
+const detailModalOpen = ref(false);
 
 const form = useForm({
     type: 'addition' as 'addition' | 'deduction',
@@ -72,8 +100,278 @@ const deductionDetails = computed(() =>
     props.employee.details.filter((line) => line.type === 'deduction' || line.type === 'loan'),
 );
 
+const variableLabels: Record<string, string> = {
+    absent_days: 'Absent days',
+    present_days: 'Present days',
+    late_minutes: 'Late minutes',
+    basic_salary: 'Basic salary',
+    hours_worked: 'Hours worked',
+    additional_hours_worked: 'Additional hours worked',
+    working_days: 'Number of working days',
+    total_days_of_payroll: 'Total days of payroll',
+};
+
 function formatMoney(value: number): string {
     return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function formatNumber(value: number): string {
+    return Number.isInteger(value)
+        ? value.toLocaleString()
+        : value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function deriveQuantity(amount: number, divisor: number): number {
+    if (divisor <= 0 || amount <= 0) {
+        return 0;
+    }
+
+    return Math.round((amount / divisor) * 100) / 100;
+}
+
+function readInputValue(inputs: CalculationInput[] | null | undefined, key: string): number | null {
+    const found = inputs?.find((input) => input.key === key);
+    if (!found || found.value === null || found.value === undefined || found.value === '') {
+        return null;
+    }
+
+    const numeric = Number(found.value);
+    return Number.isFinite(numeric) ? numeric : null;
+}
+
+function resolveLateMinutes(detail: DetailLine, stored: number): number {
+    if (stored > 0) {
+        return stored;
+    }
+
+    const amount = Number(detail.amount ?? 0);
+    const rate = Number(detail.rate ?? 0);
+    const basicSalary = Number(detail.basic_salary ?? 0);
+
+    if (detail.method === 'per_late_minute' && rate > 0) {
+        return deriveQuantity(amount, rate);
+    }
+
+    if (detail.method === 'per_late_minute_of_basic' && rate > 0 && basicSalary > 0) {
+        return deriveQuantity(amount, (basicSalary * rate) / 100);
+    }
+
+    return stored;
+}
+
+function resolveAbsentDays(detail: DetailLine, stored: number): number {
+    if (stored > 0) {
+        return stored;
+    }
+
+    const amount = Number(detail.amount ?? 0);
+    const rate = Number(detail.rate ?? 0);
+    const basicSalary = Number(detail.basic_salary ?? 0);
+
+    if (detail.method === 'per_absent_day' && rate > 0) {
+        return deriveQuantity(amount, rate);
+    }
+
+    if (detail.method === 'per_absent_day_of_basic' && rate > 0 && basicSalary > 0) {
+        return deriveQuantity(amount, (basicSalary * rate) / 100);
+    }
+
+    return stored;
+}
+
+function resolveHoursWorked(detail: DetailLine, stored: number): number {
+    if (stored > 0) {
+        return stored;
+    }
+
+    const amount = Number(detail.amount ?? 0);
+    const rate = Number(detail.rate ?? 0);
+
+    if (detail.method === 'hourly' && rate > 0) {
+        return deriveQuantity(amount, rate);
+    }
+
+    return stored;
+}
+
+function resolveDaysAttended(detail: DetailLine, stored: number): number {
+    if (stored > 0) {
+        return stored;
+    }
+
+    const amount = Number(detail.amount ?? 0);
+    const rate = Number(detail.rate ?? 0);
+
+    if (detail.method === 'daily' && rate > 0) {
+        return deriveQuantity(amount, rate);
+    }
+
+    return stored;
+}
+
+const selectedFormulaVariables = computed(() => {
+    const detail = selectedDetail.value;
+    const vars = detail?.formula_variables;
+    if (!detail || !vars) {
+        return [] as Array<{ key: string; label: string; value: string }>;
+    }
+
+    const formula = String(detail.formula ?? '');
+    const entries = Object.entries(vars).filter(([key]) => {
+        if (!formula) {
+            return true;
+        }
+
+        return new RegExp(`\\b${key}\\b`).test(formula);
+    });
+
+    return entries.map(([key, value]) => ({
+        key,
+        label: variableLabels[key] ?? key,
+        value: typeof value === 'number' ? formatNumber(value) : String(value ?? '—'),
+    }));
+});
+
+const selectedCalculationInputs = computed(() => {
+    const detail = selectedDetail.value;
+    if (!detail) {
+        return [] as Array<{ key: string; label: string; value: string }>;
+    }
+
+    const summary = props.employee.attendance_summary ?? {};
+    const summaryVars = (summary.formula_variables ?? {}) as FormulaVariables;
+
+    const storedLate =
+        readInputValue(detail.calculation_inputs, 'late_minutes') ??
+        Number(summary.late_minutes ?? summaryVars.late_minutes ?? 0);
+    const storedAbsent =
+        readInputValue(detail.calculation_inputs, 'absent_days') ??
+        Number(summary.absent_days ?? summaryVars.absent_days ?? 0);
+    const storedHours =
+        readInputValue(detail.calculation_inputs, 'hours_worked') ??
+        Number(summary.hours_worked ?? summaryVars.hours_worked ?? props.employee.hours_worked ?? 0);
+    const storedDays =
+        readInputValue(detail.calculation_inputs, 'days_attended') ??
+        Number(summary.days_attended ?? summaryVars.present_days ?? props.employee.days_attended ?? 0);
+    const basicSalary =
+        readInputValue(detail.calculation_inputs, 'basic_salary') ??
+        Number(detail.basic_salary ?? summaryVars.basic_salary ?? 0);
+
+    const lateMinutes = resolveLateMinutes(detail, storedLate);
+    const absentDays = resolveAbsentDays(detail, storedAbsent);
+    const hoursWorked = resolveHoursWorked(detail, storedHours);
+    const daysAttended = resolveDaysAttended(detail, storedDays);
+
+    switch (detail.method) {
+        case 'fixed':
+            return [{ key: 'rate', label: 'Fixed amount', value: formatNumber(detail.rate) }];
+        case 'daily':
+            return [
+                { key: 'rate', label: 'Rate / attended day', value: formatNumber(detail.rate) },
+                { key: 'days_attended', label: 'Days attended', value: formatNumber(daysAttended) },
+            ];
+        case 'hourly':
+            return [
+                { key: 'rate', label: 'Rate / hour', value: formatNumber(detail.rate) },
+                { key: 'hours_worked', label: 'Hours worked', value: formatNumber(hoursWorked) },
+            ];
+        case 'per_late_minute':
+            return [
+                { key: 'rate', label: 'Rate / late minute', value: formatNumber(detail.rate) },
+                { key: 'late_minutes', label: 'Late minutes', value: formatNumber(lateMinutes) },
+            ];
+        case 'per_late_minute_of_basic':
+            return [
+                { key: 'basic_salary', label: 'Basic salary', value: formatNumber(basicSalary) },
+                { key: 'rate', label: '% of basic / late minute', value: formatNumber(detail.rate) },
+                { key: 'late_minutes', label: 'Late minutes', value: formatNumber(lateMinutes) },
+            ];
+        case 'per_absent_day':
+            return [
+                { key: 'rate', label: 'Rate / absent day', value: formatNumber(detail.rate) },
+                { key: 'absent_days', label: 'Absent days', value: formatNumber(absentDays) },
+            ];
+        case 'per_absent_day_of_basic':
+            return [
+                { key: 'basic_salary', label: 'Basic salary', value: formatNumber(basicSalary) },
+                { key: 'rate', label: '% of basic / absent day', value: formatNumber(detail.rate) },
+                { key: 'absent_days', label: 'Absent days', value: formatNumber(absentDays) },
+            ];
+        case 'custom_formula':
+            return selectedFormulaVariables.value;
+        default:
+            return [{ key: 'rate', label: 'Rate', value: formatNumber(detail.rate) }];
+    }
+});
+
+const selectedCalculationSummary = computed(() => {
+    const detail = selectedDetail.value;
+    if (!detail) {
+        return '';
+    }
+
+    const inputs = selectedCalculationInputs.value;
+    const amount = formatMoney(detail.amount);
+
+    if (detail.method === 'hourly') {
+        const hours = inputs.find((input) => input.key === 'hours_worked')?.value ?? '0';
+        return `${formatMoney(detail.rate)} × ${hours} hours worked = ${amount}`;
+    }
+
+    if (detail.method === 'daily') {
+        const days = inputs.find((input) => input.key === 'days_attended')?.value ?? '0';
+        return `${formatMoney(detail.rate)} × ${days} days attended = ${amount}`;
+    }
+
+    if (detail.method === 'per_late_minute') {
+        const late = inputs.find((input) => input.key === 'late_minutes')?.value ?? '0';
+        return `${formatMoney(detail.rate)} × ${late} late minutes = ${amount}`;
+    }
+
+    if (detail.method === 'per_late_minute_of_basic') {
+        const late = inputs.find((input) => input.key === 'late_minutes')?.value ?? '0';
+        const basic =
+            inputs.find((input) => input.key === 'basic_salary')?.value ??
+            formatMoney(Number(detail.basic_salary ?? 0));
+        return `(${basic} × ${formatNumber(detail.rate)}%) × ${late} late minutes = ${amount}`;
+    }
+
+    if (detail.method === 'per_absent_day') {
+        const absent = inputs.find((input) => input.key === 'absent_days')?.value ?? '0';
+        return `${formatMoney(detail.rate)} × ${absent} absent days = ${amount}`;
+    }
+
+    if (detail.method === 'per_absent_day_of_basic') {
+        const absent = inputs.find((input) => input.key === 'absent_days')?.value ?? '0';
+        const basic =
+            inputs.find((input) => input.key === 'basic_salary')?.value ??
+            formatMoney(Number(detail.basic_salary ?? 0));
+        return `(${basic} × ${formatNumber(detail.rate)}%) × ${absent} absent days = ${amount}`;
+    }
+
+    if (detail.calculation_summary) {
+        return detail.calculation_summary;
+    }
+
+    if (detail.method === 'custom_formula' && detail.formula) {
+        return `Formula (${detail.formula}) = ${amount}`;
+    }
+
+    return `${methodLabel(detail)} → ${amount}`;
+});
+
+function methodLabel(line: DetailLine): string {
+    return line.method_label ?? line.method.replaceAll('_', ' ');
+}
+
+function openDetail(line: DetailLine): void {
+    selectedDetail.value = line;
+    detailModalOpen.value = true;
+}
+
+function closeDetail(): void {
+    detailModalOpen.value = false;
+    selectedDetail.value = null;
 }
 
 function submit(): void {
@@ -159,12 +457,27 @@ function removeAdjustment(adjustment: Adjustment): void {
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
-                        <tr v-for="(line, index) in employee.details" :key="`${line.component}-${index}`">
-                            <td class="px-3 py-2 font-medium">{{ line.component }}</td>
+                        <tr
+                            v-for="(line, index) in employee.details"
+                            :key="`${line.component}-${index}`"
+                            class="cursor-pointer transition hover:bg-slate-50 dark:hover:bg-surface-elevated/70"
+                            @click="openDetail(line)"
+                        >
+                            <td class="px-3 py-2">
+                                <button
+                                    type="button"
+                                    class="text-left font-medium text-brand-700 hover:underline dark:text-brand-300"
+                                >
+                                    {{ line.component }}
+                                </button>
+                            </td>
                             <td class="px-3 py-2 capitalize">{{ line.type }}</td>
-                            <td class="px-3 py-2 capitalize">{{ line.method }}</td>
-                            <td class="px-3 py-2">{{ formatMoney(line.rate) }}</td>
-                            <td class="px-3 py-2 text-right">{{ formatMoney(line.amount) }}</td>
+                            <td class="px-3 py-2 capitalize">{{ methodLabel(line) }}</td>
+                            <td class="px-3 py-2">
+                                <span v-if="line.method === 'custom_formula'" class="text-slate-500">—</span>
+                                <span v-else>{{ formatMoney(line.rate) }}</span>
+                            </td>
+                            <td class="px-3 py-2 text-right font-medium">{{ formatMoney(line.amount) }}</td>
                         </tr>
                         <tr v-if="employee.details.length === 0">
                             <td colspan="5" class="px-3 py-6 text-center text-slate-500 dark:text-slate-400">
@@ -173,6 +486,7 @@ function removeAdjustment(adjustment: Adjustment): void {
                         </tr>
                     </tbody>
                 </table>
+                <p class="mt-2 text-xs text-slate-500">Click a component to view how the amount was calculated.</p>
             </div>
 
             <dl class="mt-4 grid gap-2 border-t border-slate-200 pt-4 text-sm dark:border-slate-700 sm:grid-cols-2 lg:grid-cols-3">
@@ -284,5 +598,84 @@ function removeAdjustment(adjustment: Adjustment): void {
                 </div>
             </UiCard>
         </div>
+
+        <UiModal
+            :open="detailModalOpen"
+            :title="selectedDetail ? selectedDetail.component : 'Calculation details'"
+            description="How this payroll component amount was calculated for this employee."
+            @close="closeDetail"
+        >
+            <div v-if="selectedDetail" class="space-y-4 text-sm">
+                <dl class="grid gap-3 sm:grid-cols-2">
+                    <div>
+                        <dt class="text-xs uppercase tracking-wide text-slate-500">Type</dt>
+                        <dd class="mt-1 capitalize font-medium text-slate-900 dark:text-slate-100">
+                            {{ selectedDetail.type }}
+                        </dd>
+                    </div>
+                    <div>
+                        <dt class="text-xs uppercase tracking-wide text-slate-500">Method</dt>
+                        <dd class="mt-1 font-medium text-slate-900 dark:text-slate-100">
+                            {{ methodLabel(selectedDetail) }}
+                        </dd>
+                    </div>
+                    <div v-if="selectedDetail.method !== 'custom_formula'">
+                        <dt class="text-xs uppercase tracking-wide text-slate-500">Rate</dt>
+                        <dd class="mt-1 font-medium text-slate-900 dark:text-slate-100">
+                            {{ formatMoney(selectedDetail.rate) }}
+                        </dd>
+                    </div>
+                    <div>
+                        <dt class="text-xs uppercase tracking-wide text-slate-500">Amount</dt>
+                        <dd class="mt-1 text-lg font-semibold text-brand-700 dark:text-brand-300">
+                            {{ formatMoney(selectedDetail.amount) }}
+                        </dd>
+                    </div>
+                </dl>
+
+                <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-700 dark:bg-surface-elevated">
+                    <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Calculation</p>
+                    <p class="mt-1 font-mono text-sm text-slate-800 dark:text-slate-100">
+                        {{ selectedCalculationSummary }}
+                    </p>
+                </div>
+
+                <div v-if="selectedDetail.formula">
+                    <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Formula</p>
+                    <p class="mt-1 rounded-lg border border-slate-200 bg-white px-3 py-2 font-mono text-xs text-slate-800 dark:border-slate-700 dark:bg-surface dark:text-slate-100">
+                        {{ selectedDetail.formula }}
+                    </p>
+                </div>
+
+                <div v-if="selectedCalculationInputs.length">
+                    <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        Values used
+                    </p>
+                    <div class="overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700">
+                        <table class="min-w-full divide-y divide-slate-200 text-sm dark:divide-slate-700">
+                            <thead class="bg-slate-50 dark:bg-surface-elevated">
+                                <tr class="text-left text-xs uppercase tracking-wide text-slate-500">
+                                    <th class="px-3 py-2">Input</th>
+                                    <th class="px-3 py-2 text-right">Value</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+                                <tr v-for="input in selectedCalculationInputs" :key="input.key">
+                                    <td class="px-3 py-2">
+                                        <span class="font-medium text-slate-800 dark:text-slate-100">{{ input.label }}</span>
+                                        <span class="mt-0.5 block font-mono text-[11px] text-slate-500">{{ input.key }}</span>
+                                    </td>
+                                    <td class="px-3 py-2 text-right font-mono font-medium">{{ input.value }}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="flex justify-end">
+                    <UiButton type="button" variant="secondary" @click="closeDetail">Close</UiButton>
+                </div>
+            </div>
+        </UiModal>
     </AppLayout>
 </template>

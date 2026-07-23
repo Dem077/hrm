@@ -6,6 +6,7 @@ import UiButton from '@/components/ui/UiButton.vue';
 import UiInput from '@/components/ui/UiInput.vue';
 import UiModal from '@/components/ui/UiModal.vue';
 import { isPercentageOfBasicCalculation } from '@/lib/payroll';
+import PayrollFormulaBuilder from '@/pages/PayrollStructure/components/PayrollFormulaBuilder.vue';
 import type { PayrollCalculationMethodOption, PayrollComponent } from '@/types/payroll';
 
 const props = defineProps<{
@@ -21,6 +22,7 @@ const emit = defineEmits<{
 const form = useForm({
     calculation_method: '' as string,
     global_rate: 0 as number,
+    calculation_formula: '' as string,
 });
 
 const methodOptions = computed<PayrollCalculationMethodOption[]>(
@@ -30,6 +32,8 @@ const methodOptions = computed<PayrollCalculationMethodOption[]>(
 const selectedOption = computed(() =>
     methodOptions.value.find((option) => option.value === form.calculation_method) ?? null,
 );
+
+const isCustomFormula = computed(() => form.calculation_method === 'custom_formula');
 
 const isPercentage = computed(
     () =>
@@ -41,6 +45,26 @@ const rateLabel = computed(
     () => selectedOption.value?.amount_label ?? props.component?.amount_label ?? 'Rate',
 );
 
+const formulaVariableOptions = computed(() => {
+    const options = props.component?.formula_variable_options;
+    if (options?.length) {
+        return options;
+    }
+
+    const variables = props.component?.formula_variables ?? [
+        'absent_days',
+        'present_days',
+        'late_minutes',
+        'basic_salary',
+        'hours_worked',
+        'additional_hours_worked',
+        'working_days',
+        'total_days_of_payroll',
+    ];
+
+    return variables.map((value) => ({ value, label: value }));
+});
+
 watch(
     () => [props.open, props.component] as const,
     ([open, component]) => {
@@ -51,6 +75,7 @@ watch(
         form.clearErrors();
         form.calculation_method = component.calculation_method;
         form.global_rate = Number(component.global_rate ?? 0);
+        form.calculation_formula = component.calculation_formula ?? '';
     },
     { immediate: true },
 );
@@ -92,31 +117,40 @@ function submit() {
                 </p>
             </div>
 
-            <UiInput
-                v-model.number="form.global_rate"
-                :label="rateLabel"
-                type="number"
-                min="0"
-                :max="isPercentage ? 100 : undefined"
-                step="0.01"
-                required
-                :error="form.errors.global_rate"
+            <PayrollFormulaBuilder
+                v-if="isCustomFormula"
+                v-model="form.calculation_formula"
+                :variables="formulaVariableOptions"
+                :error="form.errors.calculation_formula"
             />
 
-            <p class="text-xs text-slate-500">
-                <template v-if="isPercentage && form.calculation_method.includes('late')">
-                    Example: 0.01% of basic 20,000 with 30 late minutes → 60 deduction.
-                </template>
-                <template v-else-if="isPercentage">
-                    Example: 5% of basic 20,000 with 2 absent days → 2,000 deduction.
-                </template>
-                <template v-else-if="form.calculation_method.includes('late')">
-                    Example: rate 2 with 30 late minutes → 60 deduction.
-                </template>
-                <template v-else>
-                    Example: rate 500 with 2 absent days → 1,000 deduction.
-                </template>
-            </p>
+            <template v-else>
+                <UiInput
+                    v-model.number="form.global_rate"
+                    :label="rateLabel"
+                    type="number"
+                    min="0"
+                    :max="isPercentage ? 100 : undefined"
+                    step="0.01"
+                    required
+                    :error="form.errors.global_rate"
+                />
+
+                <p class="text-xs text-slate-500">
+                    <template v-if="isPercentage && String(form.calculation_method).includes('late')">
+                        Example: 0.01% of basic 20,000 with 30 late minutes → 60 deduction.
+                    </template>
+                    <template v-else-if="isPercentage">
+                        Example: 5% of basic 20,000 with 2 absent days → 2,000 deduction.
+                    </template>
+                    <template v-else-if="String(form.calculation_method).includes('late')">
+                        Example: rate 2 with 30 late minutes → 60 deduction.
+                    </template>
+                    <template v-else>
+                        Example: rate 500 with 2 absent days → 1,000 deduction.
+                    </template>
+                </p>
+            </template>
 
             <div class="flex justify-end gap-2">
                 <UiButton type="button" variant="ghost" @click="emit('close')">Cancel</UiButton>

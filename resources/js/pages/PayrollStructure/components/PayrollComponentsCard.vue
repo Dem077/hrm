@@ -86,14 +86,19 @@ function closeRateModal() {
                             {{ component.calculation_method_label ?? component.calculation_method }}
                         </td>
                         <td class="px-5 py-4 text-slate-600 dark:text-slate-400">
-                            <template v-if="component.uses_global_rate">
+                            <template v-if="component.is_custom_formula || component.calculation_method === 'custom_formula'">
+                                <span class="font-mono text-xs">{{ component.calculation_formula || '—' }}</span>
+                                <span class="block text-xs text-slate-400">Custom formula</span>
+                            </template>
+                            <template v-else-if="component.uses_global_rate">
                                 <template v-if="component.is_percentage_rate">
                                     {{ Number(component.global_rate ?? 0) }}%
+                                    <span class="block text-xs text-slate-400">{{ component.amount_label }}</span>
                                 </template>
                                 <template v-else>
                                     {{ formatPayrollMoney(Number(component.global_rate ?? 0)) }}
+                                    <span class="block text-xs text-slate-400">{{ component.amount_label }}</span>
                                 </template>
-                                <span class="block text-xs text-slate-400">{{ component.amount_label }}</span>
                             </template>
                             <template v-else>—</template>
                         </td>
@@ -117,7 +122,7 @@ function closeRateModal() {
                         <td v-if="canManage" class="px-5 py-4">
                             <div class="flex flex-wrap gap-2">
                                 <UiButton
-                                    v-if="component.uses_global_rate"
+                                    v-if="(component.allowed_calculation_methods?.length ?? 0) > 0"
                                     size="sm"
                                     variant="ghost"
                                     @click="openRate(component)"
@@ -129,7 +134,7 @@ function closeRateModal() {
                                     <UiButton size="sm" variant="danger" @click="emit('delete', component.id!, component.name)">Delete</UiButton>
                                 </template>
                                 <span
-                                    v-else-if="!component.uses_global_rate"
+                                    v-else-if="(component.allowed_calculation_methods?.length ?? 0) === 0"
                                     class="text-slate-400"
                                 >
                                     —

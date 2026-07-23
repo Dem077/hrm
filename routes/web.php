@@ -337,6 +337,9 @@ Route::middleware('auth')->group(function () {
         Route::post('payroll/{payroll_run}/employees/{employee}/adjustments', [PayrollController::class, 'storeAdjustment'])
             ->middleware('permission:payroll.adjust')
             ->name('payroll.employees.adjustments.store');
+        Route::post('payroll/{payroll_run}/adjustments/bulk', [PayrollController::class, 'storeBulkAdjustment'])
+            ->middleware('permission:payroll.adjust')
+            ->name('payroll.adjustments.bulk');
         Route::delete('payroll/{payroll_run}/adjustments/{adjustment}', [PayrollController::class, 'destroyAdjustment'])
             ->middleware('permission:payroll.adjust')
             ->name('payroll.adjustments.destroy');

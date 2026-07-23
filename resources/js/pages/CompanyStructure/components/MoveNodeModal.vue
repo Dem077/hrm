@@ -42,12 +42,17 @@ const allowedParentCodes = computed(() => {
         return ['division', 'department'];
     }
     if (code === 'unit_section') {
-        return ['department', 'unit_section'];
+        return ['division', 'department', 'unit_section'];
     }
     return [] as string[];
 });
 
-const requiresParent = computed(() => allowedParentCodes.value.length > 0);
+const allowsTopLevel = computed(() => {
+    const code = treeNode.value?.group_code;
+    return code === 'division' || code === 'unit_section';
+});
+
+const requiresParent = computed(() => !allowsTopLevel.value);
 
 const parentOptions = computed(() => {
     if (!treeNode.value || !orgTree.value) {

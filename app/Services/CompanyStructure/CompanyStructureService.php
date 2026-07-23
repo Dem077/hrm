@@ -37,6 +37,21 @@ class CompanyStructureService
 
         $nodesByParent = $allNodes->groupBy(fn (StructureNode $node) => $node->parent_id ?? 0);
 
+        $headGradeIds = $allNodes
+            ->flatMap(fn (StructureNode $node) => $node->headGrades->pluck('id'))
+            ->unique()
+            ->values()
+            ->all();
+
+        $employeesByHeadGrade = $headGradeIds === []
+            ? collect()
+            : Employee::query()
+                ->whereIn('grade_id', $headGradeIds)
+                ->where('is_active', true)
+                ->orderBy('name')
+                ->get(['id', 'name', 'staff_id', 'grade_id'])
+                ->groupBy('grade_id');
+
         $payload = [];
 
         $strategic = $groups->get(StructureGroupCode::StrategicLeadership->value);
@@ -66,7 +81,7 @@ class CompanyStructureService
             'allows_nodes' => true,
             'is_org_tree' => true,
             'levels' => [],
-            'nodes' => $this->formatNodeTree($nodesByParent, 0),
+            'nodes' => $this->formatNodeTree($nodesByParent, 0, $employeesByHeadGrade),
             'group_options' => $groups
                 ->filter(fn (StructureGroup $group) => $group->allowsNodes())
                 ->map(fn (StructureGroup $group) => [
@@ -411,7 +426,7 @@ class CompanyStructureService
 
     /**
      * Grades eligible as a node head: grades on the current node and on its parent
-     * (or Strategic Leadership when the node is a top-level division).
+     * (or Strategic Leadership when the node is top-level under the organization root).
      *
      * @return list<array{id: int, label: string, source: string, source_label: string}>
      */
@@ -537,7 +552,7 @@ class CompanyStructureService
         $allowed = $childCode->allowedParentCodes();
 
         if ($parent === null) {
-            if ($childCode->requiresParent()) {
+            if (! $childCode->allowsTopLevel()) {
                 throw ValidationException::withMessages([
                     'parent_id' => "{$childCode->label()} must belong under a parent in the organization tree.",
                 ]);
@@ -557,7 +572,7 @@ class CompanyStructureService
 
         if ($allowed === []) {
             throw ValidationException::withMessages([
-                'parent_id' => 'Divisions must sit at the top of the organization tree (under Strategic Leadership).',
+                'parent_id' => "{$childCode->label()} must sit at the top of the organization tree (under Strategic Leadership).",
             ]);
         }
 
@@ -574,13 +589,36 @@ class CompanyStructureService
 
     /**
      * @param  \Illuminate\Support\Collection<int|string, \Illuminate\Support\Collection<int, StructureNode>>  $nodesByParent
+     * @param  \Illuminate\Support\Collection<int|string, \Illuminate\Support\Collection<int, Employee>>  $employeesByHeadGrade
      * @return list<array<string, mixed>>
      */
-    protected function formatNodeTree($nodesByParent, int|string $parentKey): array
+    protected function formatNodeTree($nodesByParent, int|string $parentKey, $employeesByHeadGrade = null): array
     {
+        $employeesByHeadGrade ??= collect();
+
         return ($nodesByParent->get($parentKey) ?? collect())
-            ->map(function (StructureNode $node) use ($nodesByParent) {
+            ->map(function (StructureNode $node) use ($nodesByParent, $employeesByHeadGrade) {
                 $groupCode = $node->group?->code;
+
+                $heads = [];
+                $seenEmployeeIds = [];
+
+                foreach ($node->headGrades as $grade) {
+                    foreach ($employeesByHeadGrade->get($grade->id, collect()) as $employee) {
+                        if (isset($seenEmployeeIds[$employee->id])) {
+                            continue;
+                        }
+
+                        $seenEmployeeIds[$employee->id] = true;
+                        $heads[] = [
+                            'id' => $employee->id,
+                            'name' => $employee->name,
+                            'staff_id' => $employee->staff_id,
+                            'grade_id' => $grade->id,
+                            'grade_label' => $grade->label(),
+                        ];
+                    }
+                }
 
                 return [
                     'id' => $node->id,
@@ -596,13 +634,14 @@ class CompanyStructureService
                         'id' => $grade->id,
                         'label' => $grade->label(),
                     ])->values()->all(),
+                    'heads' => $heads,
                     'is_active' => $node->is_active,
                     'sort_order' => $node->sort_order,
                     'allowed_child_codes' => $groupCode
                         ? array_map(fn (StructureGroupCode $code) => $code->value, $groupCode->allowedChildCodes())
                         : [],
                     'levels' => $node->levels->map(fn (StructureLevel $level) => $this->formatLevel($level))->all(),
-                    'children' => $this->formatNodeTree($nodesByParent, $node->id),
+                    'children' => $this->formatNodeTree($nodesByParent, $node->id, $employeesByHeadGrade),
                 ];
             })
             ->values()

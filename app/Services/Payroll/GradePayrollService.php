@@ -301,6 +301,7 @@ class GradePayrollService
                 PayrollComponentCalculationMethod::PerLateMinuteOfBasic->value,
                 PayrollComponentCalculationMethod::PerAbsentDay->value,
                 PayrollComponentCalculationMethod::PerAbsentDayOfBasic->value,
+                PayrollComponentCalculationMethod::CustomFormula->value,
             ],
             true,
         );

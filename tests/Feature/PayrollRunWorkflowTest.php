@@ -227,3 +227,47 @@ it('adds titled adjustments and blocks edits while finalised', function () {
         ->assertRedirect("/payroll/{$run->id}/employees/{$employeeId}/adjustments")
         ->assertSessionHasErrors('run');
 });
+
+it('applies bulk manual adjustments to selected employees', function () {
+    $user = payrollTestUser();
+
+    $this->actingAs($user)->post('/payroll', [
+        'period_source' => 'custom',
+        'from' => '2026-06-01',
+        'to' => '2026-06-30',
+    ]);
+
+    $run = \App\Models\PayrollRun::query()->firstOrFail();
+    $employeeIds = \App\Models\PayrollRunItem::query()
+        ->where('payroll_run_id', $run->id)
+        ->pluck('employee_id')
+        ->map(fn ($id) => (int) $id)
+        ->take(2)
+        ->values()
+        ->all();
+
+    expect($employeeIds)->not->toBeEmpty();
+
+    $this->actingAs($user)
+        ->post("/payroll/{$run->id}/adjustments/bulk", [
+            'employee_ids' => $employeeIds,
+            'type' => 'deduction',
+            'title' => 'Uniform fee',
+            'amount' => 40,
+            'remarks' => 'Bulk charge',
+        ])
+        ->assertRedirect("/payroll/{$run->id}")
+        ->assertSessionHas('success');
+
+    expect(\App\Models\PayrollRunAdjustment::query()->count())->toBe(count($employeeIds));
+
+    foreach ($employeeIds as $employeeId) {
+        $item = \App\Models\PayrollRunItem::query()
+            ->where('payroll_run_id', $run->id)
+            ->where('employee_id', $employeeId)
+            ->firstOrFail();
+        expect((float) $item->manual_deductions)->toBe(40.0);
+    }
+
+    expect(\App\Models\PayrollRunAuditLog::query()->where('event_type', 'bulk_adjustment_added')->exists())->toBeTrue();
+});

@@ -238,7 +238,7 @@ onUnmounted(() => {
                 v-if="isOpen"
                 ref="dropdownRef"
                 :style="dropdownStyle"
-                class="fixed z-[200] max-h-80 overflow-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg dark:border-slate-700 dark:bg-surface-elevated"
+                class="fixed z-[400] max-h-80 overflow-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg dark:border-slate-700 dark:bg-surface-elevated"
                 role="listbox"
             >
                 <button

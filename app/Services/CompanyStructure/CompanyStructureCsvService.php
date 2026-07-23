@@ -435,7 +435,7 @@ class CompanyStructureCsvService
 
             $allowedParents = $group->code->allowedParentCodes();
 
-            if ($group->code->requiresParent() && $parentName === '') {
+            if ($parentName === '' && ! $group->code->allowsTopLevel()) {
                 $labels = implode(' or ', array_map(fn (StructureGroupCode $code) => $code->label(), $allowedParents));
 
                 throw ValidationException::withMessages([
@@ -443,9 +443,9 @@ class CompanyStructureCsvService
                 ]);
             }
 
-            if (! $group->code->requiresParent() && $parentName !== '') {
+            if ($parentName !== '' && $allowedParents === []) {
                 throw ValidationException::withMessages([
-                    'file' => "Row {$line}: Divisions must leave parent_node_name empty (they sit under Strategic Leadership).",
+                    'file' => "Row {$line}: {$group->name} must leave parent_node_name empty (they sit under Strategic Leadership).",
                 ]);
             }
 

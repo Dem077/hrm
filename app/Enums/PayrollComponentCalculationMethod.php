@@ -11,6 +11,7 @@ enum PayrollComponentCalculationMethod: string
     case PerLateMinuteOfBasic = 'per_late_minute_of_basic';
     case PerAbsentDay = 'per_absent_day';
     case PerAbsentDayOfBasic = 'per_absent_day_of_basic';
+    case CustomFormula = 'custom_formula';
 
     public function label(): string
     {
@@ -22,6 +23,7 @@ enum PayrollComponentCalculationMethod: string
             self::PerLateMinuteOfBasic => '% of basic salary per late minute',
             self::PerAbsentDay => 'Fixed rate per absent day',
             self::PerAbsentDayOfBasic => '% of basic salary per absent day',
+            self::CustomFormula => 'Custom formula',
         };
     }
 
@@ -35,6 +37,7 @@ enum PayrollComponentCalculationMethod: string
             self::PerLateMinuteOfBasic => '% of basic salary / late minute',
             self::PerAbsentDay => 'Rate / absent day',
             self::PerAbsentDayOfBasic => '% of basic salary / absent day',
+            self::CustomFormula => 'Formula',
         };
     }
 
@@ -44,7 +47,8 @@ enum PayrollComponentCalculationMethod: string
             self::PerLateMinute,
             self::PerLateMinuteOfBasic,
             self::PerAbsentDay,
-            self::PerAbsentDayOfBasic => true,
+            self::PerAbsentDayOfBasic,
+            self::CustomFormula => true,
             default => false,
         };
     }
@@ -55,6 +59,11 @@ enum PayrollComponentCalculationMethod: string
             self::PerLateMinuteOfBasic, self::PerAbsentDayOfBasic => true,
             default => false,
         };
+    }
+
+    public function isCustomFormula(): bool
+    {
+        return $this === self::CustomFormula;
     }
 
     public function isLateFineMethod(): bool
@@ -86,7 +95,7 @@ enum PayrollComponentCalculationMethod: string
      */
     public static function lateFineOptions(): array
     {
-        return [self::PerLateMinute, self::PerLateMinuteOfBasic];
+        return [self::PerLateMinute, self::PerLateMinuteOfBasic, self::CustomFormula];
     }
 
     /**
@@ -94,7 +103,7 @@ enum PayrollComponentCalculationMethod: string
      */
     public static function absentFeeOptions(): array
     {
-        return [self::PerAbsentDay, self::PerAbsentDayOfBasic];
+        return [self::PerAbsentDay, self::PerAbsentDayOfBasic, self::CustomFormula];
     }
 
     /**

@@ -7,7 +7,8 @@ export type PayrollComponentCalculationMethod =
     | 'per_late_minute'
     | 'per_late_minute_of_basic'
     | 'per_absent_day'
-    | 'per_absent_day_of_basic';
+    | 'per_absent_day_of_basic'
+    | 'custom_formula';
 
 export type PayrollLoanBank = string;
 
@@ -33,8 +34,12 @@ export type PayrollComponent = {
     calculation_method_label?: string;
     amount_label?: string;
     global_rate?: number | null;
+    calculation_formula?: string | null;
     uses_global_rate?: boolean;
     is_percentage_rate?: boolean;
+    is_custom_formula?: boolean;
+    formula_variables?: string[];
+    formula_variable_options?: Array<{ value: string; label: string }>;
     allowed_calculation_methods?: PayrollCalculationMethodOption[];
     is_mandatory: boolean;
     is_system_mandatory?: boolean;
@@ -54,7 +59,9 @@ export type DesignationPayrollItem = {
     amount_label?: string;
     is_mandatory: boolean;
     uses_global_rate?: boolean;
+    is_percentage_rate?: boolean;
     global_rate?: number | null;
+    calculation_formula?: string | null;
     amount: number;
     loan_months: number | null;
     loan_bank: string | null;

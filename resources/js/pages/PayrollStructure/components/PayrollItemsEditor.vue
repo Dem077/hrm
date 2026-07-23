@@ -205,8 +205,11 @@ function removeItem(item: DesignationPayrollItem) {
                         <p class="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
                             {{ item.calculation_method_label ?? item.calculation_method }}
                             ·
-                            <template v-if="item.calculation_method?.includes('_of_basic')">
-                                {{ item.global_rate ?? item.amount }}%
+                            <template v-if="item.calculation_method === 'custom_formula'">
+                                <span class="font-mono">{{ item.calculation_formula || 'custom formula' }}</span>
+                            </template>
+                            <template v-else-if="item.is_percentage_rate || String(item.calculation_method).includes('_of_basic')">
+                                {{ item.global_rate ?? item.amount }}% of basic
                             </template>
                             <template v-else>
                                 company rate {{ item.global_rate ?? item.amount }}

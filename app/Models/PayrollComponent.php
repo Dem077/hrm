@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Enums\PayrollComponentCalculationMethod;
 use App\Enums\PayrollComponentType;
+use App\Services\Payroll\PayrollFormulaEvaluator;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -14,6 +15,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
     'type',
     'calculation_method',
     'global_rate',
+    'calculation_formula',
     'is_mandatory',
     'sort_order',
     'is_active',
@@ -64,7 +66,8 @@ class PayrollComponent extends Model
 
     public function usesGlobalRate(): bool
     {
-        return $this->calculation_method->usesGlobalRate();
+        return $this->calculation_method->usesGlobalRate()
+            || in_array($this->code, [self::LATE_FINE_CODE, self::ABSENT_FEE_CODE], true);
     }
 
     /**
@@ -103,6 +106,9 @@ class PayrollComponent extends Model
             'uses_global_rate' => $this->usesGlobalRate(),
             'is_percentage_rate' => $this->calculation_method->isPercentageOfBasicSalary(),
             'global_rate' => $this->usesGlobalRate() ? (float) ($this->global_rate ?? 0) : null,
+            'calculation_formula' => $this->calculation_method->isCustomFormula()
+                ? $this->calculation_formula
+                : null,
             'amount' => $this->usesGlobalRate() ? (float) ($this->global_rate ?? 0) : $amount,
             'loan_months' => null,
             'loan_bank' => null,
@@ -133,11 +139,15 @@ class PayrollComponent extends Model
             'calculation_method_label' => $this->calculation_method->label(),
             'amount_label' => $this->calculation_method->amountLabel(),
             'global_rate' => $this->usesGlobalRate() ? (float) ($this->global_rate ?? 0) : null,
-            'uses_global_rate' => $this->usesGlobalRate(),
+            'calculation_formula' => $this->calculation_formula,
+            'uses_global_rate' => $this->usesGlobalRate() || in_array($this->code, [self::LATE_FINE_CODE, self::ABSENT_FEE_CODE], true),
             'is_percentage_rate' => $this->calculation_method->isPercentageOfBasicSalary(),
+            'is_custom_formula' => $this->calculation_method->isCustomFormula(),
             'allowed_calculation_methods' => PayrollComponentCalculationMethod::optionsPayload(
                 $this->allowedCalculationMethods(),
             ),
+            'formula_variables' => PayrollFormulaEvaluator::VARIABLES,
+            'formula_variable_options' => PayrollFormulaEvaluator::variableOptions(),
             'is_mandatory' => $this->is_mandatory,
             'is_system_mandatory' => $this->isSystemMandatory(),
             'sort_order' => $this->sort_order,

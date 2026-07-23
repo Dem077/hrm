@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 
-import type { StructureLevel } from '@/types/companyStructure';
+import type { StructureHead, StructureLevel } from '@/types/companyStructure';
 
 export type ChartNode = {
     key: string;
@@ -9,7 +9,8 @@ export type ChartNode = {
     code?: string | null;
     typeLabel: string;
     typeCode: string;
-    headName?: string | null;
+    heads: StructureHead[];
+    headGrades: { id: number; label: string }[];
     isActive?: boolean;
     levels: StructureLevel[];
     children: ChartNode[];
@@ -36,7 +37,7 @@ const typeTone = computed(() => {
         case 'department':
             return 'border-emerald-400/50 bg-emerald-50 text-emerald-900 dark:border-emerald-500/30 dark:bg-emerald-950/40 dark:text-emerald-100';
         case 'unit_section':
-            return 'border-amber-400/50 bg-amber-50 text-amber-950 dark:border-amber-500/30 dark:bg-amber-950/40 dark:text-amber-100';
+            return 'border-violet-400/50 bg-violet-50 text-violet-950 dark:border-violet-500/30 dark:bg-violet-950/40 dark:text-violet-100';
         default:
             return 'border-slate-300 bg-white text-slate-900 dark:border-slate-700 dark:bg-surface dark:text-white';
     }
@@ -55,7 +56,7 @@ function toggle() {
         <div class="org-chart-card-wrap">
             <button
                 type="button"
-                class="org-chart-card w-56 rounded-xl border px-3 py-2.5 text-left shadow-sm transition hover:shadow-md"
+                class="org-chart-card w-72 rounded-xl border px-3.5 py-3 text-left shadow-sm transition hover:shadow-md"
                 :class="typeTone"
                 @click="toggle"
             >
@@ -73,22 +74,61 @@ function toggle() {
                         {{ collapsed ? '▸' : '▾' }}
                     </span>
                 </div>
+
                 <p class="mt-1.5 text-sm font-semibold leading-snug">{{ node.name }}</p>
                 <p v-if="node.code" class="mt-0.5 text-[11px] opacity-70">{{ node.code }}</p>
-                <p class="mt-1 text-[11px] opacity-80">
-                    Head grades: {{ node.headName ?? '—' }}
-                    <span v-if="gradeCount"> · {{ gradeCount }} grade{{ gradeCount === 1 ? '' : 's' }}</span>
-                </p>
 
-                <div v-if="showGrades && node.levels.length" class="mt-2 space-y-1 border-t border-black/10 pt-2 dark:border-white/10">
-                    <div v-for="level in node.levels" :key="level.id" class="text-[10px] leading-snug opacity-90">
-                        <span class="font-medium">L{{ level.level_number }}</span>
-                        <span v-if="level.reference_title"> · {{ level.reference_title }}</span>
-                        <ul v-if="level.grades.length" class="mt-0.5 space-y-0.5 pl-2">
-                            <li v-for="grade in level.grades" :key="grade.id" class="opacity-80">
-                                {{ grade.label }}
+                <div class="mt-2.5 space-y-2 border-t border-black/10 pt-2.5 dark:border-white/10">
+                    <div v-if="node.typeCode !== 'strategic_leadership'">
+                        <p class="text-[10px] font-semibold uppercase tracking-wide opacity-60">Heads</p>
+                        <ul v-if="node.heads.length" class="mt-1 space-y-1">
+                            <li v-for="head in node.heads" :key="head.id" class="leading-snug">
+                                <p class="text-xs font-semibold">{{ head.name }}</p>
+                                <p class="text-[10px] opacity-70">
+                                    {{ head.grade_label }}
+                                    <span v-if="head.staff_id"> · {{ head.staff_id }}</span>
+                                </p>
                             </li>
                         </ul>
+                        <p v-else-if="node.headGrades.length" class="mt-1 text-[11px] opacity-70">
+                            No employees on:
+                            {{ node.headGrades.map((grade) => grade.label).join(', ') }}
+                        </p>
+                        <p v-else class="mt-1 text-[11px] opacity-60">No head assigned</p>
+                    </div>
+
+                    <div v-if="showGrades">
+                        <p class="text-[10px] font-semibold uppercase tracking-wide opacity-60">
+                            Grades
+                            <span v-if="gradeCount" class="font-normal normal-case tracking-normal opacity-80">
+                                ({{ gradeCount }})
+                            </span>
+                        </p>
+                        <div v-if="node.levels.length" class="mt-1 space-y-1.5">
+                            <div
+                                v-for="level in node.levels"
+                                :key="level.id"
+                                class="rounded-md bg-white/50 px-2 py-1.5 dark:bg-black/15"
+                            >
+                                <p class="text-[11px] font-medium leading-snug">
+                                    Level {{ level.level_number }}
+                                    <span v-if="level.reference_title" class="font-normal opacity-80">
+                                        · {{ level.reference_title }}
+                                    </span>
+                                </p>
+                                <ul v-if="level.grades.length" class="mt-1 space-y-0.5">
+                                    <li
+                                        v-for="grade in level.grades"
+                                        :key="grade.id"
+                                        class="text-[11px] leading-snug opacity-90"
+                                    >
+                                        {{ grade.label }}
+                                    </li>
+                                </ul>
+                                <p v-else class="mt-0.5 text-[10px] opacity-60">No grades</p>
+                            </div>
+                        </div>
+                        <p v-else class="mt-1 text-[11px] opacity-60">No levels yet</p>
                     </div>
                 </div>
             </button>

@@ -32,6 +32,14 @@ class PayrollComponentService
     public function create(array $data): PayrollComponent
     {
         return DB::transaction(function () use ($data) {
+            $method = PayrollComponentCalculationMethod::tryFrom((string) ($data['calculation_method'] ?? ''));
+
+            if ($method?->isCustomFormula()) {
+                $data['global_rate'] = null;
+            } else {
+                $data['calculation_formula'] = null;
+            }
+
             $component = PayrollComponent::query()->create($data);
             $this->gradePayrollService->attachMandatoryComponentToAllGrades($component);
 
@@ -50,7 +58,9 @@ class PayrollComponentService
 
         if (
             isset($data['calculation_method'])
-            && PayrollComponentCalculationMethod::tryFrom((string) $data['calculation_method'])?->usesGlobalRate()
+            && ($method = PayrollComponentCalculationMethod::tryFrom((string) $data['calculation_method']))
+            && $method->usesGlobalRate()
+            && ! $method->isCustomFormula()
         ) {
             return 'Late fine and absent fee calculation methods are reserved for system components.';
         }
@@ -58,6 +68,13 @@ class PayrollComponentService
         $wasMandatory = $component->is_mandatory;
 
         DB::transaction(function () use ($component, $data, $wasMandatory): void {
+            if (
+                isset($data['calculation_method'])
+                && PayrollComponentCalculationMethod::tryFrom((string) $data['calculation_method'])?->isCustomFormula()
+            ) {
+                $data['global_rate'] = null;
+            }
+
             $component->update($data);
 
             if (! $wasMandatory && $component->is_mandatory) {
@@ -69,7 +86,7 @@ class PayrollComponentService
     }
 
     /**
-     * @param  array{global_rate: float|int|string, calculation_method: string}  $data
+     * @param  array{global_rate?: float|int|string|null, calculation_method: string, calculation_formula?: string|null}  $data
      */
     public function updateGlobalRate(PayrollComponent $component, array $data): ?string
     {
@@ -89,7 +106,12 @@ class PayrollComponentService
 
         $component->update([
             'calculation_method' => $method,
-            'global_rate' => round((float) $data['global_rate'], 2),
+            'global_rate' => $method->isCustomFormula()
+                ? null
+                : round((float) ($data['global_rate'] ?? 0), 2),
+            'calculation_formula' => $method->isCustomFormula()
+                ? trim((string) ($data['calculation_formula'] ?? ''))
+                : null,
         ]);
 
         return null;
@@ -134,6 +156,9 @@ class PayrollComponentService
             'code' => '',
             'type' => 'addition',
             'calculation_method' => 'fixed',
+            'calculation_formula' => '',
+            'formula_variables' => PayrollFormulaEvaluator::VARIABLES,
+            'formula_variable_options' => PayrollFormulaEvaluator::variableOptions(),
             'is_mandatory' => false,
             'sort_order' => 0,
             'is_active' => true,

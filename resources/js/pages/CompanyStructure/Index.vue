@@ -45,8 +45,18 @@ const organizationGroup = computed(
 
 const divisionGroupId = computed(() => {
     const options = organizationGroup.value?.group_options ?? [];
-    return options.find((option) => option.code === 'division')?.id ?? organizationGroup.value?.id ?? null;
+    return options.find((option) => option.code === 'division')?.id ?? null;
 });
+
+const unitSectionGroupId = computed(() => {
+    const options = organizationGroup.value?.group_options ?? [];
+    return options.find((option) => option.code === 'unit_section')?.id ?? null;
+});
+
+function groupOptionName(structureGroupId: number): string {
+    const options = organizationGroup.value?.group_options ?? [];
+    return options.find((option) => option.id === structureGroupId)?.name ?? 'subgroup';
+}
 
 function openImportPicker() {
     fileInput.value?.click();
@@ -101,7 +111,7 @@ function closeMoveModal() {
 
 function openAddNode(structureGroupId: number, parentId: number | null = null) {
     modalMode.value = 'node';
-    modalTitle.value = parentId ? 'Add child subgroup' : 'Add division';
+    modalTitle.value = `Add ${groupOptionName(structureGroupId)}`;
     modalGroupId.value = structureGroupId;
     modalParentId.value = parentId;
     modalNode.value = null;
@@ -220,18 +230,28 @@ function openEditGrade(grade: StructureGrade, level: StructureLevel) {
 
             <UiCard v-if="organizationGroup" title="Organization" padding="md">
                 <template #actions>
-                    <UiButton
-                        v-if="canCreate && divisionGroupId"
-                        size="sm"
-                        variant="secondary"
-                        @click="openAddNode(divisionGroupId)"
-                    >
-                        Add division
-                    </UiButton>
+                    <div class="flex flex-wrap gap-2">
+                        <UiButton
+                            v-if="canCreate && divisionGroupId"
+                            size="sm"
+                            variant="secondary"
+                            @click="openAddNode(divisionGroupId)"
+                        >
+                            Add division
+                        </UiButton>
+                        <UiButton
+                            v-if="canCreate && unitSectionGroupId"
+                            size="sm"
+                            variant="secondary"
+                            @click="openAddNode(unitSectionGroupId)"
+                        >
+                            Add unit / section
+                        </UiButton>
+                    </div>
                 </template>
 
                 <p v-if="organizationGroup.nodes.length === 0" class="text-sm text-slate-500">
-                    No divisions yet. Add a division, then nest departments and units under it.
+                    No organization subgroups yet. Add a division or unit/section, then nest departments and units under them.
                 </p>
                 <NodeTree
                     v-else

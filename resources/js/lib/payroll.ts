@@ -30,12 +30,17 @@ export function usesGlobalRateCalculation(method: PayrollComponentCalculationMet
         method === 'per_late_minute' ||
         method === 'per_late_minute_of_basic' ||
         method === 'per_absent_day' ||
-        method === 'per_absent_day_of_basic'
+        method === 'per_absent_day_of_basic' ||
+        method === 'custom_formula'
     );
 }
 
 export function isPercentageOfBasicCalculation(method: PayrollComponentCalculationMethod | string): boolean {
     return method === 'per_late_minute_of_basic' || method === 'per_absent_day_of_basic';
+}
+
+export function isCustomFormulaCalculation(method: PayrollComponentCalculationMethod | string): boolean {
+    return method === 'custom_formula';
 }
 
 export function isLoanType(type: string): boolean {
@@ -75,6 +80,10 @@ export function amountFieldLabel(item: DesignationPayrollItem): string {
         return '% of basic salary / absent day';
     }
 
+    if (item.calculation_method === 'custom_formula') {
+        return 'Formula';
+    }
+
     return 'Amount';
 }
 
@@ -94,6 +103,7 @@ export function componentToPayrollItem(
         is_mandatory: component.is_mandatory,
         uses_global_rate: component.uses_global_rate ?? usesGlobalRateCalculation(component.calculation_method),
         global_rate: component.uses_global_rate ? Number(component.global_rate ?? 0) : null,
+        calculation_formula: component.calculation_formula ?? null,
         amount: component.uses_global_rate ? Number(component.global_rate ?? amount) : amount,
         loan_months: isLoanType(component.type) ? 12 : null,
         loan_bank: isLoanType(component.type) ? (defaultBank?.value ?? defaultLoanBank) : null,

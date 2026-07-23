@@ -10,6 +10,7 @@ use App\Models\PayrollComponent;
 use App\Services\Attendance\AttendanceSheetService;
 use App\Services\Attendance\PayrollPeriodService;
 use Carbon\CarbonInterface;
+use Illuminate\Validation\ValidationException;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -19,6 +20,7 @@ class PayrollProcessingService
     public function __construct(
         private readonly AttendanceSheetService $attendanceSheetService,
         private readonly PayrollPeriodService $payrollPeriodService,
+        private readonly PayrollFormulaEvaluator $formulaEvaluator,
     ) {}
 
     /**
@@ -87,21 +89,29 @@ class PayrollProcessingService
                 ])
                 ->count();
             $hoursWorked = round(
-                $attendanceRows->sum(fn (array $row) => (int) ($row['working_minutes'] ?? 0)) / 60,
-                2
+                $attendanceRows->sum(fn (array $row) => (float) ($row['working_minutes'] ?? 0)) / 60,
+                2,
             );
             $lateMinutes = (int) ($summary['late_minutes'] ?? 0);
             $absentDays = (int) ($summary['absent_days'] ?? 0);
-
-            $gross = 0.0;
-            $deductions = 0.0;
-            $details = [];
+            $presentDays = (int) ($summary['present_days'] ?? $daysAttended);
 
             $components = $employee->grade?->payrollComponents ?? collect();
             $basicSalary = (float) ($components
                 ->firstWhere('code', PayrollComponent::BASIC_SALARY_CODE)
                 ?->pivot
                 ?->amount ?? 0);
+
+            $formulaVariables = $this->buildFormulaVariables(
+                $from,
+                $to,
+                $attendanceRows->all(),
+                $basicSalary,
+            );
+
+            $gross = 0.0;
+            $deductions = 0.0;
+            $details = [];
 
             foreach ($components as $component) {
                 $rate = $component->usesGlobalRate()
@@ -121,6 +131,10 @@ class PayrollProcessingService
                         ($basicSalary * ($rate / 100)) * $absentDays,
                         2,
                     ),
+                    PayrollComponentCalculationMethod::CustomFormula => $this->safeEvaluateFormula(
+                        (string) ($component->calculation_formula ?? ''),
+                        $formulaVariables,
+                    ),
                     default => $rate,
                 };
 
@@ -133,12 +147,42 @@ class PayrollProcessingService
                 $details[] = [
                     'component' => $component->name,
                     'method' => $component->calculation_method->value,
+                    'method_label' => $component->calculation_method->label(),
                     'rate' => $rate,
                     'amount' => $amount,
                     'type' => $component->type->value,
                     'basic_salary' => $component->calculation_method->isPercentageOfBasicSalary()
+                        || $component->calculation_method->isCustomFormula()
                         ? $basicSalary
                         : null,
+                    'formula' => $component->calculation_method->isCustomFormula()
+                        ? $component->calculation_formula
+                        : null,
+                    'formula_variables' => $component->calculation_method->isCustomFormula()
+                        ? $formulaVariables
+                        : null,
+                    'calculation_inputs' => $this->calculationInputs(
+                        $component->calculation_method,
+                        $rate,
+                        $daysAttended,
+                        $hoursWorked,
+                        $lateMinutes,
+                        $absentDays,
+                        $basicSalary,
+                        $formulaVariables,
+                        $component->calculation_formula,
+                    ),
+                    'calculation_summary' => $this->calculationSummary(
+                        $component->calculation_method,
+                        $rate,
+                        $amount,
+                        $daysAttended,
+                        $hoursWorked,
+                        $lateMinutes,
+                        $absentDays,
+                        $basicSalary,
+                        $component->calculation_formula,
+                    ),
                 ];
             }
 
@@ -159,10 +203,12 @@ class PayrollProcessingService
                 'hours_worked' => $hoursWorked,
                 'late_minutes' => $lateMinutes,
                 'absent_days' => $absentDays,
+                'present_days' => (int) ($formulaVariables['present_days'] ?? $daysAttended),
                 'gross' => round($gross, 2),
                 'deductions' => round($deductions, 2),
                 'net' => round($gross - $deductions, 2),
                 'details' => $details,
+                'formula_variables' => $formulaVariables,
             ];
         }
 
@@ -229,5 +275,249 @@ class PayrollProcessingService
         }, $filename, [
             'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         ]);
+    }
+
+    /**
+     * Actual figures used by custom payroll formulas for one employee/period.
+     *
+     * @param  list<array<string, mixed>>  $attendanceRows
+     * @return array{
+     *     absent_days: int,
+     *     present_days: int,
+     *     late_minutes: int,
+     *     basic_salary: float,
+     *     hours_worked: float,
+     *     additional_hours_worked: float,
+     *     working_days: int,
+     *     total_days_of_payroll: int
+     * }
+     */
+    public function buildFormulaVariables(
+        CarbonInterface $from,
+        CarbonInterface $to,
+        array $attendanceRows,
+        float $basicSalary,
+    ): array {
+        if ($to->lt($from)) {
+            [$from, $to] = [$to, $from];
+        }
+
+        $rows = collect($attendanceRows);
+        $summary = $this->attendanceSheetService->summarizeRows($attendanceRows);
+
+        $presentDays = (int) ($summary['present_days'] ?? 0);
+        $absentDays = (int) ($summary['absent_days'] ?? 0);
+        $lateMinutes = (int) ($summary['late_minutes'] ?? 0);
+
+        $hoursWorked = round(
+            $rows->sum(fn (array $row) => (float) ($row['working_minutes'] ?? 0)) / 60,
+            2,
+        );
+
+        // Expected work days in the period (excludes holidays / weekends marked as holiday).
+        $workingDays = $rows
+            ->reject(fn (array $row) => ($row['status'] ?? null) === AttendanceDayStatus::Holiday->value)
+            ->count();
+
+        // Total calendar days covered by the payroll period (inclusive).
+        $totalDaysOfPayroll = (int) $from->diffInDays($to) + 1;
+
+        return [
+            'absent_days' => $absentDays,
+            'present_days' => $presentDays,
+            'late_minutes' => $lateMinutes,
+            'basic_salary' => round($basicSalary, 2),
+            'hours_worked' => $hoursWorked,
+            'additional_hours_worked' => $this->additionalHoursWorked($rows),
+            'working_days' => $workingDays,
+            'total_days_of_payroll' => $totalDaysOfPayroll,
+        ];
+    }
+
+    /**
+     * @param  array<string, float|int>  $variables
+     */
+    protected function safeEvaluateFormula(string $formula, array $variables): float
+    {
+        if (trim($formula) === '') {
+            return 0.0;
+        }
+
+        try {
+            return $this->formulaEvaluator->evaluate($formula, $variables);
+        } catch (ValidationException) {
+            return 0.0;
+        }
+    }
+
+    /**
+     * @param  array<string, float|int>  $formulaVariables
+     * @return list<array{key: string, label: string, value: float|int|string}>
+     */
+    protected function calculationInputs(
+        PayrollComponentCalculationMethod $method,
+        float $rate,
+        int $daysAttended,
+        float $hoursWorked,
+        int $lateMinutes,
+        int $absentDays,
+        float $basicSalary,
+        array $formulaVariables,
+        ?string $formula = null,
+    ): array {
+        return match ($method) {
+            PayrollComponentCalculationMethod::Fixed => [
+                ['key' => 'rate', 'label' => 'Fixed amount', 'value' => $rate],
+            ],
+            PayrollComponentCalculationMethod::Daily => [
+                ['key' => 'rate', 'label' => 'Rate / attended day', 'value' => $rate],
+                ['key' => 'days_attended', 'label' => 'Days attended', 'value' => $daysAttended],
+            ],
+            PayrollComponentCalculationMethod::Hourly => [
+                ['key' => 'rate', 'label' => 'Rate / hour', 'value' => $rate],
+                ['key' => 'hours_worked', 'label' => 'Hours worked', 'value' => $hoursWorked],
+            ],
+            PayrollComponentCalculationMethod::PerLateMinute => [
+                ['key' => 'rate', 'label' => 'Rate / late minute', 'value' => $rate],
+                ['key' => 'late_minutes', 'label' => 'Late minutes', 'value' => $lateMinutes],
+            ],
+            PayrollComponentCalculationMethod::PerLateMinuteOfBasic => [
+                ['key' => 'basic_salary', 'label' => 'Basic salary', 'value' => $basicSalary],
+                ['key' => 'rate', 'label' => '% of basic / late minute', 'value' => $rate],
+                ['key' => 'late_minutes', 'label' => 'Late minutes', 'value' => $lateMinutes],
+            ],
+            PayrollComponentCalculationMethod::PerAbsentDay => [
+                ['key' => 'rate', 'label' => 'Rate / absent day', 'value' => $rate],
+                ['key' => 'absent_days', 'label' => 'Absent days', 'value' => $absentDays],
+            ],
+            PayrollComponentCalculationMethod::PerAbsentDayOfBasic => [
+                ['key' => 'basic_salary', 'label' => 'Basic salary', 'value' => $basicSalary],
+                ['key' => 'rate', 'label' => '% of basic / absent day', 'value' => $rate],
+                ['key' => 'absent_days', 'label' => 'Absent days', 'value' => $absentDays],
+            ],
+            PayrollComponentCalculationMethod::CustomFormula => $this->customFormulaInputs(
+                (string) $formula,
+                $formulaVariables,
+            ),
+        };
+    }
+
+    /**
+     * @param  array<string, float|int>  $formulaVariables
+     * @return list<array{key: string, label: string, value: float|int|string}>
+     */
+    protected function customFormulaInputs(string $formula, array $formulaVariables): array
+    {
+        $entries = collect($formulaVariables)
+            ->map(fn ($value, string $key) => [
+                'key' => $key,
+                'label' => match ($key) {
+                    'absent_days' => 'Absent days',
+                    'present_days' => 'Present days',
+                    'late_minutes' => 'Late minutes',
+                    'basic_salary' => 'Basic salary',
+                    'hours_worked' => 'Hours worked',
+                    'additional_hours_worked' => 'Additional hours worked',
+                    'working_days' => 'Number of working days',
+                    'total_days_of_payroll' => 'Total days of payroll',
+                    default => str_replace('_', ' ', $key),
+                },
+                'value' => $value,
+            ]);
+
+        if (trim($formula) !== '') {
+            $entries = $entries->filter(
+                fn (array $entry) => preg_match('/\b'.preg_quote($entry['key'], '/').'\b/', $formula) === 1,
+            );
+        }
+
+        return $entries->values()->all();
+    }
+
+    protected function calculationSummary(
+        PayrollComponentCalculationMethod $method,
+        float $rate,
+        float $amount,
+        int $daysAttended,
+        float $hoursWorked,
+        int $lateMinutes,
+        int $absentDays,
+        float $basicSalary,
+        ?string $formula,
+    ): string {
+        $money = fn (float $value): string => number_format($value, 2, '.', ',');
+        $qty = fn (float|int $value): string => is_int($value) || fmod((float) $value, 1.0) === 0.0
+            ? number_format((float) $value, 0, '.', ',')
+            : number_format((float) $value, 2, '.', ',');
+
+        return match ($method) {
+            PayrollComponentCalculationMethod::Fixed => "Fixed amount = {$money($amount)}",
+            PayrollComponentCalculationMethod::Daily => "{$money($rate)} × {$qty($daysAttended)} days attended = {$money($amount)}",
+            PayrollComponentCalculationMethod::Hourly => "{$money($rate)} × {$qty($hoursWorked)} hours worked = {$money($amount)}",
+            PayrollComponentCalculationMethod::PerLateMinute => "{$money($rate)} × {$qty($lateMinutes)} late minutes = {$money($amount)}",
+            PayrollComponentCalculationMethod::PerLateMinuteOfBasic => "({$money($basicSalary)} × {$qty($rate)}%) × {$qty($lateMinutes)} late minutes = {$money($amount)}",
+            PayrollComponentCalculationMethod::PerAbsentDay => "{$money($rate)} × {$qty($absentDays)} absent days = {$money($amount)}",
+            PayrollComponentCalculationMethod::PerAbsentDayOfBasic => "({$money($basicSalary)} × {$qty($rate)}%) × {$qty($absentDays)} absent days = {$money($amount)}",
+            PayrollComponentCalculationMethod::CustomFormula => trim((string) $formula) !== ''
+                ? "Formula ({$formula}) = {$money($amount)}"
+                : "Custom formula = {$money($amount)}",
+        };
+    }
+
+    /**
+     * Hours worked beyond scheduled duty length for the period.
+     *
+     * @param  \Illuminate\Support\Collection<int, array<string, mixed>>  $attendanceRows
+     */
+    protected function additionalHoursWorked($attendanceRows): float
+    {
+        $extraMinutes = 0.0;
+
+        foreach ($attendanceRows as $row) {
+            $worked = (float) ($row['working_minutes'] ?? 0);
+            if ($worked <= 0) {
+                continue;
+            }
+
+            $scheduled = $this->scheduledDutyMinutes(
+                (string) ($row['duty_start_time'] ?? ''),
+                (string) ($row['duty_end_time'] ?? ''),
+            );
+
+            if ($scheduled === null) {
+                continue;
+            }
+
+            $extraMinutes += max(0, $worked - $scheduled);
+        }
+
+        return round($extraMinutes / 60, 2);
+    }
+
+    protected function scheduledDutyMinutes(string $start, string $end): ?int
+    {
+        $start = trim($start);
+        $end = trim($end);
+
+        if ($start === '' || $end === '' || $start === '—' || $end === '—') {
+            return null;
+        }
+
+        try {
+            $from = \Illuminate\Support\Carbon::createFromFormat('H:i', substr($start, 0, 5));
+            $to = \Illuminate\Support\Carbon::createFromFormat('H:i', substr($end, 0, 5));
+        } catch (\Throwable) {
+            return null;
+        }
+
+        if (! $from || ! $to) {
+            return null;
+        }
+
+        if ($to->lte($from)) {
+            $to->addDay();
+        }
+
+        return (int) $from->diffInMinutes($to);
     }
 }

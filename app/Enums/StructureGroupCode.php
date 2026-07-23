@@ -25,7 +25,7 @@ enum StructureGroupCode: string
     }
 
     /**
-     * Parent group codes allowed for a node of this type (empty = must be top-level).
+     * Parent group codes allowed for a node of this type (empty = must be top-level only).
      *
      * @return list<self>
      */
@@ -34,14 +34,25 @@ enum StructureGroupCode: string
         return match ($this) {
             self::Division => [],
             self::Department => [self::Division, self::Department],
-            self::UnitSection => [self::Department, self::UnitSection],
+            self::UnitSection => [self::Division, self::Department, self::UnitSection],
             self::StrategicLeadership => [],
+        };
+    }
+
+    /**
+     * Whether this type may sit at the organization root (under Strategic Leadership).
+     */
+    public function allowsTopLevel(): bool
+    {
+        return match ($this) {
+            self::Division, self::UnitSection => true,
+            default => false,
         };
     }
 
     public function requiresParent(): bool
     {
-        return $this->allowedParentCodes() !== [];
+        return $this->allowsNodes() && ! $this->allowsTopLevel();
     }
 
     /**
@@ -52,10 +63,10 @@ enum StructureGroupCode: string
     public function allowedChildCodes(): array
     {
         return match ($this) {
-            self::Division => [self::Department],
+            self::Division => [self::Department, self::UnitSection],
             self::Department => [self::Department, self::UnitSection],
             self::UnitSection => [self::UnitSection],
-            self::StrategicLeadership => [self::Division],
+            self::StrategicLeadership => [self::Division, self::UnitSection],
         };
     }
 }

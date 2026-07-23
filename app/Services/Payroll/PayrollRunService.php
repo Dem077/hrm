@@ -270,18 +270,7 @@ class PayrollRunService
         $this->requireRunItem($run, $employeeId);
 
         DB::transaction(function () use ($run, $employeeId, $type, $title, $amount, $remarks, $actor, $request): void {
-            PayrollRunAdjustment::query()->create([
-                'payroll_run_id' => $run->id,
-                'employee_id' => $employeeId,
-                'title' => $title,
-                'type' => $type,
-                'amount' => round(max(0, $amount), 2),
-                'remarks' => $remarks,
-                'created_by_user_id' => $actor->id,
-                'updated_by_user_id' => $actor->id,
-            ]);
-
-            $this->applyManualTotalsToItem($run->id, $employeeId);
+            $this->createAdjustmentRecord($run, $employeeId, $type, $title, $amount, $remarks, $actor);
             $this->addAuditLog($run, 'adjustment_added', $actor, $request, false, [
                 'employee_id' => $employeeId,
                 'type' => $type,
@@ -289,6 +278,86 @@ class PayrollRunService
                 'amount' => round($amount, 2),
             ]);
         });
+    }
+
+    /**
+     * @param  list<int>  $employeeIds
+     */
+    public function addBulkAdjustments(
+        PayrollRun $run,
+        array $employeeIds,
+        string $type,
+        string $title,
+        float $amount,
+        ?string $remarks,
+        User $actor,
+        Request $request,
+    ): int {
+        if (! $run->status->isEditable()) {
+            throw ValidationException::withMessages([
+                'run' => 'Finalised payroll runs cannot be edited.',
+            ]);
+        }
+
+        $employeeIds = array_values(array_unique(array_map('intval', $employeeIds)));
+
+        if ($employeeIds === []) {
+            throw ValidationException::withMessages([
+                'employee_ids' => 'Select at least one employee.',
+            ]);
+        }
+
+        $validIds = PayrollRunItem::query()
+            ->where('payroll_run_id', $run->id)
+            ->whereIn('employee_id', $employeeIds)
+            ->pluck('employee_id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        if (count($validIds) !== count($employeeIds)) {
+            throw ValidationException::withMessages([
+                'employee_ids' => 'One or more selected employees are not on this payroll run.',
+            ]);
+        }
+
+        DB::transaction(function () use ($run, $validIds, $type, $title, $amount, $remarks, $actor, $request): void {
+            foreach ($validIds as $employeeId) {
+                $this->createAdjustmentRecord($run, $employeeId, $type, $title, $amount, $remarks, $actor);
+            }
+
+            $this->addAuditLog($run, 'bulk_adjustment_added', $actor, $request, false, [
+                'employee_ids' => $validIds,
+                'employee_count' => count($validIds),
+                'type' => $type,
+                'title' => $title,
+                'amount' => round($amount, 2),
+            ]);
+        });
+
+        return count($validIds);
+    }
+
+    protected function createAdjustmentRecord(
+        PayrollRun $run,
+        int $employeeId,
+        string $type,
+        string $title,
+        float $amount,
+        ?string $remarks,
+        User $actor,
+    ): void {
+        PayrollRunAdjustment::query()->create([
+            'payroll_run_id' => $run->id,
+            'employee_id' => $employeeId,
+            'title' => $title,
+            'type' => $type,
+            'amount' => round(max(0, $amount), 2),
+            'remarks' => $remarks,
+            'created_by_user_id' => $actor->id,
+            'updated_by_user_id' => $actor->id,
+        ]);
+
+        $this->applyManualTotalsToItem($run->id, $employeeId);
     }
 
     public function deleteAdjustment(
@@ -445,6 +514,10 @@ class PayrollRunService
                 'attendance_summary' => [
                     'days_attended' => $row['days_attended'],
                     'hours_worked' => $row['hours_worked'],
+                    'late_minutes' => $row['late_minutes'] ?? null,
+                    'absent_days' => $row['absent_days'] ?? null,
+                    'present_days' => $row['present_days'] ?? null,
+                    'formula_variables' => $row['formula_variables'] ?? null,
                 ],
                 'sort_order' => $index,
             ]);
@@ -519,6 +592,7 @@ class PayrollRunService
             'deductions' => $item->deductions,
             'net' => $item->net,
             'details' => $item->details ?? [],
+            'attendance_summary' => $item->attendance_summary ?? [],
         ];
     }
 

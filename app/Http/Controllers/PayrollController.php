@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\ReopenPayrollRunRequest;
+use App\Http\Requests\StoreBulkPayrollRunAdjustmentRequest;
 use App\Http\Requests\StorePayrollRunAdjustmentRequest;
 use App\Http\Requests\StorePayrollRunRequest;
 use App\Models\Employee;
@@ -41,6 +42,7 @@ class PayrollController extends Controller
             'selectedRun' => $detail['run'],
             'rows' => $detail['rows'],
             'bankTotals' => $detail['bank_totals'],
+            'can_edit' => $detail['can_edit'],
             'filters' => [
                 'q' => $search,
             ],
@@ -112,6 +114,35 @@ class PayrollController extends Controller
         return redirect()
             ->route('payroll.employees.adjustments', [$payroll_run, $employee])
             ->with('success', 'Adjustment added.');
+    }
+
+    public function storeBulkAdjustment(
+        StoreBulkPayrollRunAdjustmentRequest $request,
+        PayrollRun $payroll_run,
+        PayrollRunService $payrollRunService,
+    ) {
+        $user = $request->user();
+        if (! $user) {
+            abort(403);
+        }
+
+        /** @var list<int> $employeeIds */
+        $employeeIds = array_map('intval', $request->input('employee_ids', []));
+
+        $count = $payrollRunService->addBulkAdjustments(
+            $payroll_run,
+            $employeeIds,
+            (string) $request->input('type'),
+            (string) $request->input('title'),
+            (float) $request->input('amount'),
+            $request->input('remarks'),
+            $user,
+            $request,
+        );
+
+        return redirect()
+            ->route('payroll.show', $payroll_run)
+            ->with('success', "Adjustment added for {$count} employees.");
     }
 
     public function destroyAdjustment(
