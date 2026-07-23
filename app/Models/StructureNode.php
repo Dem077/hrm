@@ -18,6 +18,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'sort_order',
     'leave_approval_workflow',
     'overtime_approval_workflow',
+    'leave_approval_template_id',
+    'overtime_approval_template_id',
 ])]
 class StructureNode extends Model
 {
@@ -44,6 +46,16 @@ class StructureNode extends Model
     public function children(): HasMany
     {
         return $this->hasMany(self::class, 'parent_id')->orderBy('sort_order')->orderBy('name');
+    }
+
+    public function leaveApprovalTemplate(): BelongsTo
+    {
+        return $this->belongsTo(ApprovalTemplate::class, 'leave_approval_template_id');
+    }
+
+    public function overtimeApprovalTemplate(): BelongsTo
+    {
+        return $this->belongsTo(ApprovalTemplate::class, 'overtime_approval_template_id');
     }
 
     public function headGrades(): BelongsToMany

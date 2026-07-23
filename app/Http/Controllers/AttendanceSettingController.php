@@ -2,20 +2,22 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\StoreApprovalTemplateRequest;
 use App\Http\Requests\StoreAttendanceDutyPolicyRequest;
 use App\Http\Requests\StorePublicHolidayRequest;
-use App\Http\Requests\UpdateApprovalWorkflowRequest;
+use App\Http\Requests\UpdateApprovalTemplateRequest;
 use App\Http\Requests\UpdateAttendanceDutyPolicyRequest;
+use App\Http\Requests\UpdateCompanyDefaultApprovalTemplatesRequest;
 use App\Http\Requests\UpdateLeaveApprovalWorkflowRequest;
 use App\Http\Requests\UpdatePayrollPeriodRequest;
 use App\Http\Requests\UpdatePublicHolidayRequest;
 use App\Enums\ApprovalWorkflowKind;
 use App\Models\AppSetting;
+use App\Models\ApprovalTemplate;
 use App\Models\AttendanceDutyPolicy;
 use App\Models\AttendanceGeneralSetting;
 use App\Models\Bank;
 use App\Models\PublicHoliday;
-use App\Models\StructureNode;
 use App\Services\Attendance\PayrollPeriodService;
 use App\Services\Leave\LeaveApprovalWorkflowService;
 use Illuminate\Http\RedirectResponse;
@@ -32,7 +34,7 @@ class AttendanceSettingController extends Controller
 
         return Inertia::render('AttendanceSettings/Index', [
             'leaveCarryForwardEnabled' => AppSetting::current()->leave_carry_forward_enabled,
-            'approvalWorkflows' => $leaveApprovalWorkflowService->branchWorkflowsPresentation(),
+            'approvalTemplates' => $leaveApprovalWorkflowService->templatesPresentation(),
             'banks' => Bank::query()
                 ->ordered()
                 ->get()
@@ -128,24 +130,65 @@ class AttendanceSettingController extends Controller
         return back()->with('success', 'Company default leave approval workflow updated successfully.');
     }
 
-    public function updateApprovalWorkflow(
-        UpdateApprovalWorkflowRequest $request,
+    public function storeApprovalTemplate(
+        StoreApprovalTemplateRequest $request,
         LeaveApprovalWorkflowService $leaveApprovalWorkflowService,
     ): RedirectResponse {
-        $kind = ApprovalWorkflowKind::from($request->validated('kind'));
-        $steps = $request->validated('steps');
-        $nodeId = $request->validated('structure_node_id');
+        $data = $request->validated();
+        $kind = ApprovalWorkflowKind::from($data['kind']);
 
-        if ($nodeId) {
-            $branch = StructureNode::query()->whereNull('parent_id')->findOrFail($nodeId);
-            $leaveApprovalWorkflowService->saveBranch($branch, $kind, $steps);
-            $target = $branch->name;
-        } else {
-            $leaveApprovalWorkflowService->saveDefault($kind, $steps);
-            $target = 'company default';
-        }
+        $leaveApprovalWorkflowService->createTemplate(
+            $kind,
+            $data['name'],
+            $data['description'] ?? null,
+            $data['steps'],
+        );
 
-        return back()->with('success', "{$kind->label()} approval workflow updated for {$target}.");
+        return back()->with('success', "{$kind->label()} approval template created.");
+    }
+
+    public function updateApprovalTemplate(
+        UpdateApprovalTemplateRequest $request,
+        ApprovalTemplate $approvalTemplate,
+        LeaveApprovalWorkflowService $leaveApprovalWorkflowService,
+    ): RedirectResponse {
+        $data = $request->validated();
+
+        $leaveApprovalWorkflowService->updateTemplate(
+            $approvalTemplate,
+            $data['name'],
+            $data['description'] ?? null,
+            $data['steps'],
+        );
+
+        return back()->with('success', 'Approval template updated.');
+    }
+
+    public function destroyApprovalTemplate(
+        ApprovalTemplate $approvalTemplate,
+        LeaveApprovalWorkflowService $leaveApprovalWorkflowService,
+    ): RedirectResponse {
+        $leaveApprovalWorkflowService->deleteTemplate($approvalTemplate);
+
+        return back()->with('success', 'Approval template deleted.');
+    }
+
+    public function updateCompanyDefaultApprovalTemplates(
+        UpdateCompanyDefaultApprovalTemplatesRequest $request,
+        LeaveApprovalWorkflowService $leaveApprovalWorkflowService,
+    ): RedirectResponse {
+        $data = $request->validated();
+
+        $leaveApprovalWorkflowService->setCompanyDefaultTemplate(
+            ApprovalWorkflowKind::Leave,
+            isset($data['leave_approval_template_id']) ? (int) $data['leave_approval_template_id'] : null,
+        );
+        $leaveApprovalWorkflowService->setCompanyDefaultTemplate(
+            ApprovalWorkflowKind::Overtime,
+            isset($data['overtime_approval_template_id']) ? (int) $data['overtime_approval_template_id'] : null,
+        );
+
+        return back()->with('success', 'Company default approval templates updated.');
     }
 
     public function storePolicy(StoreAttendanceDutyPolicyRequest $request): RedirectResponse

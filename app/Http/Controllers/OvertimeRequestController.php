@@ -74,6 +74,8 @@ class OvertimeRequestController extends Controller
         }
 
         $approver = $overtimeService->resolveApprover($employee);
+        $approvalPreview = app(\App\Services\Leave\LeaveApprovalWorkflowService::class)
+            ->approvalPreview($employee, \App\Enums\ApprovalWorkflowKind::Overtime);
         $firstDay = $eligibleDays[0];
 
         return Inertia::render('OvertimeRequests/Form', [
@@ -82,6 +84,7 @@ class OvertimeRequestController extends Controller
                 'name' => $approver->name,
                 'staff_id' => $approver->staff_id,
             ] : null,
+            'approvalPreview' => $approvalPreview,
             'eligibleDays' => $eligibleDays,
             'request' => [
                 'overtime_date' => $firstDay['overtime_date'],

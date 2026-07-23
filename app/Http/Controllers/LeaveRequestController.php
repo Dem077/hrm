@@ -80,6 +80,8 @@ class LeaveRequestController extends Controller
         }
 
         $approver = $leaveService->resolveApprover($employee);
+        $approvalPreview = app(\App\Services\Leave\LeaveApprovalWorkflowService::class)
+            ->approvalPreview($employee);
 
         return Inertia::render('LeaveRequests/Form', [
             'leaveTypes' => $leaveTypes,
@@ -88,6 +90,7 @@ class LeaveRequestController extends Controller
                 'name' => $approver->name,
                 'staff_id' => $approver->staff_id,
             ] : null,
+            'approvalPreview' => $approvalPreview,
             'request' => [
                 'leave_type_id' => '',
                 'start_date' => now()->toDateString(),

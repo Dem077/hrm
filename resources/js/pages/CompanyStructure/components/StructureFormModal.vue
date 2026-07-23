@@ -6,7 +6,9 @@ import UiButton from '@/components/ui/UiButton.vue';
 import UiInput from '@/components/ui/UiInput.vue';
 import UiModal from '@/components/ui/UiModal.vue';
 import UiRichTextEditor from '@/components/ui/UiRichTextEditor.vue';
+import UiSelect from '@/components/ui/UiSelect.vue';
 import type {
+    ApprovalTemplateOption,
     StructureGrade,
     StructureGroup,
     StructureHeadGradeOption,
@@ -26,6 +28,7 @@ const props = defineProps<{
     level?: StructureLevel | null;
     grade?: StructureGrade | null;
     groups: StructureGroup[];
+    approvalTemplates?: ApprovalTemplateOption[];
 }>();
 
 const emit = defineEmits<{
@@ -38,8 +41,47 @@ const nodeForm = useForm({
     description: '',
     parent_id: null as number | null,
     head_grade_ids: [] as number[],
+    leave_approval_template_id: null as number | null,
+    overtime_approval_template_id: null as number | null,
     is_active: true,
 });
+
+const leaveTemplateOptions = computed(() =>
+    (props.approvalTemplates ?? []).filter((template) => template.kind === 'leave'),
+);
+
+const overtimeTemplateOptions = computed(() =>
+    (props.approvalTemplates ?? []).filter((template) => template.kind === 'overtime'),
+);
+
+const selectedLeaveTemplate = computed(
+    () =>
+        leaveTemplateOptions.value.find((template) => template.id === nodeForm.leave_approval_template_id) ?? null,
+);
+
+const selectedOvertimeTemplate = computed(
+    () =>
+        overtimeTemplateOptions.value.find((template) => template.id === nodeForm.overtime_approval_template_id) ??
+        null,
+);
+
+function templateOptionLabel(option: ApprovalTemplateOption): string {
+    if (option.steps_summary) {
+        return `${option.name} — ${option.steps_summary}`;
+    }
+
+    return option.name;
+}
+
+function templateStructureSummary(option: ApprovalTemplateOption): string {
+    const labels = (option.steps ?? [])
+        .filter((step) => step.enabled && step.key !== 'direct_manager' && step.key !== 'hr')
+        .map((step) => step.label);
+
+    const structure = labels.length ? `${labels.join(' → ')} → HR` : 'HR only';
+
+    return `With manager: Manager → HR · Without: ${structure}`;
+}
 
 const levelForm = useForm({
     level_number: 1,
@@ -168,11 +210,15 @@ watch(
                 nodeForm.description = props.node.description ?? '';
                 nodeForm.parent_id = props.node.parent_id;
                 nodeForm.head_grade_ids = [...(props.node.head_grade_ids ?? [])];
+                nodeForm.leave_approval_template_id = props.node.leave_approval_template_id ?? null;
+                nodeForm.overtime_approval_template_id = props.node.overtime_approval_template_id ?? null;
                 nodeForm.is_active = props.node.is_active;
             } else {
                 nodeForm.reset();
                 nodeForm.parent_id = props.parentId ?? null;
                 nodeForm.head_grade_ids = [];
+                nodeForm.leave_approval_template_id = null;
+                nodeForm.overtime_approval_template_id = null;
                 nodeForm.is_active = true;
             }
         }
@@ -255,12 +301,142 @@ function submit() {
 </script>
 
 <template>
-    <UiModal :open="open" :title="title" :max-width="mode === 'grade' ? 'lg' : 'md'" @close="emit('close')">
+    <UiModal :open="open" :title="title" :max-width="mode === 'node' || mode === 'grade' ? 'lg' : 'md'" @close="emit('close')">
         <form class="space-y-4" @submit.prevent="submit">
             <template v-if="mode === 'node'">
                 <UiInput v-model="nodeForm.name" label="Name" :error="nodeForm.errors.name" required />
                 <UiInput v-model="nodeForm.code" label="Code" :error="nodeForm.errors.code" />
                 <UiInput v-model="nodeForm.description" label="Description" :error="nodeForm.errors.description" />
+
+                <div class="space-y-4">
+                    <div>
+                        <UiSelect
+                            :model-value="nodeForm.leave_approval_template_id ?? ''"
+                            label="Leave approval template"
+                            hint="Inherit uses the nearest parent assignment, then the company default."
+                            :error="nodeForm.errors.leave_approval_template_id"
+                            @update:model-value="nodeForm.leave_approval_template_id = $event ? Number($event) : null"
+                        >
+                            <option value="">Inherit</option>
+                            <option v-for="option in leaveTemplateOptions" :key="option.id" :value="option.id">
+                                {{ templateOptionLabel(option) }}
+                            </option>
+                        </UiSelect>
+                        <div
+                            v-if="selectedLeaveTemplate"
+                            class="mt-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-surface-elevated"
+                        >
+                            <p class="font-medium text-slate-800 dark:text-slate-100">
+                                {{ selectedLeaveTemplate.name }}
+                            </p>
+                            <p
+                                v-if="selectedLeaveTemplate.description"
+                                class="mt-0.5 text-xs text-slate-500 dark:text-slate-400"
+                            >
+                                {{ selectedLeaveTemplate.description }}
+                            </p>
+                            <p class="mt-1.5 text-xs font-medium text-slate-600 dark:text-slate-300">
+                                {{ templateStructureSummary(selectedLeaveTemplate) }}
+                            </p>
+                            <ul
+                                v-if="selectedLeaveTemplate.steps?.length"
+                                class="mt-2 space-y-1 border-t border-slate-200 pt-2 dark:border-slate-700"
+                            >
+                                <li class="flex items-center gap-2 text-xs text-slate-700 dark:text-slate-200">
+                                    <span class="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" />
+                                    Direct manager → HR
+                                    <span class="text-slate-500">(bypass when manager is assigned)</span>
+                                </li>
+                                <li
+                                    v-for="step in selectedLeaveTemplate.steps.filter((s) => s.key !== 'direct_manager')"
+                                    :key="`leave-${step.key}`"
+                                    class="flex items-center gap-2 text-xs"
+                                    :class="
+                                        step.enabled
+                                            ? 'text-slate-700 dark:text-slate-200'
+                                            : 'text-slate-400 line-through dark:text-slate-500'
+                                    "
+                                >
+                                    <span
+                                        class="h-1.5 w-1.5 shrink-0 rounded-full"
+                                        :class="step.enabled ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600'"
+                                    />
+                                    {{ step.label }}
+                                    <span v-if="!step.enabled" class="no-underline">(off)</span>
+                                </li>
+                                <li class="flex items-center gap-2 text-xs text-slate-700 dark:text-slate-200">
+                                    <span class="h-1.5 w-1.5 shrink-0 rounded-full bg-brand-500" />
+                                    HR (final approval)
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div>
+                        <UiSelect
+                            :model-value="nodeForm.overtime_approval_template_id ?? ''"
+                            label="Overtime approval template"
+                            hint="Inherit uses the nearest parent assignment, then the company default."
+                            :error="nodeForm.errors.overtime_approval_template_id"
+                            @update:model-value="
+                                nodeForm.overtime_approval_template_id = $event ? Number($event) : null
+                            "
+                        >
+                            <option value="">Inherit</option>
+                            <option v-for="option in overtimeTemplateOptions" :key="option.id" :value="option.id">
+                                {{ templateOptionLabel(option) }}
+                            </option>
+                        </UiSelect>
+                        <div
+                            v-if="selectedOvertimeTemplate"
+                            class="mt-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-surface-elevated"
+                        >
+                            <p class="font-medium text-slate-800 dark:text-slate-100">
+                                {{ selectedOvertimeTemplate.name }}
+                            </p>
+                            <p
+                                v-if="selectedOvertimeTemplate.description"
+                                class="mt-0.5 text-xs text-slate-500 dark:text-slate-400"
+                            >
+                                {{ selectedOvertimeTemplate.description }}
+                            </p>
+                            <p class="mt-1.5 text-xs font-medium text-slate-600 dark:text-slate-300">
+                                {{ templateStructureSummary(selectedOvertimeTemplate) }}
+                            </p>
+                            <ul
+                                v-if="selectedOvertimeTemplate.steps?.length"
+                                class="mt-2 space-y-1 border-t border-slate-200 pt-2 dark:border-slate-700"
+                            >
+                                <li class="flex items-center gap-2 text-xs text-slate-700 dark:text-slate-200">
+                                    <span class="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" />
+                                    Direct manager → HR
+                                    <span class="text-slate-500">(bypass when manager is assigned)</span>
+                                </li>
+                                <li
+                                    v-for="step in selectedOvertimeTemplate.steps.filter((s) => s.key !== 'direct_manager')"
+                                    :key="`ot-${step.key}`"
+                                    class="flex items-center gap-2 text-xs"
+                                    :class="
+                                        step.enabled
+                                            ? 'text-slate-700 dark:text-slate-200'
+                                            : 'text-slate-400 line-through dark:text-slate-500'
+                                    "
+                                >
+                                    <span
+                                        class="h-1.5 w-1.5 shrink-0 rounded-full"
+                                        :class="step.enabled ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600'"
+                                    />
+                                    {{ step.label }}
+                                    <span v-if="!step.enabled" class="no-underline">(off)</span>
+                                </li>
+                                <li class="flex items-center gap-2 text-xs text-slate-700 dark:text-slate-200">
+                                    <span class="h-1.5 w-1.5 shrink-0 rounded-full bg-brand-500" />
+                                    HR (final approval)
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
 
                 <div>
                     <p class="mb-1.5 text-sm font-medium text-slate-700 dark:text-slate-200">Head designations</p>

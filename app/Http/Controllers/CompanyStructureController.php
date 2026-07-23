@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Http\Requests\ImportCompanyStructureRequest;
 use App\Services\CompanyStructure\CompanyStructureCsvService;
 use App\Services\CompanyStructure\CompanyStructureService;
+use App\Services\Leave\LeaveApprovalWorkflowService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
@@ -20,6 +21,7 @@ class CompanyStructureController extends Controller
     public function __construct(
         protected CompanyStructureService $companyStructureService,
         protected CompanyStructureCsvService $companyStructureCsvService,
+        protected LeaveApprovalWorkflowService $leaveApprovalWorkflowService,
     ) {}
 
     public function index(Request $request): Response
@@ -28,6 +30,7 @@ class CompanyStructureController extends Controller
 
         return Inertia::render('CompanyStructure/Index', [
             'groups' => $this->companyStructureService->treePayload(),
+            'approvalTemplates' => $this->leaveApprovalWorkflowService->templateOptions(),
             'importPreview' => is_array($pending) ? ($pending['preview'] ?? null) : null,
             'importFileName' => is_array($pending) ? ($pending['original_name'] ?? null) : null,
         ]);
@@ -37,6 +40,7 @@ class CompanyStructureController extends Controller
     {
         return Inertia::render('CompanyStructure/Chart', [
             'groups' => $this->companyStructureService->treePayload(),
+            'approvalTemplates' => $this->leaveApprovalWorkflowService->templateOptions(),
         ]);
     }
 

@@ -3,6 +3,7 @@ import { Head, useForm } from '@inertiajs/vue3';
 import { computed, watch } from 'vue';
 
 import PageHeader from '@/components/ui/PageHeader.vue';
+import ApprovalRoutePreview from '@/components/approvals/ApprovalRoutePreview.vue';
 import UiAlert from '@/components/ui/UiAlert.vue';
 import UiButton from '@/components/ui/UiButton.vue';
 import UiCard from '@/components/ui/UiCard.vue';
@@ -22,8 +23,22 @@ type EligibleDay = {
     available_hours: number;
 };
 
+type ApprovalPreview = {
+    first_approver: { id: number; name: string; staff_id: string } | null;
+    goes_directly_to_hr: boolean;
+    steps: Array<{
+        key: string;
+        label: string;
+        status: string;
+        approver: { id: number; name: string; staff_id: string } | null;
+        skip_reason: string | null;
+    }>;
+    hint: string | null;
+};
+
 const props = defineProps<{
     approver: { id: number; name: string; staff_id: string } | null;
+    approvalPreview?: ApprovalPreview | null;
     eligibleDays: EligibleDay[];
     request: {
         overtime_date: string;
@@ -127,15 +142,8 @@ function submit() {
                         </p>
                     </div>
 
-                    <div class="md:col-span-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm dark:border-slate-700 dark:bg-surface-elevated">
-                        <p class="font-medium text-slate-700 dark:text-slate-300">First structure approver</p>
-                        <p class="mt-1 text-slate-600 dark:text-slate-400">
-                            {{
-                                approver
-                                    ? `${approver.name} (${approver.staff_id})`
-                                    : 'No structure approver found — request will go directly to HR'
-                            }}
-                        </p>
+                    <div class="md:col-span-2">
+                        <ApprovalRoutePreview :preview="approvalPreview ?? null" :fallback-approver="approver" />
                     </div>
                 </div>
 

@@ -30,6 +30,8 @@ class CompanyStructureService
                 'group',
                 'headGrades',
                 'levels.grades',
+                'leaveApprovalTemplate:id,name,kind',
+                'overtimeApprovalTemplate:id,name,kind',
             ])
             ->orderBy('sort_order')
             ->orderBy('name')
@@ -638,6 +640,14 @@ class CompanyStructureService
                         'id' => $grade->id,
                         'label' => $grade->label(),
                     ])->values()->all(),
+                    'leave_approval_template_id' => $node->leave_approval_template_id
+                        ? (int) $node->leave_approval_template_id
+                        : null,
+                    'overtime_approval_template_id' => $node->overtime_approval_template_id
+                        ? (int) $node->overtime_approval_template_id
+                        : null,
+                    'leave_approval_template_name' => $node->leaveApprovalTemplate?->name,
+                    'overtime_approval_template_name' => $node->overtimeApprovalTemplate?->name,
                     'heads' => $heads,
                     'is_active' => $node->is_active,
                     'sort_order' => $node->sort_order,

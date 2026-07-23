@@ -22,4 +22,12 @@ enum ApprovalWorkflowKind: string
             self::Overtime => 'overtime_approval_workflow',
         };
     }
+
+    public function templateColumn(): string
+    {
+        return match ($this) {
+            self::Leave => 'leave_approval_template_id',
+            self::Overtime => 'overtime_approval_template_id',
+        };
+    }
 }

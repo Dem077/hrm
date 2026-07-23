@@ -101,6 +101,8 @@ const departmentOptions = computed(() => {
 });
 
 const filteredRows = computed(() => {
+    const needle = searchText.value.trim().toLowerCase();
+
     return props.rows.filter((row) => {
         const bank = row.bank_name?.trim() || 'No bank';
         const department = row.department?.trim() || 'No department';
@@ -113,7 +115,25 @@ const filteredRows = computed(() => {
             return false;
         }
 
-        return true;
+        if (needle === '') {
+            return true;
+        }
+
+        const haystack = [
+            row.employee_name,
+            row.staff_id,
+            row.national_id,
+            row.bank_name,
+            row.account_name,
+            row.account_no,
+            row.department,
+            row.designation,
+        ]
+            .filter(Boolean)
+            .join(' ')
+            .toLowerCase();
+
+        return haystack.includes(needle);
     });
 });
 
@@ -149,10 +169,17 @@ const allFilteredSelected = computed(() => {
     return filteredIds.value.every((id) => selectedIds.value.includes(id));
 });
 
+const selectedOutsideFiltersCount = computed(() => {
+    const visible = new Set(filteredIds.value);
+
+    return selectedIds.value.filter((id) => !visible.has(id)).length;
+});
+
 const canBulkAdjust = computed(
     () => props.can_edit && can('payroll.adjust') && selectedIds.value.length > 0,
 );
 
+// Only drop selections when employees leave the payroll run entirely (not when filters hide them).
 watch(
     () => props.rows,
     (rows) => {
@@ -212,15 +239,8 @@ function formatAuditContext(log: AuditLog): string | null {
     return parts.length > 0 ? parts.join(' · ') : null;
 }
 
-function applySearch(): void {
-    router.get(
-        `/payroll/${props.selectedRun.id}`,
-        { q: searchText.value || undefined },
-        { preserveState: true, replace: true },
-    );
-}
-
 function clearLocalFilters(): void {
+    searchText.value = '';
     bankFilter.value = '';
     departmentFilter.value = '';
 }
@@ -389,9 +409,8 @@ const exportUrl = computed(() => `/payroll/${props.selectedRun.id}/export`);
                         {{ department }}
                     </option>
                 </UiSelect>
-                <UiButton variant="secondary" @click="applySearch">Search</UiButton>
                 <UiButton
-                    v-if="bankFilter || departmentFilter"
+                    v-if="searchText || bankFilter || departmentFilter"
                     variant="ghost"
                     @click="clearLocalFilters"
                 >
@@ -415,6 +434,9 @@ const exportUrl = computed(() => `/payroll/${props.selectedRun.id}/export`);
                     </label>
                     <span v-if="selectedIds.length" class="text-slate-500">
                         {{ selectedIds.length }} selected
+                        <template v-if="selectedOutsideFiltersCount">
+                            · {{ selectedOutsideFiltersCount }} outside current filters
+                        </template>
                     </span>
                 </div>
                 <div class="flex flex-wrap items-center gap-2">

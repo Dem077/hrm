@@ -16,6 +16,7 @@ import MoveNodeModal from '@/pages/CompanyStructure/components/MoveNodeModal.vue
 import NodeTree from '@/pages/CompanyStructure/components/NodeTree.vue';
 import StructureFormModal from '@/pages/CompanyStructure/components/StructureFormModal.vue';
 import type {
+    ApprovalTemplateOption,
     StructureGrade,
     StructureGroup,
     StructureLevel,
@@ -24,6 +25,7 @@ import type {
 
 const props = defineProps<{
     groups: StructureGroup[];
+    approvalTemplates?: ApprovalTemplateOption[];
     importPreview?: ImportPreview | null;
     importFileName?: string | null;
 }>();
@@ -292,6 +294,7 @@ function openEditGrade(grade: StructureGrade, level: StructureLevel) {
             :level="modalLevel"
             :grade="modalGrade"
             :groups="props.groups"
+            :approval-templates="props.approvalTemplates ?? []"
             @close="closeModal"
         />
 

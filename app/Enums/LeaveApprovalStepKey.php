@@ -24,10 +24,10 @@ enum LeaveApprovalStepKey: string
     public function description(): string
     {
         return match ($this) {
-            self::DirectManager => 'Employee’s assigned direct manager, when set.',
-            self::UnitSection => 'Head of the employee’s unit or section in the company structure.',
-            self::Department => 'Head of the employee’s department (or parent department).',
-            self::Division => 'Head of the employee’s division.',
+            self::DirectManager => 'Bypass: if the employee has a direct manager, approval goes to that manager then HR (structure head steps are skipped).',
+            self::UnitSection => 'Head of the employee’s unit or section in the company structure. Used when no direct manager is assigned.',
+            self::Department => 'Head of the employee’s department (or parent department). Used when no direct manager is assigned.',
+            self::Division => 'Head of the employee’s division. Used when no direct manager is assigned.',
             self::Hr => 'Always last. Final approval by Human Resources.',
         };
     }

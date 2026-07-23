@@ -35,8 +35,7 @@ class PayrollController extends Controller
 
     public function show(Request $request, PayrollRun $payroll_run, PayrollRunService $payrollRunService): Response
     {
-        $search = $request->string('q')->toString();
-        $detail = $payrollRunService->detailPayload($payroll_run, $search);
+        $detail = $payrollRunService->detailPayload($payroll_run);
 
         return Inertia::render('Payroll/Show', [
             'selectedRun' => $detail['run'],
@@ -44,7 +43,7 @@ class PayrollController extends Controller
             'bankTotals' => $detail['bank_totals'],
             'can_edit' => $detail['can_edit'],
             'filters' => [
-                'q' => $search,
+                'q' => $request->string('q')->toString(),
             ],
         ]);
     }

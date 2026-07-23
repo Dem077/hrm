@@ -52,12 +52,29 @@ export type StructureNode = {
     description: string | null;
     head_grade_ids: number[];
     head_grades: { id: number; label: string }[];
+    leave_approval_template_id?: number | null;
+    overtime_approval_template_id?: number | null;
+    leave_approval_template_name?: string | null;
+    overtime_approval_template_name?: string | null;
     heads?: StructureHead[];
     is_active: boolean;
     sort_order: number;
     allowed_child_codes?: string[];
     levels: StructureLevel[];
     children: StructureNode[];
+};
+
+export type ApprovalTemplateOption = {
+    id: number;
+    kind: 'leave' | 'overtime';
+    name: string;
+    description?: string | null;
+    steps_summary?: string;
+    steps?: Array<{
+        key: string;
+        label: string;
+        enabled: boolean;
+    }>;
 };
 
 export type StructureGroup = {

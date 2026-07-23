@@ -412,9 +412,18 @@ Route::middleware('auth')->group(function () {
         Route::put('attendance-settings/leave-approval-workflow', [AttendanceSettingController::class, 'updateLeaveApprovalWorkflow'])
             ->middleware('permission:attendance-settings.leave-workflow.update')
             ->name('attendance-settings.leave-workflow.update');
-        Route::put('attendance-settings/approval-workflows', [AttendanceSettingController::class, 'updateApprovalWorkflow'])
+        Route::post('attendance-settings/approval-templates', [AttendanceSettingController::class, 'storeApprovalTemplate'])
             ->middleware('permission:attendance-settings.leave-workflow.update')
-            ->name('attendance-settings.approval-workflows.update');
+            ->name('attendance-settings.approval-templates.store');
+        Route::put('attendance-settings/approval-templates/{approvalTemplate}', [AttendanceSettingController::class, 'updateApprovalTemplate'])
+            ->middleware('permission:attendance-settings.leave-workflow.update')
+            ->name('attendance-settings.approval-templates.update');
+        Route::delete('attendance-settings/approval-templates/{approvalTemplate}', [AttendanceSettingController::class, 'destroyApprovalTemplate'])
+            ->middleware('permission:attendance-settings.leave-workflow.update')
+            ->name('attendance-settings.approval-templates.destroy');
+        Route::put('attendance-settings/approval-template-defaults', [AttendanceSettingController::class, 'updateCompanyDefaultApprovalTemplates'])
+            ->middleware('permission:attendance-settings.leave-workflow.update')
+            ->name('attendance-settings.approval-template-defaults.update');
         Route::post('attendance-settings/banks', [BankController::class, 'store'])
             ->middleware('permission:attendance-settings.payroll-period.update')
             ->name('attendance-settings.banks.store');

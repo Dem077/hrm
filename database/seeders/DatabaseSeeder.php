@@ -17,6 +17,10 @@ class DatabaseSeeder extends Seeder
         $this->call([
             RolesAndPermissionsSeeder::class,
             CompanyStructureSeeder::class,
+            // Optional demo data (keeps existing employees; uses DEMO### staff IDs):
+            // DummyCompanyStructureSeeder::class,
+            // DummyEmployeesAndPunchesSeeder::class,
+            // DummyPayrollStructureSeeder::class,
         ]);
     }
 }

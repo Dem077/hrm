@@ -4,6 +4,7 @@ import { computed } from 'vue';
 
 import LeavePunchConflictDialog from '@/components/leave/LeavePunchConflictDialog.vue';
 import LeaveBalanceHint from '@/components/leave/LeaveBalanceHint.vue';
+import ApprovalRoutePreview from '@/components/approvals/ApprovalRoutePreview.vue';
 import PageHeader from '@/components/ui/PageHeader.vue';
 import UiAlert from '@/components/ui/UiAlert.vue';
 import UiButton from '@/components/ui/UiButton.vue';
@@ -14,9 +15,23 @@ import AppLayout from '@/layouts/AppLayout.vue';
 import { useLeavePunchConfirmation } from '@/composables/useLeavePunchConfirmation';
 import type { LeaveTypeOption } from '@/types/leave';
 
+type ApprovalPreview = {
+    first_approver: { id: number; name: string; staff_id: string } | null;
+    goes_directly_to_hr: boolean;
+    steps: Array<{
+        key: string;
+        label: string;
+        status: string;
+        approver: { id: number; name: string; staff_id: string } | null;
+        skip_reason: string | null;
+    }>;
+    hint: string | null;
+};
+
 const props = defineProps<{
     leaveTypes: LeaveTypeOption[];
     approver: { id: number; name: string; staff_id: string } | null;
+    approvalPreview?: ApprovalPreview | null;
     request: {
         leave_type_id: string | number;
         start_date: string;
@@ -98,18 +113,8 @@ function confirmPunchOverlap() {
                     <LeaveBalanceHint :leave-type="selectedLeaveType" />
                     <UiInput v-model="form.start_date" label="Start date" type="date" required :error="form.errors.start_date" />
                     <UiInput v-model="form.end_date" label="End date" type="date" required :error="form.errors.end_date" />
-                    <div class="md:col-span-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm dark:border-slate-700 dark:bg-surface-elevated">
-                        <p class="font-medium text-slate-700 dark:text-slate-300">First structure approver</p>
-                        <p class="mt-1 text-slate-600 dark:text-slate-400">
-                            {{
-                                approver
-                                    ? `${approver.name} (${approver.staff_id})`
-                                    : 'No structure approver found — request will go directly to HR'
-                            }}
-                        </p>
-                        <p class="mt-1 text-xs text-slate-500">
-                            After structure approvals, HR always gives the final decision.
-                        </p>
+                    <div class="md:col-span-2">
+                        <ApprovalRoutePreview :preview="approvalPreview ?? null" :fallback-approver="approver" />
                     </div>
                 </div>
 

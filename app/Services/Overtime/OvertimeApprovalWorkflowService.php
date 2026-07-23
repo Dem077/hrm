@@ -105,6 +105,7 @@ class OvertimeApprovalWorkflowService
         $approver = $this->leaveApprovalWorkflowService->resolveStepApprover(
             $overtimeRequest->employee,
             $step->step_key,
+            ApprovalWorkflowKind::Overtime,
         );
 
         if ($approver === null) {

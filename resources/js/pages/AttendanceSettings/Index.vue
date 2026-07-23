@@ -11,8 +11,8 @@ import { usePermissions } from '@/composables/usePermissions';
 import AppLayout from '@/layouts/AppLayout.vue';
 import BanksCard from '@/pages/AttendanceSettings/components/BanksCard.vue';
 import type { BankRow } from '@/pages/AttendanceSettings/components/BanksCard.vue';
-import BranchApprovalWorkflowsCard from '@/pages/AttendanceSettings/components/BranchApprovalWorkflowsCard.vue';
-import type { ApprovalWorkflowsPayload } from '@/pages/AttendanceSettings/components/BranchApprovalWorkflowsCard.vue';
+import ApprovalTemplatesCard from '@/pages/AttendanceSettings/components/ApprovalTemplatesCard.vue';
+import type { ApprovalTemplatesPayload } from '@/pages/AttendanceSettings/components/ApprovalTemplatesCard.vue';
 import { formatDate } from '@/lib/format';
 import type { AttendanceDutyPolicy, PayrollPeriodSettings, PublicHoliday } from '@/types/attendance';
 
@@ -20,7 +20,7 @@ type SettingsTab = 'payroll' | 'leave' | 'approvals' | 'duty' | 'holidays';
 
 const props = defineProps<{
     leaveCarryForwardEnabled: boolean;
-    approvalWorkflows: ApprovalWorkflowsPayload;
+    approvalTemplates: ApprovalTemplatesPayload;
     banks: BankRow[];
     policies: AttendanceDutyPolicy[];
     tempPolicies: AttendanceDutyPolicy[];
@@ -393,7 +393,7 @@ function payrollEndLabel(startDay: number, endDay: number | null): string {
             </div>
 
             <div v-show="activeTab === 'approvals'" class="space-y-6">
-                <BranchApprovalWorkflowsCard :approval-workflows="approvalWorkflows" />
+                <ApprovalTemplatesCard :approval-templates="approvalTemplates" />
             </div>
 
             <div v-show="activeTab === 'duty'">
