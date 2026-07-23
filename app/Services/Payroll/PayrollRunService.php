@@ -16,6 +16,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
+use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -394,39 +395,92 @@ class PayrollRunService
     {
         $run->loadMissing('items');
 
-        $spreadsheet = new Spreadsheet;
-        $sheet = $spreadsheet->getActiveSheet();
-        $sheet->setTitle('Payroll');
-        $sheet->fromArray([
+        $componentNames = [];
+        foreach ($run->items as $item) {
+            foreach ($item->details ?? [] as $detail) {
+                if (! is_array($detail)) {
+                    continue;
+                }
+
+                $name = trim((string) ($detail['component'] ?? ''));
+                if ($name === '' || in_array($name, $componentNames, true)) {
+                    continue;
+                }
+
+                $componentNames[] = $name;
+            }
+        }
+
+        $headers = [
             'Staff ID',
             'Employee',
+            'National ID',
             'Department',
             'Designation',
+            'Bank',
+            'Account Name',
+            'Account No',
             'Days Attended',
             'Hours Worked',
+            ...$componentNames,
+            'Manual Additions',
+            'Manual Deductions',
             'Gross',
             'Deductions',
             'Net',
-        ], null, 'A1');
+        ];
+
+        $spreadsheet = new Spreadsheet;
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setTitle('Payroll');
+        $sheet->fromArray($headers, null, 'A1');
 
         $rowNum = 2;
         foreach ($run->items as $item) {
-            $sheet->fromArray([
+            $amountsByComponent = [];
+            foreach ($item->details ?? [] as $detail) {
+                if (! is_array($detail)) {
+                    continue;
+                }
+
+                $name = trim((string) ($detail['component'] ?? ''));
+                if ($name === '') {
+                    continue;
+                }
+
+                $amountsByComponent[$name] = round((float) ($detail['amount'] ?? 0), 2);
+            }
+
+            $row = [
                 $item->staff_id,
                 $item->employee_name,
+                $item->national_id ?? '—',
                 $item->department_name ?? '—',
                 $item->designation_name ?? '—',
+                $item->bank_name ?? '—',
+                $item->account_name ?? '—',
+                $item->account_no ?? '—',
                 $item->days_attended,
                 $item->hours_worked,
-                $item->gross,
-                $item->deductions,
-                $item->net,
-            ], null, 'A'.$rowNum);
+            ];
+
+            foreach ($componentNames as $componentName) {
+                $row[] = $amountsByComponent[$componentName] ?? 0;
+            }
+
+            $row[] = round((float) $item->manual_additions, 2);
+            $row[] = round((float) $item->manual_deductions, 2);
+            $row[] = round((float) $item->gross, 2);
+            $row[] = round((float) $item->deductions, 2);
+            $row[] = round((float) $item->net, 2);
+
+            $sheet->fromArray($row, null, 'A'.$rowNum);
             $rowNum++;
         }
 
-        foreach (range('A', 'I') as $column) {
-            $sheet->getColumnDimension($column)->setAutoSize(true);
+        $lastColumnIndex = count($headers);
+        for ($columnIndex = 1; $columnIndex <= $lastColumnIndex; $columnIndex++) {
+            $sheet->getColumnDimension(Coordinate::stringFromColumnIndex($columnIndex))->setAutoSize(true);
         }
 
         $writer = new Xlsx($spreadsheet);
