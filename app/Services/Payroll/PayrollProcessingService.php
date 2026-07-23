@@ -9,6 +9,7 @@ use App\Models\Employee;
 use App\Models\PayrollComponent;
 use App\Services\Attendance\AttendanceSheetService;
 use App\Services\Attendance\PayrollPeriodService;
+use App\Services\Overtime\OvertimeRequestService;
 use Carbon\CarbonInterface;
 use Illuminate\Validation\ValidationException;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
@@ -21,6 +22,7 @@ class PayrollProcessingService
         private readonly AttendanceSheetService $attendanceSheetService,
         private readonly PayrollPeriodService $payrollPeriodService,
         private readonly PayrollFormulaEvaluator $formulaEvaluator,
+        private readonly OvertimeRequestService $overtimeRequestService,
     ) {}
 
     /**
@@ -95,6 +97,7 @@ class PayrollProcessingService
             $lateMinutes = (int) ($summary['late_minutes'] ?? 0);
             $absentDays = (int) ($summary['absent_days'] ?? 0);
             $presentDays = (int) ($summary['present_days'] ?? $daysAttended);
+            $overtimeHours = $this->overtimeRequestService->approvedHoursInPeriod($employee->id, $from, $to);
 
             $components = $employee->grade?->payrollComponents ?? collect();
             $basicSalary = (float) ($components
@@ -107,6 +110,7 @@ class PayrollProcessingService
                 $to,
                 $attendanceRows->all(),
                 $basicSalary,
+                $overtimeHours,
             );
 
             $gross = 0.0;
@@ -129,6 +133,11 @@ class PayrollProcessingService
                     PayrollComponentCalculationMethod::PerAbsentDay => round($rate * $absentDays, 2),
                     PayrollComponentCalculationMethod::PerAbsentDayOfBasic => round(
                         ($basicSalary * ($rate / 100)) * $absentDays,
+                        2,
+                    ),
+                    PayrollComponentCalculationMethod::PerOvertimeHour => round($rate * $overtimeHours, 2),
+                    PayrollComponentCalculationMethod::PerOvertimeHourOfBasic => round(
+                        ($basicSalary * ($rate / 100)) * $overtimeHours,
                         2,
                     ),
                     PayrollComponentCalculationMethod::CustomFormula => $this->safeEvaluateFormula(
@@ -168,6 +177,7 @@ class PayrollProcessingService
                         $hoursWorked,
                         $lateMinutes,
                         $absentDays,
+                        $overtimeHours,
                         $basicSalary,
                         $formulaVariables,
                         $component->calculation_formula,
@@ -180,6 +190,7 @@ class PayrollProcessingService
                         $hoursWorked,
                         $lateMinutes,
                         $absentDays,
+                        $overtimeHours,
                         $basicSalary,
                         $component->calculation_formula,
                     ),
@@ -288,6 +299,7 @@ class PayrollProcessingService
      *     basic_salary: float,
      *     hours_worked: float,
      *     additional_hours_worked: float,
+     *     overtime_hours: float,
      *     working_days: int,
      *     total_days_of_payroll: int
      * }
@@ -297,6 +309,7 @@ class PayrollProcessingService
         CarbonInterface $to,
         array $attendanceRows,
         float $basicSalary,
+        float $overtimeHours = 0,
     ): array {
         if ($to->lt($from)) {
             [$from, $to] = [$to, $from];
@@ -329,6 +342,7 @@ class PayrollProcessingService
             'basic_salary' => round($basicSalary, 2),
             'hours_worked' => $hoursWorked,
             'additional_hours_worked' => $this->additionalHoursWorked($rows),
+            'overtime_hours' => round($overtimeHours, 2),
             'working_days' => $workingDays,
             'total_days_of_payroll' => $totalDaysOfPayroll,
         ];
@@ -361,6 +375,7 @@ class PayrollProcessingService
         float $hoursWorked,
         int $lateMinutes,
         int $absentDays,
+        float $overtimeHours,
         float $basicSalary,
         array $formulaVariables,
         ?string $formula = null,
@@ -395,6 +410,15 @@ class PayrollProcessingService
                 ['key' => 'rate', 'label' => '% of basic / absent day', 'value' => $rate],
                 ['key' => 'absent_days', 'label' => 'Absent days', 'value' => $absentDays],
             ],
+            PayrollComponentCalculationMethod::PerOvertimeHour => [
+                ['key' => 'rate', 'label' => 'Rate / overtime hour', 'value' => $rate],
+                ['key' => 'overtime_hours', 'label' => 'Approved overtime hours', 'value' => $overtimeHours],
+            ],
+            PayrollComponentCalculationMethod::PerOvertimeHourOfBasic => [
+                ['key' => 'basic_salary', 'label' => 'Basic salary', 'value' => $basicSalary],
+                ['key' => 'rate', 'label' => '% of basic / overtime hour', 'value' => $rate],
+                ['key' => 'overtime_hours', 'label' => 'Approved overtime hours', 'value' => $overtimeHours],
+            ],
             PayrollComponentCalculationMethod::CustomFormula => $this->customFormulaInputs(
                 (string) $formula,
                 $formulaVariables,
@@ -418,6 +442,7 @@ class PayrollProcessingService
                     'basic_salary' => 'Basic salary',
                     'hours_worked' => 'Hours worked',
                     'additional_hours_worked' => 'Additional hours worked',
+                    'overtime_hours' => 'Approved overtime hours',
                     'working_days' => 'Number of working days',
                     'total_days_of_payroll' => 'Total days of payroll',
                     default => str_replace('_', ' ', $key),
@@ -442,6 +467,7 @@ class PayrollProcessingService
         float $hoursWorked,
         int $lateMinutes,
         int $absentDays,
+        float $overtimeHours,
         float $basicSalary,
         ?string $formula,
     ): string {
@@ -458,6 +484,8 @@ class PayrollProcessingService
             PayrollComponentCalculationMethod::PerLateMinuteOfBasic => "({$money($basicSalary)} × {$qty($rate)}%) × {$qty($lateMinutes)} late minutes = {$money($amount)}",
             PayrollComponentCalculationMethod::PerAbsentDay => "{$money($rate)} × {$qty($absentDays)} absent days = {$money($amount)}",
             PayrollComponentCalculationMethod::PerAbsentDayOfBasic => "({$money($basicSalary)} × {$qty($rate)}%) × {$qty($absentDays)} absent days = {$money($amount)}",
+            PayrollComponentCalculationMethod::PerOvertimeHour => "{$money($rate)} × {$qty($overtimeHours)} overtime hours = {$money($amount)}",
+            PayrollComponentCalculationMethod::PerOvertimeHourOfBasic => "({$money($basicSalary)} × {$qty($rate)}%) × {$qty($overtimeHours)} overtime hours = {$money($amount)}",
             PayrollComponentCalculationMethod::CustomFormula => trim((string) $formula) !== ''
                 ? "Formula ({$formula}) = {$money($amount)}"
                 : "Custom formula = {$money($amount)}",

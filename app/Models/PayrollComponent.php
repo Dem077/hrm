@@ -28,6 +28,8 @@ class PayrollComponent extends Model
 
     public const ABSENT_FEE_CODE = 'absent_fee';
 
+    public const OVERTIME_CODE = 'overtime';
+
     /**
      * @return list<string>
      */
@@ -37,6 +39,7 @@ class PayrollComponent extends Model
             self::BASIC_SALARY_CODE,
             self::LATE_FINE_CODE,
             self::ABSENT_FEE_CODE,
+            self::OVERTIME_CODE,
         ];
     }
 
@@ -67,7 +70,7 @@ class PayrollComponent extends Model
     public function usesGlobalRate(): bool
     {
         return $this->calculation_method->usesGlobalRate()
-            || in_array($this->code, [self::LATE_FINE_CODE, self::ABSENT_FEE_CODE], true);
+            || in_array($this->code, [self::LATE_FINE_CODE, self::ABSENT_FEE_CODE, self::OVERTIME_CODE], true);
     }
 
     /**
@@ -78,6 +81,7 @@ class PayrollComponent extends Model
         return match ($this->code) {
             self::LATE_FINE_CODE => PayrollComponentCalculationMethod::lateFineOptions(),
             self::ABSENT_FEE_CODE => PayrollComponentCalculationMethod::absentFeeOptions(),
+            self::OVERTIME_CODE => PayrollComponentCalculationMethod::overtimeOptions(),
             default => [],
         };
     }
@@ -140,7 +144,8 @@ class PayrollComponent extends Model
             'amount_label' => $this->calculation_method->amountLabel(),
             'global_rate' => $this->usesGlobalRate() ? (float) ($this->global_rate ?? 0) : null,
             'calculation_formula' => $this->calculation_formula,
-            'uses_global_rate' => $this->usesGlobalRate() || in_array($this->code, [self::LATE_FINE_CODE, self::ABSENT_FEE_CODE], true),
+            'uses_global_rate' => $this->usesGlobalRate()
+                || in_array($this->code, [self::LATE_FINE_CODE, self::ABSENT_FEE_CODE, self::OVERTIME_CODE], true),
             'is_percentage_rate' => $this->calculation_method->isPercentageOfBasicSalary(),
             'is_custom_formula' => $this->calculation_method->isCustomFormula(),
             'allowed_calculation_methods' => PayrollComponentCalculationMethod::optionsPayload(

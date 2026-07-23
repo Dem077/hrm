@@ -34,8 +34,21 @@ class StoreStructureGradeRequest extends FormRequest
         return [
             'grade' => ['required', 'string', 'max:50'],
             'title' => ['required', 'string', 'max:255'],
+            'requirements' => ['required', 'string', 'max:50000', $this->nonEmptyHtmlRule('requirements')],
+            'job_description' => ['nullable', 'string', 'max:100000'],
             'is_active' => ['boolean'],
             'sort_order' => ['nullable', 'integer', 'min:0'],
         ];
+    }
+
+    protected function nonEmptyHtmlRule(string $attribute): \Closure
+    {
+        return function (string $attr, mixed $value, \Closure $fail) use ($attribute): void {
+            $text = trim(html_entity_decode(strip_tags((string) $value)));
+
+            if ($text === '') {
+                $fail("The {$attribute} field is required.");
+            }
+        };
     }
 }

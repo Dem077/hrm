@@ -16,6 +16,7 @@ class PayrollFormulaEvaluator
         'basic_salary',
         'hours_worked',
         'additional_hours_worked',
+        'overtime_hours',
         'working_days',
         'total_days_of_payroll',
     ];
@@ -32,6 +33,7 @@ class PayrollFormulaEvaluator
             ['value' => 'basic_salary', 'label' => 'Basic salary'],
             ['value' => 'hours_worked', 'label' => 'Hours worked'],
             ['value' => 'additional_hours_worked', 'label' => 'Additional hours worked'],
+            ['value' => 'overtime_hours', 'label' => 'Approved overtime hours'],
             ['value' => 'working_days', 'label' => 'Number of working days'],
             ['value' => 'total_days_of_payroll', 'label' => 'Total days of payroll'],
         ];

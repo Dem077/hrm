@@ -7,10 +7,10 @@ import UiButton from '@/components/ui/UiButton.vue';
 import UiCard from '@/components/ui/UiCard.vue';
 import AppLayout from '@/layouts/AppLayout.vue';
 import { formatDate, formatDateTime } from '@/lib/format';
-import type { LeaveRequestItem } from '@/types/leave';
+import type { OvertimeRequestItem } from '@/types/overtime';
 
 const props = defineProps<{
-    leaveRequest: LeaveRequestItem;
+    overtimeRequest: OvertimeRequestItem;
     canApprove: boolean;
     canApproveHr: boolean;
     canCancel: boolean;
@@ -21,34 +21,42 @@ const reviewForm = useForm({
 });
 
 function approve() {
-    reviewForm.post(`/leave-requests/${props.leaveRequest.id}/approve`, { preserveScroll: true });
+    reviewForm.post(`/overtime-requests/${props.overtimeRequest.id}/approve`, { preserveScroll: true });
 }
 
 function reject() {
-    if (!confirm('Reject this leave request?')) {
+    if (!confirm('Reject this overtime request?')) {
         return;
     }
 
-    reviewForm.post(`/leave-requests/${props.leaveRequest.id}/reject`, { preserveScroll: true });
+    reviewForm.post(`/overtime-requests/${props.overtimeRequest.id}/reject`, { preserveScroll: true });
 }
 
 function cancelRequest() {
-    if (!confirm('Cancel this leave request?')) {
+    if (!confirm('Cancel this overtime request?')) {
         return;
     }
 
-    router.post(`/leave-requests/${props.leaveRequest.id}/cancel`, {}, { preserveScroll: true });
+    router.post(`/overtime-requests/${props.overtimeRequest.id}/cancel`, {}, { preserveScroll: true });
+}
+
+function timeRange(request: OvertimeRequestItem): string {
+    if (request.start_time && request.end_time) {
+        return `${request.start_time} – ${request.end_time}`;
+    }
+
+    return '—';
 }
 </script>
 
 <template>
-    <Head :title="leaveRequest.record_number" />
+    <Head :title="overtimeRequest.record_number" />
 
     <AppLayout>
-        <PageHeader :title="leaveRequest.record_number" :description="leaveRequest.leave_type?.name ?? 'Leave request'">
+        <PageHeader :title="overtimeRequest.record_number" description="Overtime request">
             <template #actions>
-                <UiBadge :label="leaveRequest.status_label" :color="leaveRequest.status_color" />
-                <UiButton href="/leave-requests" variant="ghost">Back</UiButton>
+                <UiBadge :label="overtimeRequest.status_label" :color="overtimeRequest.status_color" />
+                <UiButton href="/overtime-requests" variant="ghost">Back</UiButton>
             </template>
         </PageHeader>
 
@@ -57,55 +65,45 @@ function cancelRequest() {
                 <dl class="space-y-4 text-sm">
                     <div class="flex justify-between gap-4 border-b border-slate-100 pb-3 dark:border-slate-800">
                         <dt class="text-slate-500">Record number</dt>
-                        <dd class="font-mono font-medium text-slate-900 dark:text-slate-100">{{ leaveRequest.record_number }}</dd>
+                        <dd class="font-mono font-medium text-slate-900 dark:text-slate-100">{{ overtimeRequest.record_number }}</dd>
                     </div>
                     <div class="flex justify-between gap-4 border-b border-slate-100 pb-3 dark:border-slate-800">
                         <dt class="text-slate-500">Employee</dt>
                         <dd class="text-right font-medium text-slate-900 dark:text-slate-100">
-                            {{ leaveRequest.employee?.name }} ({{ leaveRequest.employee?.staff_id }})
+                            {{ overtimeRequest.employee?.name }} ({{ overtimeRequest.employee?.staff_id }})
                         </dd>
                     </div>
                     <div class="flex justify-between gap-4 border-b border-slate-100 pb-3 dark:border-slate-800">
                         <dt class="text-slate-500">Department</dt>
-                        <dd class="font-medium text-slate-900 dark:text-slate-100">{{ leaveRequest.employee?.department?.name ?? '—' }}</dd>
+                        <dd class="font-medium text-slate-900 dark:text-slate-100">{{ overtimeRequest.employee?.department?.name ?? '—' }}</dd>
                     </div>
                     <div class="flex justify-between gap-4 border-b border-slate-100 pb-3 dark:border-slate-800">
-                        <dt class="text-slate-500">Leave type</dt>
-                        <dd class="font-medium text-slate-900 dark:text-slate-100">{{ leaveRequest.leave_type?.name }}</dd>
+                        <dt class="text-slate-500">Date</dt>
+                        <dd class="font-medium text-slate-900 dark:text-slate-100">{{ formatDate(overtimeRequest.overtime_date) }}</dd>
                     </div>
                     <div class="flex justify-between gap-4 border-b border-slate-100 pb-3 dark:border-slate-800">
-                        <dt class="text-slate-500">Dates</dt>
-                        <dd class="font-medium text-slate-900 dark:text-slate-100">
-                            {{ formatDate(leaveRequest.start_date) }} – {{ formatDate(leaveRequest.end_date) }}
-                        </dd>
+                        <dt class="text-slate-500">Time</dt>
+                        <dd class="font-medium text-slate-900 dark:text-slate-100">{{ timeRange(overtimeRequest) }}</dd>
                     </div>
                     <div class="flex justify-between gap-4 border-b border-slate-100 pb-3 dark:border-slate-800">
-                        <dt class="text-slate-500">Days</dt>
-                        <dd class="font-medium text-slate-900 dark:text-slate-100">{{ leaveRequest.days_count }}</dd>
+                        <dt class="text-slate-500">Hours</dt>
+                        <dd class="font-medium text-slate-900 dark:text-slate-100">{{ overtimeRequest.hours }}</dd>
                     </div>
                     <div class="flex justify-between gap-4 border-b border-slate-100 pb-3 dark:border-slate-800">
                         <dt class="text-slate-500">Current approver</dt>
-                        <dd class="font-medium text-slate-900 dark:text-slate-100">{{ leaveRequest.approver_label ?? leaveRequest.approver?.name ?? '—' }}</dd>
+                        <dd class="font-medium text-slate-900 dark:text-slate-100">{{ overtimeRequest.approver_label ?? overtimeRequest.approver?.name ?? '—' }}</dd>
                     </div>
                     <div>
                         <dt class="text-slate-500">Reason</dt>
-                        <dd class="mt-2 whitespace-pre-wrap text-slate-800 dark:text-slate-200">{{ leaveRequest.reason }}</dd>
-                    </div>
-                    <div v-if="leaveRequest.document_url" class="border-t border-slate-100 pt-3 dark:border-slate-800">
-                        <dt class="text-slate-500">Supporting document</dt>
-                        <dd class="mt-2">
-                            <a :href="leaveRequest.document_url" target="_blank" class="text-brand-600 hover:underline dark:text-brand-400">
-                                View uploaded document
-                            </a>
-                        </dd>
+                        <dd class="mt-2 whitespace-pre-wrap text-slate-800 dark:text-slate-200">{{ overtimeRequest.reason }}</dd>
                     </div>
                 </dl>
             </UiCard>
 
             <UiCard title="Approval workflow">
-                <ol v-if="leaveRequest.approval_steps?.length" class="space-y-3">
+                <ol v-if="overtimeRequest.approval_steps?.length" class="space-y-3">
                     <li
-                        v-for="step in leaveRequest.approval_steps"
+                        v-for="step in overtimeRequest.approval_steps"
                         :key="step.id"
                         class="rounded-xl border border-slate-200 px-4 py-3 text-sm dark:border-slate-700"
                     >
@@ -138,7 +136,7 @@ function cancelRequest() {
                     </li>
                 </ol>
                 <p v-else class="text-sm text-slate-500">
-                    Legacy request without a saved workflow timeline.
+                    No workflow timeline saved for this request.
                 </p>
             </UiCard>
 
@@ -146,23 +144,19 @@ function cancelRequest() {
                 <dl class="space-y-4 text-sm">
                     <div class="flex justify-between gap-4 border-b border-slate-100 pb-3 dark:border-slate-800">
                         <dt class="text-slate-500">Submitted</dt>
-                        <dd class="font-medium text-slate-900 dark:text-slate-100">{{ formatDateTime(leaveRequest.created_at) }}</dd>
-                    </div>
-                    <div class="flex justify-between gap-4 border-b border-slate-100 pb-3 dark:border-slate-800">
-                        <dt class="text-slate-500">Current approver</dt>
-                        <dd class="font-medium text-slate-900 dark:text-slate-100">{{ leaveRequest.approver_label ?? leaveRequest.approver?.name ?? '—' }}</dd>
+                        <dd class="font-medium text-slate-900 dark:text-slate-100">{{ formatDateTime(overtimeRequest.created_at) }}</dd>
                     </div>
                     <div class="flex justify-between gap-4 border-b border-slate-100 pb-3 dark:border-slate-800">
                         <dt class="text-slate-500">Latest structure review</dt>
-                        <dd class="font-medium text-slate-900 dark:text-slate-100">{{ leaveRequest.manager_reviewed_by?.name ?? '—' }}</dd>
+                        <dd class="font-medium text-slate-900 dark:text-slate-100">{{ overtimeRequest.manager_reviewed_by?.name ?? '—' }}</dd>
                     </div>
                     <div class="flex justify-between gap-4 border-b border-slate-100 pb-3 dark:border-slate-800">
                         <dt class="text-slate-500">HR reviewed by</dt>
-                        <dd class="font-medium text-slate-900 dark:text-slate-100">{{ leaveRequest.reviewed_by?.name ?? '—' }}</dd>
+                        <dd class="font-medium text-slate-900 dark:text-slate-100">{{ overtimeRequest.reviewed_by?.name ?? '—' }}</dd>
                     </div>
                     <div>
                         <dt class="text-slate-500">HR notes</dt>
-                        <dd class="mt-2 whitespace-pre-wrap text-slate-800 dark:text-slate-200">{{ leaveRequest.review_notes ?? '—' }}</dd>
+                        <dd class="mt-2 whitespace-pre-wrap text-slate-800 dark:text-slate-200">{{ overtimeRequest.review_notes ?? '—' }}</dd>
                     </div>
                 </dl>
 
@@ -172,7 +166,7 @@ function cancelRequest() {
                     @submit.prevent="approve"
                 >
                     <p v-if="canApproveHr" class="text-sm text-slate-600 dark:text-slate-400">
-                        Final HR approval — this will complete the leave request.
+                        Final HR approval — this will complete the overtime request and include hours in payroll.
                     </p>
                     <p v-else-if="canApprove" class="text-sm text-slate-600 dark:text-slate-400">
                         Structure approval — after this step, the request continues to the next configured approver or HR.

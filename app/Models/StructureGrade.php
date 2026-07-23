@@ -13,6 +13,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'structure_level_id',
     'grade',
     'title',
+    'requirements',
+    'job_description',
     'sort_order',
     'is_active',
 ])]

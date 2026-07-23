@@ -105,12 +105,6 @@ class LeaveRequestController extends Controller
             return back()->with('error', 'Your login account is not linked to an employee record.');
         }
 
-        $approver = $leaveService->resolveApprover($employee);
-
-        if (! $approver) {
-            return back()->with('error', 'No approver is assigned. Set a direct manager or department head on your employee profile.');
-        }
-
         $timezone = config('app.timezone', 'UTC');
         $startDate = Carbon::parse($request->validated('start_date'), $timezone)->startOfDay();
         $endDate = Carbon::parse($request->validated('end_date'), $timezone)->startOfDay();
@@ -130,12 +124,29 @@ class LeaveRequestController extends Controller
             'reason' => $request->string('reason')->toString(),
             'document_path' => $documentPath,
             'status' => LeaveRequestStatus::Pending,
-            'approver_employee_id' => $approver->id,
+            'approver_employee_id' => null,
         ]);
+
+        $firstApprover = app(\App\Services\Leave\LeaveApprovalWorkflowService::class)
+            ->initializeSteps($leaveRequest, $employee);
+
+        if ($firstApprover) {
+            $leaveRequest->update([
+                'status' => LeaveRequestStatus::Pending,
+                'approver_employee_id' => $firstApprover->id,
+            ]);
+            $successMessage = 'Leave request submitted. It will follow the company structure approval workflow, then HR.';
+        } else {
+            $leaveRequest->update([
+                'status' => LeaveRequestStatus::PendingHr,
+                'approver_employee_id' => null,
+            ]);
+            $successMessage = 'Leave request submitted and sent directly to HR for final approval.';
+        }
 
         return redirect()
             ->route('leave-requests.show', $leaveRequest)
-            ->with('success', 'Leave request submitted. It will go to your approver first, then HR.');
+            ->with('success', $successMessage);
     }
 
     public function checkPunches(Request $request, LeaveRequestService $leaveService): JsonResponse

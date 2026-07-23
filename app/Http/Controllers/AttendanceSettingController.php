@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Http\Requests\StoreAttendanceDutyPolicyRequest;
 use App\Http\Requests\StorePublicHolidayRequest;
 use App\Http\Requests\UpdateAttendanceDutyPolicyRequest;
+use App\Http\Requests\UpdateLeaveApprovalWorkflowRequest;
 use App\Http\Requests\UpdatePayrollPeriodRequest;
 use App\Http\Requests\UpdatePublicHolidayRequest;
 use App\Models\AppSetting;
@@ -12,21 +13,23 @@ use App\Models\AttendanceDutyPolicy;
 use App\Models\AttendanceGeneralSetting;
 use App\Models\Bank;
 use App\Models\PublicHoliday;
-use Illuminate\Http\Request;
 use App\Services\Attendance\PayrollPeriodService;
+use App\Services\Leave\LeaveApprovalWorkflowService;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class AttendanceSettingController extends Controller
 {
-    public function index(PayrollPeriodService $payrollPeriodService): Response
+    public function index(PayrollPeriodService $payrollPeriodService, LeaveApprovalWorkflowService $leaveApprovalWorkflowService): Response
     {
         $year = (int) request()->integer('year', now()->year);
         $settings = AttendanceGeneralSetting::current();
 
         return Inertia::render('AttendanceSettings/Index', [
             'leaveCarryForwardEnabled' => AppSetting::current()->leave_carry_forward_enabled,
+            'leaveApprovalWorkflow' => $leaveApprovalWorkflowService->presentation(),
             'banks' => Bank::query()
                 ->ordered()
                 ->get()
@@ -111,6 +114,15 @@ class AttendanceSettingController extends Controller
         ]);
 
         return back()->with('success', 'Leave carry-forward setting updated successfully.');
+    }
+
+    public function updateLeaveApprovalWorkflow(
+        UpdateLeaveApprovalWorkflowRequest $request,
+        LeaveApprovalWorkflowService $leaveApprovalWorkflowService,
+    ): RedirectResponse {
+        $leaveApprovalWorkflowService->save($request->validated('steps'));
+
+        return back()->with('success', 'Leave approval workflow updated successfully.');
     }
 
     public function storePolicy(StoreAttendanceDutyPolicyRequest $request): RedirectResponse

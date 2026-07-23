@@ -674,10 +674,68 @@ class CompanyStructureService
             'structure_level_id' => $grade->structure_level_id,
             'grade' => $grade->grade,
             'title' => $grade->title,
+            'requirements' => $grade->requirements,
+            'job_description' => $grade->job_description,
             'label' => $grade->label(),
             'sort_order' => $grade->sort_order,
             'is_active' => $grade->is_active,
         ];
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    public function designationsPayload(?string $query = null): array
+    {
+        $grades = StructureGrade::query()
+            ->with([
+                'level.group',
+                'level.node.group',
+                'level.node.parent.group',
+            ])
+            ->withCount('employees')
+            ->orderBy('grade')
+            ->orderBy('title')
+            ->get();
+
+        $rows = $grades->map(function (StructureGrade $grade) {
+            $path = $grade->resolvePath();
+
+            return [
+                'id' => $grade->id,
+                'grade' => $grade->grade,
+                'title' => $grade->title,
+                'label' => $grade->label(),
+                'requirements' => $grade->requirements,
+                'job_description' => $grade->job_description,
+                'is_active' => $grade->is_active,
+                'path_label' => $path['path_label'],
+                'group_name' => $path['group']['name'] ?? null,
+                'node_name' => $path['node']['name'] ?? null,
+                'level_label' => $path['level']
+                    ? 'Level '.$path['level']['level_number'].(
+                        $path['level']['reference_title']
+                            ? ' ('.$path['level']['reference_title'].')'
+                            : ''
+                    )
+                    : null,
+                'employee_count' => (int) $grade->employees_count,
+            ];
+        });
+
+        if (filled($query)) {
+            $needle = mb_strtolower((string) $query);
+            $rows = $rows->filter(function (array $row) use ($needle) {
+                return str_contains(mb_strtolower((string) $row['label']), $needle)
+                    || str_contains(mb_strtolower((string) $row['grade']), $needle)
+                    || str_contains(mb_strtolower((string) $row['title']), $needle)
+                    || str_contains(mb_strtolower((string) ($row['path_label'] ?? '')), $needle)
+                    || str_contains(mb_strtolower((string) ($row['node_name'] ?? '')), $needle)
+                    || str_contains(mb_strtolower((string) ($row['group_name'] ?? '')), $needle);
+            })->values();
+        }
+
+        return $rows->values()->all();
     }
 
     /**

@@ -41,6 +41,19 @@ export type LeaveRequestItem = {
     approver_employee_id: number | null;
     approver: { id: number; name: string; staff_id: string } | null;
     approver_label: string | null;
+    approval_steps?: Array<{
+        id: number;
+        step_order: number;
+        step_key: string;
+        label: string;
+        status: string;
+        status_label: string;
+        status_color: string;
+        approver: { id: number; name: string; staff_id: string } | null;
+        acted_by: { id: number; name: string; staff_id: string } | null;
+        acted_at: string | null;
+        notes: string | null;
+    }>;
     manager_reviewed_by_employee_id: number | null;
     manager_reviewed_by: { id: number; name: string; staff_id: string } | null;
     manager_reviewed_at: string | null;

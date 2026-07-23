@@ -40,6 +40,14 @@ class PermissionRegistry
                 'leave-requests.view-all' => 'View all leave requests',
                 'leave-requests.record-for-others' => 'Record leave for any employee (auto-approved)',
             ],
+            'Overtime' => [
+                'overtime-requests.view' => 'View overtime requests',
+                'overtime-requests.create' => 'Apply for overtime',
+                'overtime-requests.approve' => 'Approve overtime requests (manager/HOD)',
+                'overtime-requests.approve-hr' => 'Final HR approval for overtime',
+                'overtime-requests.cancel' => 'Cancel own pending overtime',
+                'overtime-requests.view-all' => 'View all overtime requests',
+            ],
             'Leave Balances' => [
                 'leave-balances.view' => 'View employee leave balances',
                 'leave-balances.manual-carry-forward' => 'Carry forward leave manually for specific employee',
@@ -106,6 +114,7 @@ class PermissionRegistry
                 'attendance-settings.view' => 'View attendance settings',
                 'attendance-settings.payroll-period.update' => 'Update payroll period',
                 'attendance-settings.leave-carry-forward.update' => 'Update leave carry-forward setting',
+                'attendance-settings.leave-workflow.update' => 'Update leave approval workflow',
                 'attendance-settings.duty-policies.create' => 'Add duty policies',
                 'attendance-settings.duty-policies.update' => 'Update duty policies',
                 'attendance-settings.duty-policies.delete' => 'Delete duty policies',

@@ -21,6 +21,10 @@ use Illuminate\Validation\ValidationException;
 
 class LeaveRequestService
 {
+    public function __construct(
+        private readonly LeaveApprovalWorkflowService $leaveApprovalWorkflowService,
+    ) {}
+
     public function generateRecordNumber(?Carbon $issuedAt = null): string
     {
         $issuedAt ??= now(config('app.timezone', 'UTC'));
@@ -41,50 +45,18 @@ class LeaveRequestService
 
     public function resolveApprover(Employee $employee): ?Employee
     {
-        $employee->loadMissing([
-            'manager',
-            'grade.level.node.headGrades',
-            'grade.level.node.parent.headGrades',
-        ]);
-
-        if ($employee->manager_id) {
-            $manager = $employee->manager ?? Employee::query()->find($employee->manager_id);
-
-            if ($manager && $manager->id !== $employee->id) {
-                return $manager;
-            }
-        }
-
-        $node = $employee->grade?->level?->node;
-
-        while ($node) {
-            $node->loadMissing(['headGrades', 'parent']);
-
-            $headGradeIds = $node->headGrades->pluck('id')->all();
-
-            if ($headGradeIds !== []) {
-                $head = Employee::query()
-                    ->whereIn('grade_id', $headGradeIds)
-                    ->where('is_active', true)
-                    ->where('id', '!=', $employee->id)
-                    ->orderBy('name')
-                    ->first();
-
-                if ($head) {
-                    return $head;
-                }
-            }
-
-            $node = $node->parent;
-        }
-
-        return null;
+        return $this->leaveApprovalWorkflowService->resolveFirstApprover($employee)
+            ?? $this->leaveApprovalWorkflowService->resolveLegacyApprover($employee);
     }
 
     public function syncApprover(LeaveRequest $leaveRequest): LeaveRequest
     {
         if (! $leaveRequest->isPendingManagerApproval()) {
             return $leaveRequest;
+        }
+
+        if ($leaveRequest->approvalSteps()->exists()) {
+            return $this->leaveApprovalWorkflowService->syncCurrentApprover($leaveRequest);
         }
 
         $leaveRequest->loadMissing(['employee.manager', 'employee.grade.level.node.headGrades', 'employee.grade.level.node.parent.headGrades']);
@@ -839,52 +811,7 @@ class LeaveRequestService
         return $query
             ->where('status', LeaveRequestStatus::Pending)
             ->where('employee_id', '!=', $approver->id)
-            ->where(function (Builder $inner) use ($approver): void {
-                $inner->whereHas('employee', function (Builder $employeeQuery) use ($approver): void {
-                    $employeeQuery
-                        ->where('manager_id', $approver->id)
-                        ->whereColumn('manager_id', '!=', 'employees.id');
-                })->orWhereHas('employee', function (Builder $employeeQuery) use ($approver): void {
-                    $employeeQuery
-                        ->where(function (Builder $managerQuery): void {
-                            $managerQuery->whereNull('manager_id')
-                                ->orWhereColumn('manager_id', 'employees.id');
-                        })
-                        ->whereNotNull('grade_id')
-                        ->when(
-                            $approver->grade_id,
-                            function (Builder $query) use ($approver): void {
-                                $headedNodeIds = \App\Models\StructureNode::query()
-                                    ->whereHas(
-                                        'headGrades',
-                                        fn (Builder $gradeQuery) => $gradeQuery->where('structure_grades.id', $approver->grade_id),
-                                    )
-                                    ->pluck('id');
-
-                                if ($headedNodeIds->isEmpty()) {
-                                    $query->whereRaw('0 = 1');
-
-                                    return;
-                                }
-
-                                $coveredNodeIds = $headedNodeIds->all();
-
-                                foreach ($headedNodeIds as $headedNodeId) {
-                                    $headedNode = \App\Models\StructureNode::query()->find($headedNodeId);
-                                    if ($headedNode) {
-                                        $coveredNodeIds = array_merge($coveredNodeIds, $headedNode->descendantIds());
-                                    }
-                                }
-
-                                $query->whereHas(
-                                    'grade.level',
-                                    fn (Builder $levelQuery) => $levelQuery->whereIn('structure_node_id', array_values(array_unique($coveredNodeIds))),
-                                );
-                            },
-                            fn (Builder $query) => $query->whereRaw('0 = 1'),
-                        );
-                });
-            });
+            ->where('approver_employee_id', $approver->id);
     }
 
     public function pendingManagerApprovalCount(Employee $approver): int
@@ -904,15 +831,9 @@ class LeaveRequestService
             return false;
         }
 
-        $leaveRequest->loadMissing(['employee.manager', 'employee.grade.level.node.headGrades', 'employee.grade.level.node.parent.headGrades']);
+        $this->syncApprover($leaveRequest);
 
-        if (! $leaveRequest->employee) {
-            return false;
-        }
-
-        $expectedApprover = $this->resolveApprover($leaveRequest->employee);
-
-        return $expectedApprover && $expectedApprover->id === $employee->id;
+        return (int) $leaveRequest->approver_employee_id === (int) $employee->id;
     }
 
     public function canView(User $user, LeaveRequest $leaveRequest): bool
@@ -933,7 +854,13 @@ class LeaveRequestService
 
         return $leaveRequest->employee_id === $employee->id
             || $this->isManagerApprover($user, $leaveRequest)
-            || $leaveRequest->manager_reviewed_by_employee_id === $employee->id;
+            || $leaveRequest->manager_reviewed_by_employee_id === $employee->id
+            || $leaveRequest->approvalSteps()
+                ->where(function ($query) use ($employee): void {
+                    $query->where('approver_employee_id', $employee->id)
+                        ->orWhere('acted_by_employee_id', $employee->id);
+                })
+                ->exists();
     }
 
     public function canApprove(User $user, LeaveRequest $leaveRequest): bool
@@ -952,9 +879,23 @@ class LeaveRequestService
 
     public function approveByManager(User $user, LeaveRequest $leaveRequest, ?string $reviewNotes = null): void
     {
+        $actor = $user->employee;
+
+        if (! $actor) {
+            throw ValidationException::withMessages([
+                'approver' => 'Your login account is not linked to an employee record.',
+            ]);
+        }
+
+        if ($leaveRequest->approvalSteps()->exists()) {
+            $this->leaveApprovalWorkflowService->approveCurrentStructureStep($leaveRequest, $actor, $reviewNotes);
+
+            return;
+        }
+
         $leaveRequest->update([
             'status' => LeaveRequestStatus::PendingHr,
-            'manager_reviewed_by_employee_id' => $user->employee?->id,
+            'manager_reviewed_by_employee_id' => $actor->id,
             'manager_reviewed_at' => now(),
             'manager_review_notes' => $reviewNotes,
         ]);
@@ -962,9 +903,20 @@ class LeaveRequestService
 
     public function approveByHr(User $user, LeaveRequest $leaveRequest, ?string $reviewNotes = null): void
     {
+        $actor = $user->employee;
+
+        if ($leaveRequest->approvalSteps()->exists()) {
+            $this->leaveApprovalWorkflowService->markHrStep(
+                $leaveRequest,
+                \App\Enums\LeaveApprovalStepStatus::Approved,
+                $actor,
+                $reviewNotes,
+            );
+        }
+
         $leaveRequest->update([
             'status' => LeaveRequestStatus::Approved,
-            'reviewed_by_employee_id' => $user->employee?->id,
+            'reviewed_by_employee_id' => $actor?->id,
             'reviewed_at' => now(),
             'review_notes' => $reviewNotes,
         ]);
@@ -972,9 +924,23 @@ class LeaveRequestService
 
     public function rejectByManager(User $user, LeaveRequest $leaveRequest, ?string $reviewNotes = null): void
     {
+        $actor = $user->employee;
+
+        if (! $actor) {
+            throw ValidationException::withMessages([
+                'approver' => 'Your login account is not linked to an employee record.',
+            ]);
+        }
+
+        if ($leaveRequest->approvalSteps()->exists()) {
+            $this->leaveApprovalWorkflowService->rejectCurrentStructureStep($leaveRequest, $actor, $reviewNotes);
+
+            return;
+        }
+
         $leaveRequest->update([
             'status' => LeaveRequestStatus::Rejected,
-            'manager_reviewed_by_employee_id' => $user->employee?->id,
+            'manager_reviewed_by_employee_id' => $actor->id,
             'manager_reviewed_at' => now(),
             'manager_review_notes' => $reviewNotes,
         ]);
@@ -982,9 +948,20 @@ class LeaveRequestService
 
     public function rejectByHr(User $user, LeaveRequest $leaveRequest, ?string $reviewNotes = null): void
     {
+        $actor = $user->employee;
+
+        if ($leaveRequest->approvalSteps()->exists()) {
+            $this->leaveApprovalWorkflowService->markHrStep(
+                $leaveRequest,
+                \App\Enums\LeaveApprovalStepStatus::Rejected,
+                $actor,
+                $reviewNotes,
+            );
+        }
+
         $leaveRequest->update([
             'status' => LeaveRequestStatus::Rejected,
-            'reviewed_by_employee_id' => $user->employee?->id,
+            'reviewed_by_employee_id' => $actor?->id,
             'reviewed_at' => now(),
             'review_notes' => $reviewNotes,
         ]);
@@ -1019,11 +996,17 @@ class LeaveRequestService
             'approver:id,name,staff_id',
             'managerReviewedBy:id,name,staff_id',
             'reviewedBy:id,name,staff_id',
+            'approvalSteps.approver:id,name,staff_id',
+            'approvalSteps.actedBy:id,name,staff_id',
         ]);
 
-        $approver = $leaveRequest->isPendingManagerApproval() && $leaveRequest->employee
-            ? $this->resolveApprover($leaveRequest->employee)
+        $approver = $leaveRequest->isPendingManagerApproval()
+            ? $leaveRequest->approver
             : $leaveRequest->approver;
+
+        if ($leaveRequest->isPendingManagerApproval() && $leaveRequest->employee && ! $approver) {
+            $approver = $this->resolveApprover($leaveRequest->employee);
+        }
 
         $approverLabel = $leaveRequest->isPendingHrApproval()
             ? 'Human Resources'
@@ -1063,6 +1046,27 @@ class LeaveRequestService
                 'staff_id' => $approver->staff_id,
             ] : null,
             'approver_label' => $approverLabel,
+            'approval_steps' => $leaveRequest->approvalSteps->map(fn ($step) => [
+                'id' => $step->id,
+                'step_order' => $step->step_order,
+                'step_key' => $step->step_key->value,
+                'label' => $step->label,
+                'status' => $step->status->value,
+                'status_label' => $step->status->label(),
+                'status_color' => $step->status->color(),
+                'approver' => $step->approver ? [
+                    'id' => $step->approver->id,
+                    'name' => $step->approver->name,
+                    'staff_id' => $step->approver->staff_id,
+                ] : null,
+                'acted_by' => $step->actedBy ? [
+                    'id' => $step->actedBy->id,
+                    'name' => $step->actedBy->name,
+                    'staff_id' => $step->actedBy->staff_id,
+                ] : null,
+                'acted_at' => $step->acted_at?->toIso8601String(),
+                'notes' => $step->notes,
+            ])->values()->all(),
             'manager_reviewed_by_employee_id' => $leaveRequest->manager_reviewed_by_employee_id,
             'manager_reviewed_by' => $leaveRequest->managerReviewedBy ? [
                 'id' => $leaveRequest->managerReviewedBy->id,

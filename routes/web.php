@@ -16,6 +16,7 @@ use App\Http\Controllers\DutyShiftTemplateController;
 use App\Http\Controllers\EmployeeController;
 use App\Http\Controllers\LeaveBalanceController;
 use App\Http\Controllers\LeaveRequestController;
+use App\Http\Controllers\OvertimeRequestController;
 use App\Http\Controllers\LeaveTypeController;
 use App\Http\Controllers\MobilePunchAccessLogController;
 use App\Http\Controllers\PayrollComponentController;
@@ -75,6 +76,8 @@ Route::middleware('auth')->group(function () {
             ->name('company-structure.index');
         Route::get('company-structure/chart', [CompanyStructureController::class, 'chart'])
             ->name('company-structure.chart');
+        Route::get('company-structure/designations', [StructureGradeController::class, 'index'])
+            ->name('company-structure.designations.index');
 
         Route::get('company-structure/sample-csv', [CompanyStructureController::class, 'downloadSample'])
             ->name('company-structure.sample-csv');
@@ -123,6 +126,9 @@ Route::middleware('auth')->group(function () {
         Route::put('company-structure/grades/{structure_grade}', [StructureGradeController::class, 'update'])
             ->middleware('permission:company-structure.update')
             ->name('company-structure.grades.update');
+        Route::put('company-structure/grades/{structure_grade}/details', [StructureGradeController::class, 'updateDetails'])
+            ->middleware('permission:company-structure.update')
+            ->name('company-structure.grades.details.update');
         Route::delete('company-structure/grades/{structure_grade}', [StructureGradeController::class, 'destroy'])
             ->middleware('permission:company-structure.delete')
             ->name('company-structure.grades.destroy');
@@ -280,6 +286,26 @@ Route::middleware('auth')->group(function () {
             ->name('leave-requests.cancel');
     });
 
+    Route::middleware('permission:overtime-requests.view|overtime-requests.approve|overtime-requests.approve-hr')->group(function () {
+        Route::get('overtime-requests', [OvertimeRequestController::class, 'index'])->name('overtime-requests.index');
+        Route::get('overtime-requests/create', [OvertimeRequestController::class, 'create'])
+            ->middleware('permission:overtime-requests.create')
+            ->name('overtime-requests.create');
+        Route::post('overtime-requests', [OvertimeRequestController::class, 'store'])
+            ->middleware('permission:overtime-requests.create')
+            ->name('overtime-requests.store');
+        Route::get('overtime-requests/{overtime_request}', [OvertimeRequestController::class, 'show'])->name('overtime-requests.show');
+        Route::post('overtime-requests/{overtime_request}/approve', [OvertimeRequestController::class, 'approve'])
+            ->middleware('permission:overtime-requests.approve|overtime-requests.approve-hr')
+            ->name('overtime-requests.approve');
+        Route::post('overtime-requests/{overtime_request}/reject', [OvertimeRequestController::class, 'reject'])
+            ->middleware('permission:overtime-requests.approve|overtime-requests.approve-hr')
+            ->name('overtime-requests.reject');
+        Route::post('overtime-requests/{overtime_request}/cancel', [OvertimeRequestController::class, 'cancel'])
+            ->middleware('permission:overtime-requests.cancel')
+            ->name('overtime-requests.cancel');
+    });
+
     Route::middleware('permission:leave-balances.view')->group(function () {
         Route::get('leave-balances', [LeaveBalanceController::class, 'index'])->name('leave-balances.index');
         Route::get('leave-balances/export-all', [LeaveBalanceController::class, 'exportAll'])->name('leave-balances.export-all');
@@ -375,6 +401,9 @@ Route::middleware('auth')->group(function () {
         Route::put('attendance-settings/leave-carry-forward', [AttendanceSettingController::class, 'updateLeaveCarryForward'])
             ->middleware('permission:attendance-settings.leave-carry-forward.update')
             ->name('attendance-settings.leave-carry-forward.update');
+        Route::put('attendance-settings/leave-approval-workflow', [AttendanceSettingController::class, 'updateLeaveApprovalWorkflow'])
+            ->middleware('permission:attendance-settings.leave-workflow.update')
+            ->name('attendance-settings.leave-workflow.update');
         Route::post('attendance-settings/banks', [BankController::class, 'store'])
             ->middleware('permission:attendance-settings.payroll-period.update')
             ->name('attendance-settings.banks.store');

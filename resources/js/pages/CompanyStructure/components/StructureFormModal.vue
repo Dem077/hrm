@@ -5,6 +5,7 @@ import { computed, watch } from 'vue';
 import UiButton from '@/components/ui/UiButton.vue';
 import UiInput from '@/components/ui/UiInput.vue';
 import UiModal from '@/components/ui/UiModal.vue';
+import UiRichTextEditor from '@/components/ui/UiRichTextEditor.vue';
 import type {
     StructureGrade,
     StructureGroup,
@@ -50,6 +51,8 @@ const levelForm = useForm({
 const gradeForm = useForm({
     grade: '',
     title: '',
+    requirements: '',
+    job_description: '',
     is_active: true,
 });
 
@@ -194,6 +197,8 @@ watch(
             if (props.grade) {
                 gradeForm.grade = props.grade.grade;
                 gradeForm.title = props.grade.title;
+                gradeForm.requirements = props.grade.requirements ?? '';
+                gradeForm.job_description = props.grade.job_description ?? '';
                 gradeForm.is_active = props.grade.is_active;
             } else {
                 gradeForm.reset();
@@ -250,7 +255,7 @@ function submit() {
 </script>
 
 <template>
-    <UiModal :open="open" :title="title" @close="emit('close')">
+    <UiModal :open="open" :title="title" :max-width="mode === 'grade' ? 'lg' : 'md'" @close="emit('close')">
         <form class="space-y-4" @submit.prevent="submit">
             <template v-if="mode === 'node'">
                 <UiInput v-model="nodeForm.name" label="Name" :error="nodeForm.errors.name" required />
@@ -329,6 +334,20 @@ function submit() {
             <template v-else>
                 <UiInput v-model="gradeForm.grade" label="Grade code" :error="gradeForm.errors.grade" required />
                 <UiInput v-model="gradeForm.title" label="Designation title" :error="gradeForm.errors.title" required />
+                <UiRichTextEditor
+                    v-model="gradeForm.requirements"
+                    label="Requirements"
+                    required
+                    placeholder="Education, experience, skills, and other requirements for this designation."
+                    :error="gradeForm.errors.requirements"
+                />
+                <UiRichTextEditor
+                    v-model="gradeForm.job_description"
+                    label="Job description"
+                    hint="Optional"
+                    placeholder="Optional summary of duties and responsibilities."
+                    :error="gradeForm.errors.job_description"
+                />
                 <label class="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
                     <input v-model="gradeForm.is_active" type="checkbox" class="rounded border-slate-300" />
                     Active

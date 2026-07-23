@@ -99,9 +99,16 @@ function confirmPunchOverlap() {
                     <UiInput v-model="form.start_date" label="Start date" type="date" required :error="form.errors.start_date" />
                     <UiInput v-model="form.end_date" label="End date" type="date" required :error="form.errors.end_date" />
                     <div class="md:col-span-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm dark:border-slate-700 dark:bg-surface-elevated">
-                        <p class="font-medium text-slate-700 dark:text-slate-300">Approver</p>
+                        <p class="font-medium text-slate-700 dark:text-slate-300">First structure approver</p>
                         <p class="mt-1 text-slate-600 dark:text-slate-400">
-                            {{ approver ? `${approver.name} (${approver.staff_id})` : 'No approver assigned' }}
+                            {{
+                                approver
+                                    ? `${approver.name} (${approver.staff_id})`
+                                    : 'No structure approver found — request will go directly to HR'
+                            }}
+                        </p>
+                        <p class="mt-1 text-xs text-slate-500">
+                            After structure approvals, HR always gives the final decision.
                         </p>
                     </div>
                 </div>
@@ -133,7 +140,7 @@ function confirmPunchOverlap() {
             </UiCard>
 
             <div class="flex justify-end">
-                <UiButton type="submit" variant="primary" :disabled="form.processing || checking || !approver">
+                <UiButton type="submit" variant="primary" :disabled="form.processing || checking">
                     Submit request
                 </UiButton>
             </div>

@@ -11,6 +11,8 @@ enum PayrollComponentCalculationMethod: string
     case PerLateMinuteOfBasic = 'per_late_minute_of_basic';
     case PerAbsentDay = 'per_absent_day';
     case PerAbsentDayOfBasic = 'per_absent_day_of_basic';
+    case PerOvertimeHour = 'per_overtime_hour';
+    case PerOvertimeHourOfBasic = 'per_overtime_hour_of_basic';
     case CustomFormula = 'custom_formula';
 
     public function label(): string
@@ -23,6 +25,8 @@ enum PayrollComponentCalculationMethod: string
             self::PerLateMinuteOfBasic => '% of basic salary per late minute',
             self::PerAbsentDay => 'Fixed rate per absent day',
             self::PerAbsentDayOfBasic => '% of basic salary per absent day',
+            self::PerOvertimeHour => 'Fixed rate per overtime hour',
+            self::PerOvertimeHourOfBasic => '% of basic salary per overtime hour',
             self::CustomFormula => 'Custom formula',
         };
     }
@@ -37,6 +41,8 @@ enum PayrollComponentCalculationMethod: string
             self::PerLateMinuteOfBasic => '% of basic salary / late minute',
             self::PerAbsentDay => 'Rate / absent day',
             self::PerAbsentDayOfBasic => '% of basic salary / absent day',
+            self::PerOvertimeHour => 'Rate / overtime hour',
+            self::PerOvertimeHourOfBasic => '% of basic salary / overtime hour',
             self::CustomFormula => 'Formula',
         };
     }
@@ -48,6 +54,8 @@ enum PayrollComponentCalculationMethod: string
             self::PerLateMinuteOfBasic,
             self::PerAbsentDay,
             self::PerAbsentDayOfBasic,
+            self::PerOvertimeHour,
+            self::PerOvertimeHourOfBasic,
             self::CustomFormula => true,
             default => false,
         };
@@ -56,7 +64,9 @@ enum PayrollComponentCalculationMethod: string
     public function isPercentageOfBasicSalary(): bool
     {
         return match ($this) {
-            self::PerLateMinuteOfBasic, self::PerAbsentDayOfBasic => true,
+            self::PerLateMinuteOfBasic,
+            self::PerAbsentDayOfBasic,
+            self::PerOvertimeHourOfBasic => true,
             default => false,
         };
     }
@@ -78,6 +88,14 @@ enum PayrollComponentCalculationMethod: string
     {
         return match ($this) {
             self::PerAbsentDay, self::PerAbsentDayOfBasic => true,
+            default => false,
+        };
+    }
+
+    public function isOvertimeMethod(): bool
+    {
+        return match ($this) {
+            self::PerOvertimeHour, self::PerOvertimeHourOfBasic => true,
             default => false,
         };
     }
@@ -104,6 +122,14 @@ enum PayrollComponentCalculationMethod: string
     public static function absentFeeOptions(): array
     {
         return [self::PerAbsentDay, self::PerAbsentDayOfBasic, self::CustomFormula];
+    }
+
+    /**
+     * @return list<self>
+     */
+    public static function overtimeOptions(): array
+    {
+        return [self::PerOvertimeHour, self::PerOvertimeHourOfBasic, self::CustomFormula];
     }
 
     /**

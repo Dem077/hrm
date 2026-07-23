@@ -2,7 +2,7 @@
 
 namespace App\Models;
 
-use App\Enums\LeaveRequestStatus;
+use App\Enums\OvertimeRequestStatus;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -11,12 +11,11 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 #[Fillable([
     'record_number',
     'employee_id',
-    'leave_type_id',
-    'start_date',
-    'end_date',
-    'days_count',
+    'overtime_date',
+    'start_time',
+    'end_time',
+    'hours',
     'reason',
-    'document_path',
     'status',
     'approver_employee_id',
     'manager_reviewed_by_employee_id',
@@ -26,15 +25,14 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'reviewed_at',
     'review_notes',
 ])]
-class LeaveRequest extends Model
+class OvertimeRequest extends Model
 {
     protected function casts(): array
     {
         return [
-            'start_date' => 'date',
-            'end_date' => 'date',
-            'days_count' => 'integer',
-            'status' => LeaveRequestStatus::class,
+            'overtime_date' => 'date',
+            'hours' => 'decimal:2',
+            'status' => OvertimeRequestStatus::class,
             'manager_reviewed_at' => 'datetime',
             'reviewed_at' => 'datetime',
         ];
@@ -43,11 +41,6 @@ class LeaveRequest extends Model
     public function employee(): BelongsTo
     {
         return $this->belongsTo(Employee::class);
-    }
-
-    public function leaveType(): BelongsTo
-    {
-        return $this->belongsTo(LeaveType::class);
     }
 
     public function approver(): BelongsTo
@@ -67,17 +60,17 @@ class LeaveRequest extends Model
 
     public function approvalSteps(): HasMany
     {
-        return $this->hasMany(LeaveRequestApprovalStep::class)->orderBy('step_order');
+        return $this->hasMany(OvertimeRequestApprovalStep::class)->orderBy('step_order');
     }
 
     public function isPendingManagerApproval(): bool
     {
-        return $this->status === LeaveRequestStatus::Pending;
+        return $this->status === OvertimeRequestStatus::Pending;
     }
 
     public function isPendingHrApproval(): bool
     {
-        return $this->status === LeaveRequestStatus::PendingHr;
+        return $this->status === OvertimeRequestStatus::PendingHr;
     }
 
     public function isPending(): bool

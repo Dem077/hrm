@@ -11,6 +11,7 @@ class AppSetting extends Model
         'tagline',
         'logo_path',
         'leave_carry_forward_enabled',
+        'leave_approval_workflow',
         'brand_color_400',
         'brand_color_500',
         'brand_color_600',
@@ -21,6 +22,7 @@ class AppSetting extends Model
     {
         return [
             'leave_carry_forward_enabled' => 'boolean',
+            'leave_approval_workflow' => 'array',
         ];
     }
 

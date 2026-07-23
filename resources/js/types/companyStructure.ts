@@ -18,6 +18,8 @@ export type StructureGrade = {
     structure_level_id: number;
     grade: string;
     title: string;
+    requirements?: string | null;
+    job_description?: string | null;
     label: string;
     sort_order: number;
     is_active: boolean;

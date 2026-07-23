@@ -60,6 +60,10 @@ function groupOptionName(structureGroupId: number): string {
     return options.find((option) => option.id === structureGroupId)?.name ?? 'subgroup';
 }
 
+function downloadSampleCsv(): void {
+    globalThis.location.assign('/company-structure/sample-csv');
+}
+
 function openImportPicker() {
     fileInput.value?.click();
 }
@@ -180,8 +184,11 @@ function openEditGrade(grade: StructureGrade, level: StructureLevel) {
                 <UiButton href="/company-structure/chart" variant="secondary" size="sm">
                     View org chart
                 </UiButton>
+                <UiButton href="/company-structure/designations" variant="secondary" size="sm">
+                    Designations
+                </UiButton>
                 <UiActionMenu label="CSV" variant="secondary" size="sm">
-                    <UiActionMenuItem @click="() => window.location.assign('/company-structure/sample-csv')">
+                    <UiActionMenuItem @click="downloadSampleCsv">
                         Download sample CSV
                     </UiActionMenuItem>
                     <UiActionMenuItem
