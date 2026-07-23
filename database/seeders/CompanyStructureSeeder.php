@@ -197,32 +197,64 @@ class CompanyStructureSeeder extends Seeder
      */
     protected function seedNode(int $groupId, ?int $parentId, array $definition): StructureNode
     {
-        $lookup = [
-            'structure_group_id' => $groupId,
+        $attributes = [
             'parent_id' => $parentId,
+            'name' => $definition['name'],
+            'description' => $definition['description'] ?? null,
+            'is_active' => $definition['is_active'] ?? true,
+            'sort_order' => $definition['sort_order'] ?? 0,
         ];
 
         if (filled($definition['code'] ?? null)) {
-            $lookup['code'] = $definition['code'];
-            $node = StructureNode::query()->updateOrCreate($lookup, [
-                'name' => $definition['name'],
-                'description' => $definition['description'] ?? null,
-                'is_active' => $definition['is_active'] ?? true,
-                'sort_order' => $definition['sort_order'] ?? 0,
-            ]);
-        } else {
+            // Unique key is (structure_group_id, code) — do not include parent_id in the lookup.
             $node = StructureNode::query()->updateOrCreate(
                 [
-                    ...$lookup,
-                    'name' => $definition['name'],
+                    'structure_group_id' => $groupId,
+                    'code' => $definition['code'],
                 ],
-                [
-                    'code' => null,
-                    'description' => $definition['description'] ?? null,
-                    'is_active' => $definition['is_active'] ?? true,
-                    'sort_order' => $definition['sort_order'] ?? 0,
-                ],
+                $attributes,
             );
+        } else {
+            $node = StructureNode::query()
+                ->where('structure_group_id', $groupId)
+                ->whereNull('code')
+                ->where(function ($query) use ($parentId): void {
+                    if ($parentId === null) {
+                        $query->whereNull('parent_id');
+                    } else {
+                        $query->where('parent_id', $parentId);
+                    }
+                })
+                ->where('name', $definition['name'])
+                ->first();
+
+            if ($node === null) {
+                // Tolerate minor name drift from earlier live data (e.g. "Divisions" vs "Division").
+                $node = StructureNode::query()
+                    ->where('structure_group_id', $groupId)
+                    ->whereNull('code')
+                    ->where(function ($query) use ($parentId): void {
+                        if ($parentId === null) {
+                            $query->whereNull('parent_id');
+                        } else {
+                            $query->where('parent_id', $parentId);
+                        }
+                    })
+                    ->first();
+            }
+
+            if ($node === null) {
+                $node = new StructureNode([
+                    'structure_group_id' => $groupId,
+                    'code' => null,
+                ]);
+            }
+
+            $node->fill([
+                ...$attributes,
+                'structure_group_id' => $groupId,
+                'code' => null,
+            ])->save();
         }
 
         foreach ($definition['levels'] ?? [] as $levelDefinition) {
