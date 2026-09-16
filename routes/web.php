@@ -55,6 +55,19 @@ Route::middleware('auth')->group(function () {
         ->name('dashboard');
 
     Route::middleware('permission:employees.view')->group(function () {
+        Route::get('employees/sample-csv', [EmployeeController::class, 'downloadSample'])
+            ->middleware('permission:employees.create')
+            ->name('employees.sample-csv');
+        Route::post('employees/import/preview', [EmployeeController::class, 'previewImport'])
+            ->middleware('permission:employees.create')
+            ->name('employees.import.preview');
+        Route::post('employees/import', [EmployeeController::class, 'import'])
+            ->middleware('permission:employees.create')
+            ->name('employees.import');
+        Route::post('employees/import/cancel', [EmployeeController::class, 'cancelImport'])
+            ->middleware('permission:employees.create')
+            ->name('employees.import.cancel');
+
         Route::resource('employees', EmployeeController::class)->middleware([
             'index' => 'permission:employees.view',
             'show' => 'permission:employees.view',

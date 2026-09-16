@@ -1,23 +1,36 @@
 <script setup lang="ts">
-import { Head, Link } from '@inertiajs/vue3';
+import { Head, Link, useForm } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 
 import EmptyState from '@/components/ui/EmptyState.vue';
 import EmployeeAvatar from '@/components/ui/EmployeeAvatar.vue';
 import PageHeader from '@/components/ui/PageHeader.vue';
+import UiActionMenu from '@/components/ui/UiActionMenu.vue';
+import UiActionMenuItem from '@/components/ui/UiActionMenuItem.vue';
 import UiButton from '@/components/ui/UiButton.vue';
 import UiInput from '@/components/ui/UiInput.vue';
 import { usePermissions } from '@/composables/usePermissions';
 import AppLayout from '@/layouts/AppLayout.vue';
 import { formatDate } from '@/lib/format';
+import ImportPreviewModal from '@/pages/Employees/components/ImportPreviewModal.vue';
+import type { EmployeeImportPreview } from '@/pages/Employees/components/ImportPreviewModal.vue';
 import type { Employee } from '@/types/hrm';
 
 const props = defineProps<{
     employees: Employee[];
+    importPreview?: EmployeeImportPreview | null;
+    importFileName?: string | null;
 }>();
 
 const { can } = usePermissions();
+const canCreate = can('employees.create');
 const searchText = ref('');
+const fileInput = ref<HTMLInputElement | null>(null);
+const importForm = useForm<{ file: File | null }>({
+    file: null,
+});
+
+const previewOpen = computed(() => Boolean(props.importPreview));
 
 const filteredEmployees = computed(() => {
     const needle = searchText.value.trim().toLowerCase();
@@ -49,6 +62,35 @@ const filteredEmployees = computed(() => {
 
 const hasEmployees = computed(() => props.employees.length > 0);
 const hasMatches = computed(() => filteredEmployees.value.length > 0);
+
+function downloadSampleCsv(): void {
+    globalThis.location.assign('/employees/sample-csv');
+}
+
+function openImportPicker(): void {
+    fileInput.value?.click();
+}
+
+function onImportFileChange(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0] ?? null;
+
+    if (!file) {
+        return;
+    }
+
+    importForm.file = file;
+    importForm.post('/employees/import/preview', {
+        forceFormData: true,
+        preserveScroll: true,
+        onFinish: () => {
+            importForm.reset();
+            if (fileInput.value) {
+                fileInput.value.value = '';
+            }
+        },
+    });
+}
 </script>
 
 <template>
@@ -60,9 +102,24 @@ const hasMatches = computed(() => filteredEmployees.value.length > 0);
             description="Manage staff records, grade assignments, and reporting lines for approvals."
         >
             <template #actions>
-                <UiButton v-if="can('employees.create')" href="/employees/create" variant="primary">Add employee</UiButton>
+                <UiActionMenu v-if="canCreate" label="CSV" variant="secondary" size="md">
+                    <UiActionMenuItem @click="downloadSampleCsv">Download template</UiActionMenuItem>
+                    <UiActionMenuItem :disabled="importForm.processing" @click="openImportPicker">
+                        {{ importForm.processing ? 'Preparing…' : 'Import CSV' }}
+                    </UiActionMenuItem>
+                </UiActionMenu>
+                <UiButton v-if="canCreate" href="/employees/create" variant="primary">Add employee</UiButton>
+                <input
+                    ref="fileInput"
+                    type="file"
+                    accept=".csv,text/csv"
+                    class="hidden"
+                    @change="onImportFileChange"
+                />
             </template>
         </PageHeader>
+
+        <p v-if="importForm.errors.file" class="mb-4 text-sm text-red-600">{{ importForm.errors.file }}</p>
 
         <div v-if="hasEmployees" class="mb-4 max-w-md">
             <UiInput
@@ -85,7 +142,7 @@ const hasMatches = computed(() => filteredEmployees.value.length > 0);
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 4v16m8-8H4" />
                 </svg>
             </template>
-            <template v-if="can('employees.create')" #action>
+            <template v-if="canCreate" #action>
                 <UiButton href="/employees/create" variant="primary">Add employee</UiButton>
             </template>
         </EmptyState>
@@ -162,5 +219,12 @@ const hasMatches = computed(() => filteredEmployees.value.length > 0);
                 </div>
             </article>
         </div>
+
+        <ImportPreviewModal
+            :open="previewOpen"
+            :preview="props.importPreview ?? null"
+            :file-name="props.importFileName"
+            @close="() => {}"
+        />
     </AppLayout>
 </template>

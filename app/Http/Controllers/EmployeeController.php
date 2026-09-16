@@ -8,6 +8,7 @@ use App\Enums\Gender;
 use App\Enums\BloodGroup;
 use App\Enums\MaritalStatus;
 use App\Enums\ZktDevicePrivilege;
+use App\Http\Requests\ImportEmployeeRequest;
 use App\Http\Requests\StoreEmployeeRequest;
 use App\Http\Requests\UpdateEmployeeRequest;
 use App\Models\Bank;
@@ -16,28 +17,112 @@ use App\Models\Nationality;
 use App\Models\User;
 use App\Models\ZktLocationGroup;
 use App\Services\CompanyStructure\CompanyStructureService;
+use App\Services\Employee\EmployeeCsvService;
 use App\Services\Zkt\ZktDeviceUserSyncService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
 use Spatie\Permission\Models\Role;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 use Throwable;
 
 class EmployeeController extends Controller
 {
-    public function index(): Response
+    private const IMPORT_SESSION_KEY = 'employee_import';
+
+    public function __construct(
+        protected EmployeeCsvService $employeeCsvService,
+    ) {}
+
+    public function index(Request $request): Response
     {
+        $pending = $request->session()->get(self::IMPORT_SESSION_KEY);
+
         return Inertia::render('Employees/Index', [
             'employees' => Employee::query()
                 ->with(['grade.level.group', 'grade.level.node.group', 'manager:id,name,staff_id', 'user:id,name,email'])
                 ->orderBy('name')
                 ->get()
                 ->map(fn (Employee $employee) => $this->formatEmployee($employee)),
+            'importPreview' => is_array($pending) ? ($pending['preview'] ?? null) : null,
+            'importFileName' => is_array($pending) ? ($pending['original_name'] ?? null) : null,
         ]);
+    }
+
+    public function downloadSample(): StreamedResponse
+    {
+        return $this->employeeCsvService->downloadSample();
+    }
+
+    public function previewImport(ImportEmployeeRequest $request): RedirectResponse
+    {
+        $this->clearPendingImport($request);
+
+        $file = $request->file('file');
+        $preview = $this->employeeCsvService->preview($file);
+        $path = $file->store('employee-imports');
+
+        $request->session()->put(self::IMPORT_SESSION_KEY, [
+            'path' => $path,
+            'original_name' => $file->getClientOriginalName(),
+            'preview' => $preview,
+        ]);
+
+        return back();
+    }
+
+    public function import(Request $request): RedirectResponse
+    {
+        $pending = $request->session()->get(self::IMPORT_SESSION_KEY);
+
+        if (! is_array($pending) || empty($pending['path']) || ! Storage::disk('local')->exists($pending['path'])) {
+            return back()->with('error', 'No import file ready to confirm. Upload a CSV again.');
+        }
+
+        $absolutePath = Storage::disk('local')->path($pending['path']);
+        $uploaded = new UploadedFile(
+            $absolutePath,
+            $pending['original_name'] ?? 'employees.csv',
+            'text/csv',
+            null,
+            true,
+        );
+
+        $stats = $this->employeeCsvService->import($uploaded);
+        $this->clearPendingImport($request);
+
+        return redirect()
+            ->route('employees.index')
+            ->with(
+                'success',
+                sprintf(
+                    'Imported %d employee(s) from CSV. Temporary login passwords were generated for each account.',
+                    $stats['created'],
+                ),
+            );
+    }
+
+    public function cancelImport(Request $request): RedirectResponse
+    {
+        $this->clearPendingImport($request);
+
+        return back();
+    }
+
+    protected function clearPendingImport(Request $request): void
+    {
+        $pending = $request->session()->get(self::IMPORT_SESSION_KEY);
+
+        if (is_array($pending) && ! empty($pending['path'])) {
+            Storage::disk('local')->delete($pending['path']);
+        }
+
+        $request->session()->forget(self::IMPORT_SESSION_KEY);
     }
 
     public function create(): Response
