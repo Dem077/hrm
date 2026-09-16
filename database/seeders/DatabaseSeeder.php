@@ -11,16 +11,19 @@ class DatabaseSeeder extends Seeder
 
     /**
      * Seed the application's database.
+     *
+     * Fresh demo stack (login admin@demo.local / password):
+     *   php artisan migrate:fresh --seed
      */
     public function run(): void
     {
         $this->call([
             RolesAndPermissionsSeeder::class,
             CompanyStructureSeeder::class,
-            // Optional demo data (keeps existing employees; uses DEMO### staff IDs):
-            // DummyCompanyStructureSeeder::class,
-            // DummyEmployeesAndPunchesSeeder::class,
-            // DummyPayrollStructureSeeder::class,
+            DummyEmployeesAndPunchesSeeder::class,
+            DummyCompanyStructureSeeder::class,
+            DummyPayrollStructureSeeder::class,
+            DemoAppSeeder::class,
         ]);
     }
 }
