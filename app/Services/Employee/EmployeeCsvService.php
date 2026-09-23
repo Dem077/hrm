@@ -11,6 +11,7 @@ use App\Models\Employee;
 use App\Models\Nationality;
 use App\Models\StructureGrade;
 use App\Models\User;
+use App\Support\EmployeeUnset;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -19,6 +20,10 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class EmployeeCsvService
 {
+    public const UNSET = EmployeeUnset::VALUE;
+
+    public const DEFAULT_PASSWORD = 'Agro@1234';
+
     public const HEADERS = [
         'staff_id',
         'name',
@@ -51,10 +56,10 @@ class EmployeeCsvService
 
             // UTF-8 BOM so Excel opens the file correctly.
             fwrite($handle, "\xEF\xBB\xBF");
-            fputcsv($handle, self::HEADERS);
+            fputcsv($handle, self::HEADERS, ',', '"', '\\');
 
             foreach ($this->sampleRows() as $row) {
-                fputcsv($handle, $row);
+                fputcsv($handle, $row, ',', '"', '\\');
             }
 
             fclose($handle);
@@ -68,6 +73,8 @@ class EmployeeCsvService
      */
     public function preview(UploadedFile $file): array
     {
+        $this->prepareLongRunningImport();
+
         $validatedRows = $this->validateAllRows($file);
 
         $previewRows = [];
@@ -79,6 +86,8 @@ class EmployeeCsvService
                 'name' => $row['name'],
                 'national_id' => $row['national_id'],
                 'email' => $row['email'],
+                'mobile_number' => $row['mobile_number'],
+                'emergency_contact_number' => $row['emergency_contact_number'],
                 'joined_date' => $row['joined_date'],
                 'gender' => $row['gender']->value,
                 'employment_type' => $row['employment_type']?->value,
@@ -107,6 +116,8 @@ class EmployeeCsvService
      */
     public function import(UploadedFile $file): array
     {
+        $this->prepareLongRunningImport();
+
         $validatedRows = $this->validateAllRows($file);
 
         $created = 0;
@@ -115,12 +126,11 @@ class EmployeeCsvService
             $createdByStaffId = [];
 
             foreach ($validatedRows as $row) {
-                $password = Str::password(12);
-
                 $user = User::query()->create([
                     'name' => $row['name'],
-                    'email' => $row['email'],
-                    'password' => $password,
+                    'email' => $row['user_email'],
+                    'password' => self::DEFAULT_PASSWORD,
+                    'must_change_password' => true,
                 ]);
 
                 $employee = Employee::query()->create([
@@ -129,6 +139,7 @@ class EmployeeCsvService
                     'national_id' => $row['national_id'],
                     'email' => $row['email'],
                     'mobile_number' => $row['mobile_number'],
+                    'emergency_contact_number' => $row['emergency_contact_number'],
                     'joined_date' => $row['joined_date'],
                     'gender' => $row['gender'],
                     'employment_type' => $row['employment_type'],
@@ -174,6 +185,20 @@ class EmployeeCsvService
         ];
     }
 
+    protected function prepareLongRunningImport(): void
+    {
+        if (function_exists('set_time_limit')) {
+            @set_time_limit(0);
+        }
+
+        if (function_exists('ini_set')) {
+            @ini_set('max_execution_time', '0');
+            @ini_set('memory_limit', '512M');
+        }
+
+        DB::disableQueryLog();
+    }
+
     /**
      * @return list<array<string, mixed>>
      */
@@ -191,9 +216,28 @@ class EmployeeCsvService
             ->map(fn (StructureGrade $grade) => $grade->label())
             ->all();
 
+        $existingStaffIds = Employee::query()
+            ->pluck('staff_id')
+            ->mapWithKeys(fn ($id) => [mb_strtolower((string) $id) => true])
+            ->all();
+        $existingNationalIds = Employee::query()
+            ->pluck('national_id')
+            ->mapWithKeys(fn ($id) => [mb_strtolower((string) $id) => true])
+            ->all();
+        $existingEmployeeEmails = Employee::query()
+            ->whereNotNull('email')
+            ->pluck('email')
+            ->mapWithKeys(fn ($email) => [mb_strtolower((string) $email) => true])
+            ->all();
+        $existingUserEmails = User::query()
+            ->pluck('email')
+            ->mapWithKeys(fn ($email) => [mb_strtolower((string) $email) => true])
+            ->all();
+
         $seenStaffIds = [];
         $seenNationalIds = [];
         $seenEmails = [];
+        $seenUserEmails = [];
         $validated = [];
 
         foreach ($rows as $index => $row) {
@@ -204,13 +248,17 @@ class EmployeeCsvService
                 $activeBankCodes,
                 $nationalities,
                 $gradeLabels,
+                $existingStaffIds,
+                $existingNationalIds,
+                $existingEmployeeEmails,
+                $existingUserEmails,
                 $seenStaffIds,
                 $seenNationalIds,
                 $seenEmails,
+                $seenUserEmails,
             );
         }
 
-        // Resolve manager references after all staff_ids in the file are known.
         foreach ($validated as $row) {
             if ($row['manager_staff_id'] === null) {
                 continue;
@@ -228,7 +276,7 @@ class EmployeeCsvService
                 continue;
             }
 
-            if (! Employee::query()->whereRaw('LOWER(staff_id) = ?', [$managerKey])->exists()) {
+            if (! isset($existingStaffIds[$managerKey])) {
                 throw ValidationException::withMessages([
                     'file' => "Row {$row['line']}: manager_staff_id \"{$row['manager_staff_id']}\" was not found in the CSV or existing employees.",
                 ]);
@@ -242,9 +290,14 @@ class EmployeeCsvService
      * @param  list<string>  $activeBankCodes
      * @param  list<string>  $nationalities
      * @param  array<int, string>  $gradeLabels
+     * @param  array<string, true>  $existingStaffIds
+     * @param  array<string, true>  $existingNationalIds
+     * @param  array<string, true>  $existingEmployeeEmails
+     * @param  array<string, true>  $existingUserEmails
      * @param  array<string, true>  $seenStaffIds
      * @param  array<string, true>  $seenNationalIds
      * @param  array<string, true>  $seenEmails
+     * @param  array<string, true>  $seenUserEmails
      * @param  array<string, string>  $row
      * @return array<string, mixed>
      */
@@ -254,64 +307,66 @@ class EmployeeCsvService
         array $activeBankCodes,
         array $nationalities,
         array $gradeLabels,
+        array $existingStaffIds,
+        array $existingNationalIds,
+        array $existingEmployeeEmails,
+        array $existingUserEmails,
         array &$seenStaffIds,
         array &$seenNationalIds,
         array &$seenEmails,
+        array &$seenUserEmails,
     ): array {
-        $staffId = trim($row['staff_id'] ?? '');
-        $name = trim($row['name'] ?? '');
-        $nationalId = trim($row['national_id'] ?? '');
-        $email = mb_strtolower(trim($row['email'] ?? ''));
-        $joinedDate = trim($row['joined_date'] ?? '');
-        $genderRaw = mb_strtolower(trim($row['gender'] ?? ''));
-        $bankName = mb_strtoupper(trim($row['bank_name'] ?? ''));
-        $accountName = trim($row['account_name'] ?? '');
-        $accountNo = trim($row['account_no'] ?? '');
+        $staffId = $this->rawValue($row['staff_id'] ?? '');
+        $name = $this->rawValue($row['name'] ?? '');
 
-        if ($staffId === '') {
+        if ($staffId === null) {
             throw ValidationException::withMessages(['file' => "Row {$line}: staff_id is required."]);
         }
 
-        if ($name === '') {
+        if ($name === null) {
             throw ValidationException::withMessages(['file' => "Row {$line}: name is required."]);
         }
 
-        if ($nationalId === '') {
-            throw ValidationException::withMessages(['file' => "Row {$line}: national_id is required."]);
-        }
+        $nationalIdRaw = $this->rawValue($row['national_id'] ?? '');
+        $nationalId = $nationalIdRaw ?? (self::UNSET.'-'.$staffId);
 
-        if ($email === '' || ! filter_var($email, FILTER_VALIDATE_EMAIL)) {
-            throw ValidationException::withMessages(['file' => "Row {$line}: a valid email is required."]);
-        }
+        $emailRaw = $this->rawValue($row['email'] ?? '');
+        $emailIsValid = $emailRaw !== null && filter_var($emailRaw, FILTER_VALIDATE_EMAIL);
+        $employeeEmail = $emailIsValid ? mb_strtolower($emailRaw) : self::UNSET;
+        $userEmail = $emailIsValid
+            ? mb_strtolower($emailRaw)
+            : 'unset.'.Str::slug($staffId, '').'@import.local';
 
-        if ($joinedDate === '' || strtotime($joinedDate) === false) {
-            throw ValidationException::withMessages(['file' => "Row {$line}: joined_date must be a valid date (YYYY-MM-DD)."]);
-        }
+        $contacts = $this->parseContactNumbers($row['mobile_number'] ?? '');
+        $mobileNumber = $contacts['mobile'] ?? self::UNSET;
+        $emergencyContactNumber = $contacts['secondary'];
 
-        $gender = Gender::tryFrom($genderRaw);
+        $joinedDate = $this->parseOptionalDate($row['joined_date'] ?? '', $line);
+
+        $genderRaw = mb_strtolower((string) ($this->rawValue($row['gender'] ?? '') ?? ''));
+        $gender = $genderRaw === '' ? Gender::Other : Gender::tryFrom($genderRaw);
         if (! $gender) {
             throw ValidationException::withMessages([
-                'file' => "Row {$line}: gender must be one of: male, female, other.",
+                'file' => "Row {$line}: gender must be one of: male, female, other (or blank/NULL for Unset → other).",
             ]);
         }
 
-        if ($bankName === '' || ! in_array($bankName, $activeBankCodes, true)) {
+        $bankNameRaw = $this->rawValue($row['bank_name'] ?? '');
+        $bankName = $bankNameRaw === null ? self::UNSET : mb_strtoupper($bankNameRaw);
+        if ($bankName !== self::UNSET && ! in_array($bankName, $activeBankCodes, true)) {
             $allowed = implode(', ', $activeBankCodes) ?: '(none configured)';
             throw ValidationException::withMessages([
-                'file' => "Row {$line}: bank_name must be an active bank code ({$allowed}).",
+                'file' => "Row {$line}: bank_name must be an active bank code ({$allowed}), blank/NULL, or Unset.",
             ]);
         }
 
-        if ($accountName === '') {
-            throw ValidationException::withMessages(['file' => "Row {$line}: account_name is required."]);
-        }
-
-        if ($accountNo === '') {
-            throw ValidationException::withMessages(['file' => "Row {$line}: account_no is required."]);
-        }
+        $accountName = $this->unsettableString($row['account_name'] ?? '');
+        $accountNo = $this->unsettableString($row['account_no'] ?? '');
 
         $staffKey = mb_strtolower($staffId);
         $nationalKey = mb_strtolower($nationalId);
+        $emailKey = mb_strtolower($employeeEmail);
+        $userEmailKey = mb_strtolower($userEmail);
 
         if (isset($seenStaffIds[$staffKey])) {
             throw ValidationException::withMessages(['file' => "Row {$line}: duplicate staff_id \"{$staffId}\" in the CSV."]);
@@ -321,26 +376,34 @@ class EmployeeCsvService
             throw ValidationException::withMessages(['file' => "Row {$line}: duplicate national_id \"{$nationalId}\" in the CSV."]);
         }
 
-        if (isset($seenEmails[$email])) {
-            throw ValidationException::withMessages(['file' => "Row {$line}: duplicate email \"{$email}\" in the CSV."]);
+        if ($employeeEmail !== self::UNSET && isset($seenEmails[$emailKey])) {
+            throw ValidationException::withMessages(['file' => "Row {$line}: duplicate email \"{$employeeEmail}\" in the CSV."]);
         }
 
-        if (Employee::query()->whereRaw('LOWER(staff_id) = ?', [$staffKey])->exists()) {
+        if (isset($seenUserEmails[$userEmailKey])) {
+            throw ValidationException::withMessages(['file' => "Row {$line}: duplicate login email \"{$userEmail}\" in the CSV."]);
+        }
+
+        if (isset($existingStaffIds[$staffKey])) {
             throw ValidationException::withMessages(['file' => "Row {$line}: staff_id \"{$staffId}\" already exists."]);
         }
 
-        if (Employee::query()->whereRaw('LOWER(national_id) = ?', [$nationalKey])->exists()) {
+        if (isset($existingNationalIds[$nationalKey])) {
             throw ValidationException::withMessages(['file' => "Row {$line}: national_id \"{$nationalId}\" already exists."]);
         }
 
         if (
-            Employee::query()->whereRaw('LOWER(email) = ?', [$email])->exists()
-            || User::query()->whereRaw('LOWER(email) = ?', [$email])->exists()
+            $employeeEmail !== self::UNSET
+            && (isset($existingEmployeeEmails[$emailKey]) || isset($existingUserEmails[$emailKey]))
         ) {
-            throw ValidationException::withMessages(['file' => "Row {$line}: email \"{$email}\" already exists."]);
+            throw ValidationException::withMessages(['file' => "Row {$line}: email \"{$employeeEmail}\" already exists."]);
         }
 
-        $employmentRaw = mb_strtolower(trim($row['employment_type'] ?? ''));
+        if (isset($existingUserEmails[$userEmailKey])) {
+            throw ValidationException::withMessages(['file' => "Row {$line}: login email \"{$userEmail}\" already exists."]);
+        }
+
+        $employmentRaw = mb_strtolower((string) ($this->rawValue($row['employment_type'] ?? '') ?? ''));
         $employmentType = $employmentRaw === '' ? null : EmploymentType::tryFrom($employmentRaw);
         if ($employmentRaw !== '' && ! $employmentType) {
             throw ValidationException::withMessages([
@@ -348,7 +411,7 @@ class EmployeeCsvService
             ]);
         }
 
-        $dutyRaw = mb_strtolower(trim($row['duty_type'] ?? ''));
+        $dutyRaw = mb_strtolower((string) ($this->rawValue($row['duty_type'] ?? '') ?? ''));
         $dutyType = $dutyRaw === '' ? DutyType::Normal : DutyType::tryFrom($dutyRaw);
         if (! $dutyType) {
             throw ValidationException::withMessages([
@@ -356,10 +419,10 @@ class EmployeeCsvService
             ]);
         }
 
-        $gradeIdRaw = trim($row['grade_id'] ?? '');
+        $gradeIdRaw = $this->rawValue($row['grade_id'] ?? '');
         $gradeId = null;
         $gradeLabel = null;
-        if ($gradeIdRaw !== '') {
+        if ($gradeIdRaw !== null) {
             if (! ctype_digit($gradeIdRaw)) {
                 throw ValidationException::withMessages(['file' => "Row {$line}: grade_id must be a numeric designation id."]);
             }
@@ -372,38 +435,37 @@ class EmployeeCsvService
             $gradeLabel = $gradeLabels[$gradeId];
         }
 
-        $nationality = trim($row['nationality'] ?? '');
-        if ($nationality !== '' && ! in_array(mb_strtolower($nationality), $nationalities, true)) {
+        $nationalityRaw = $this->rawValue($row['nationality'] ?? '');
+        $nationality = $nationalityRaw === null ? self::UNSET : $nationalityRaw;
+        if ($nationality !== self::UNSET && ! in_array(mb_strtolower($nationality), $nationalities, true)) {
             throw ValidationException::withMessages([
                 'file' => "Row {$line}: nationality \"{$nationality}\" was not found in active nationalities.",
             ]);
         }
 
-        $personalEmail = trim($row['personal_email'] ?? '');
-        if ($personalEmail !== '' && ! filter_var($personalEmail, FILTER_VALIDATE_EMAIL)) {
-            throw ValidationException::withMessages(['file' => "Row {$line}: personal_email is invalid."]);
-        }
+        $personalEmail = $this->optionalEmailOrUnset($row['personal_email'] ?? '', $line, 'personal_email');
+        $officeEmail = $this->optionalEmailOrUnset($row['office_email'] ?? '', $line, 'office_email');
+        $workLocation = $this->unsettableString($row['work_location'] ?? '');
 
-        $officeEmail = trim($row['office_email'] ?? '');
-        if ($officeEmail !== '' && ! filter_var($officeEmail, FILTER_VALIDATE_EMAIL)) {
-            throw ValidationException::withMessages(['file' => "Row {$line}: office_email is invalid."]);
-        }
-
-        $managerStaffId = trim($row['manager_staff_id'] ?? '');
-        $managerStaffId = $managerStaffId === '' ? null : $managerStaffId;
+        $managerStaffId = $this->rawValue($row['manager_staff_id'] ?? '');
 
         $seenStaffIds[$staffKey] = true;
         $seenNationalIds[$nationalKey] = true;
-        $seenEmails[$email] = true;
+        if ($employeeEmail !== self::UNSET) {
+            $seenEmails[$emailKey] = true;
+        }
+        $seenUserEmails[$userEmailKey] = true;
 
         return [
             'line' => $line,
             'staff_id' => $staffId,
             'name' => $name,
             'national_id' => $nationalId,
-            'email' => $email,
-            'mobile_number' => trim($row['mobile_number'] ?? '') ?: null,
-            'joined_date' => date('Y-m-d', strtotime($joinedDate)),
+            'email' => $employeeEmail,
+            'user_email' => $userEmail,
+            'mobile_number' => $mobileNumber,
+            'emergency_contact_number' => $emergencyContactNumber,
+            'joined_date' => $joinedDate,
             'gender' => $gender,
             'employment_type' => $employmentType,
             'duty_type' => $dutyType,
@@ -415,18 +477,99 @@ class EmployeeCsvService
             'bank_name' => $bankName,
             'account_name' => $accountName,
             'account_no' => $accountNo,
-            'nationality' => $nationality !== '' ? $nationality : null,
-            'work_location' => trim($row['work_location'] ?? '') ?: null,
-            'personal_email' => $personalEmail !== '' ? $personalEmail : null,
-            'office_email' => $officeEmail !== '' ? $officeEmail : null,
+            'nationality' => $nationality,
+            'work_location' => $workLocation,
+            'personal_email' => $personalEmail,
+            'office_email' => $officeEmail,
         ];
+    }
+
+    /**
+     * Blank or the literal "NULL" (any case) counts as missing.
+     */
+    protected function rawValue(mixed $value): ?string
+    {
+        $raw = trim((string) $value);
+
+        if ($raw === '' || strcasecmp($raw, 'NULL') === 0) {
+            return null;
+        }
+
+        return $raw;
+    }
+
+    protected function unsettableString(mixed $value): string
+    {
+        return $this->rawValue($value) ?? self::UNSET;
+    }
+
+    /**
+     * @return array{mobile: ?string, secondary: ?string}
+     */
+    protected function parseContactNumbers(mixed $value): array
+    {
+        $raw = $this->rawValue($value);
+
+        if ($raw === null) {
+            return [
+                'mobile' => null,
+                'secondary' => self::UNSET,
+            ];
+        }
+
+        $parts = preg_split('/\s*\/\s*/', $raw) ?: [];
+        $parts = array_values(array_filter(array_map('trim', $parts), fn (string $part) => $part !== ''));
+
+        $mobile = $parts[0] ?? null;
+        $secondary = $parts[1] ?? null;
+
+        return [
+            'mobile' => $mobile,
+            'secondary' => $secondary ?? self::UNSET,
+        ];
+    }
+
+    protected function optionalEmailOrUnset(mixed $value, int $line, string $field): string
+    {
+        $raw = $this->rawValue($value);
+
+        if ($raw === null) {
+            return self::UNSET;
+        }
+
+        if (! filter_var($raw, FILTER_VALIDATE_EMAIL)) {
+            throw ValidationException::withMessages([
+                'file' => "Row {$line}: {$field} is invalid (use a valid email, blank, or NULL).",
+            ]);
+        }
+
+        return $raw;
+    }
+
+    protected function parseOptionalDate(mixed $value, int $line): ?string
+    {
+        $raw = $this->rawValue($value);
+
+        if ($raw === null) {
+            return null;
+        }
+
+        $timestamp = strtotime($raw);
+
+        if ($timestamp === false) {
+            throw ValidationException::withMessages([
+                'file' => "Row {$line}: joined_date must be a valid date, blank, or NULL.",
+            ]);
+        }
+
+        return date('Y-m-d', $timestamp);
     }
 
     protected function parseBoolean(mixed $value, bool $default, int $line, string $field): bool
     {
-        $raw = trim((string) $value);
+        $raw = $this->rawValue($value);
 
-        if ($raw === '') {
+        if ($raw === null) {
             return $default;
         }
 
@@ -475,7 +618,7 @@ class EmployeeCsvService
                 'Aisha Mohamed',
                 'A1234567',
                 'aisha.mohamed@example.com',
-                '7900001',
+                '7900001/7900002',
                 $today,
                 'female',
                 'permanent',
@@ -495,22 +638,22 @@ class EmployeeCsvService
             [
                 'EMP002',
                 'Hassan Ali',
-                'A1234568',
-                'hassan.ali@example.com',
-                '7900002',
-                $today,
-                'male',
+                'NULL',
+                'NULL',
+                'NULL',
+                'NULL',
+                '',
                 'contract',
                 'normal',
                 'yes',
                 'yes',
                 '',
                 'EMP001',
-                $defaultBank,
-                'Hassan Ali',
-                '7700000002',
-                'Maldivian',
-                "Male' Head Office",
+                '',
+                '',
+                '',
+                '',
+                '',
                 '',
                 '',
             ],
@@ -530,7 +673,7 @@ class EmployeeCsvService
             ]);
         }
 
-        $header = fgetcsv($handle);
+        $header = fgetcsv($handle, null, ',', '"', '\\');
 
         if (! is_array($header)) {
             fclose($handle);
@@ -558,7 +701,7 @@ class EmployeeCsvService
 
         $rows = [];
 
-        while (($data = fgetcsv($handle)) !== false) {
+        while (($data = fgetcsv($handle, null, ',', '"', '\\')) !== false) {
             if ($this->rowIsEmpty($data)) {
                 continue;
             }

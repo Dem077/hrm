@@ -1,5 +1,7 @@
 <?php
 
+use App\Exceptions\EmployeeUnsetFieldsException;
+use App\Http\Middleware\EnsurePasswordChanged;
 use App\Http\Middleware\HandleInertiaRequests;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -39,12 +41,17 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->web(append: [
             HandleInertiaRequests::class,
             AddLinkHeadersForPreloadedAssets::class,
+            EnsurePasswordChanged::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(
             fn (Request $request) => $request->is('api/*'),
         );
+
+        $exceptions->render(function (EmployeeUnsetFieldsException $exception, Request $request) {
+            return $exception->render($request);
+        });
 
         $exceptions->render(function (HttpException $exception, Request $request) {
             if ($exception->getStatusCode() !== 403) {

@@ -110,6 +110,10 @@ class PermissionRegistry
                 'duty-rosters.update' => 'Update duty roster entries',
                 'duty-rosters.delete' => 'Delete duty roster entries',
             ],
+            'Reports' => [
+                'reports.view' => 'View available reports',
+                'reports.manage' => 'Manage report templates',
+            ],
             'Global Settings' => [
                 'attendance-settings.view' => 'View attendance settings',
                 'attendance-settings.payroll-period.update' => 'Update payroll period',

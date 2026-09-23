@@ -3,6 +3,7 @@
 use App\Http\Controllers\AppSettingController;
 use App\Http\Controllers\AttendanceSettingController;
 use App\Http\Controllers\AttendanceSheetController;
+use App\Http\Controllers\Auth\ForcePasswordChangeController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\BankController;
 use App\Http\Controllers\NationalityController;
@@ -23,7 +24,9 @@ use App\Http\Controllers\MobilePunchAccessLogController;
 use App\Http\Controllers\PayrollComponentController;
 use App\Http\Controllers\PayrollController;
 use App\Http\Controllers\PayrollStructureController;
+use App\Http\Controllers\AttendanceReportController;
 use App\Http\Controllers\RemoteDoorSiteController;
+use App\Http\Controllers\ReportTemplateController;
 use App\Http\Controllers\RoleController;
 use App\Http\Controllers\SelfPunchController;
 use App\Http\Controllers\SelfPunchSiteController;
@@ -49,6 +52,11 @@ Route::middleware('guest')->group(function () {
 
 Route::middleware('auth')->group(function () {
     Route::post('logout', [LoginController::class, 'destroy'])->name('logout');
+
+    Route::get('password/force-change', [ForcePasswordChangeController::class, 'edit'])
+        ->name('password.force-change');
+    Route::put('password/force-change', [ForcePasswordChangeController::class, 'update'])
+        ->name('password.force-change.update');
 
     Route::get('/', DashboardController::class)
         ->middleware('permission:dashboard.view')
@@ -350,6 +358,22 @@ Route::middleware('auth')->group(function () {
         Route::delete('leave-types/{leave_type}', [LeaveTypeController::class, 'destroy'])
             ->middleware('permission:leave-types.delete')
             ->name('leave-types.destroy');
+    });
+
+    Route::middleware('permission:reports.manage')->group(function () {
+        Route::get('reports/manage', [ReportTemplateController::class, 'manage'])->name('reports.manage');
+        Route::get('reports/templates/create', [ReportTemplateController::class, 'create'])->name('reports.templates.create');
+        Route::get('reports/templates/{report_template}/edit', [ReportTemplateController::class, 'edit'])->name('reports.templates.edit');
+        Route::post('reports/templates', [ReportTemplateController::class, 'store'])->name('reports.templates.store');
+        Route::put('reports/templates/{report_template}', [ReportTemplateController::class, 'update'])->name('reports.templates.update');
+        Route::delete('reports/templates/{report_template}', [ReportTemplateController::class, 'destroy'])->name('reports.templates.destroy');
+    });
+
+    Route::middleware('permission:reports.view')->group(function () {
+        Route::get('reports/attendance', [AttendanceReportController::class, 'show'])->name('reports.attendance');
+        Route::get('reports/attendance/download', [AttendanceReportController::class, 'download'])->name('reports.attendance.download');
+        Route::get('reports/{report_template}/download', [ReportTemplateController::class, 'download'])->name('reports.download');
+        Route::get('reports/{report_template}', [ReportTemplateController::class, 'show'])->name('reports.show');
     });
 
     Route::middleware('permission:payroll-structure.view')->group(function () {

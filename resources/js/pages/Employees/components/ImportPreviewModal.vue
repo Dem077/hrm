@@ -12,7 +12,9 @@ export type EmployeeImportPreviewRow = {
     name: string;
     national_id: string;
     email: string;
-    joined_date: string;
+    mobile_number: string;
+    emergency_contact_number: string | null;
+    joined_date: string | null;
     gender: string;
     employment_type: string | null;
     duty_type: string;
@@ -85,7 +87,8 @@ function confirm() {
         <div v-if="preview" class="space-y-4">
             <p class="text-sm text-slate-600 dark:text-slate-400">{{ summaryText }}</p>
             <p class="text-xs text-slate-500">
-                Each imported employee gets a login account with a generated temporary password.
+                Blank or NULL cells become Unset. Numbers separated by / are stored as mobile + emergency contact.
+                Each imported employee gets login password Agro@1234 and must change it on first sign-in.
             </p>
 
             <div class="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700">
@@ -96,6 +99,7 @@ function confirm() {
                             <th class="px-3 py-2 font-medium">Staff ID</th>
                             <th class="px-3 py-2 font-medium">Name</th>
                             <th class="px-3 py-2 font-medium">Email</th>
+                            <th class="px-3 py-2 font-medium">Mobile</th>
                             <th class="px-3 py-2 font-medium">Joined</th>
                             <th class="px-3 py-2 font-medium">Bank</th>
                             <th class="px-3 py-2 font-medium">Manager</th>
@@ -115,7 +119,13 @@ function confirm() {
                                 <div class="text-slate-500">{{ row.national_id }} · {{ row.gender }}</div>
                             </td>
                             <td class="px-3 py-2">{{ row.email }}</td>
-                            <td class="whitespace-nowrap px-3 py-2">{{ row.joined_date }}</td>
+                            <td class="px-3 py-2">
+                                <div>{{ row.mobile_number }}</div>
+                                <div v-if="row.emergency_contact_number && row.emergency_contact_number !== 'Unset'" class="text-slate-500">
+                                    2nd: {{ row.emergency_contact_number }}
+                                </div>
+                            </td>
+                            <td class="whitespace-nowrap px-3 py-2">{{ row.joined_date || 'Unset' }}</td>
                             <td class="px-3 py-2">
                                 <div>{{ row.bank_name }}</div>
                                 <div class="text-slate-500">{{ row.account_no }}</div>

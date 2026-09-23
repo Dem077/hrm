@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\ReportTemplate;
 use App\Services\AppBrandingService;
 use App\Support\PermissionRegistry;
 use Illuminate\Http\Request;
@@ -59,7 +60,27 @@ class HandleInertiaRequests extends Middleware
             'flash' => [
                 'success' => fn () => $request->session()->get('success'),
                 'error' => fn () => $request->session()->get('error'),
+                'employee_unset' => fn () => $request->session()->get('employee_unset'),
             ],
+            'reportNavItems' => function () use ($user) {
+                if (! $user?->can('reports.view')) {
+                    return [];
+                }
+
+                return ReportTemplate::query()
+                    ->visibleTo($user)
+                    ->where('is_active', true)
+                    ->orderBy('sort_order')
+                    ->orderBy('name')
+                    ->get(['id', 'name'])
+                    ->map(fn (ReportTemplate $template) => [
+                        'id' => $template->id,
+                        'name' => $template->name,
+                        'href' => '/reports/'.$template->id,
+                    ])
+                    ->values()
+                    ->all();
+            },
         ];
     }
 }

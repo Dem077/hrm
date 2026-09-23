@@ -5,11 +5,13 @@ namespace App\Services\Payroll;
 use App\Enums\AttendanceDayStatus;
 use App\Enums\PayrollComponentCalculationMethod;
 use App\Enums\PayrollComponentType;
+use App\Exceptions\EmployeeUnsetFieldsException;
 use App\Models\Employee;
 use App\Models\PayrollComponent;
 use App\Services\Attendance\AttendanceSheetService;
 use App\Services\Attendance\PayrollPeriodService;
 use App\Services\Overtime\OvertimeRequestService;
+use App\Support\EmployeeUnset;
 use Carbon\CarbonInterface;
 use Illuminate\Validation\ValidationException;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
@@ -78,6 +80,12 @@ class PayrollProcessingService
                 'account_name',
                 'account_no',
             ]);
+
+        EmployeeUnsetFieldsException::throwIfIncomplete(
+            $employees,
+            EmployeeUnset::PAYROLL_FIELDS,
+            'running payroll',
+        );
 
         $rows = [];
 

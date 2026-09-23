@@ -8,6 +8,7 @@ use App\Enums\EmploymentType;
 use App\Enums\Gender;
 use App\Enums\MaritalStatus;
 use App\Enums\ZktDevicePrivilege;
+use App\Support\EmployeeUnset;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
@@ -150,6 +151,20 @@ class Employee extends Model
         }
 
         return Storage::disk('public')->url($this->profile_photo_path);
+    }
+
+    /**
+     * @param  list<string>|null  $fields
+     * @return list<string>
+     */
+    public function unsetFields(?array $fields = null): array
+    {
+        return EmployeeUnset::missingFields($this, $fields);
+    }
+
+    public function hasUnsetFields(?array $fields = null): bool
+    {
+        return $this->unsetFields($fields) !== [];
     }
 
     public function lengthOfServiceLabel(): ?string

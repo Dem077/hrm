@@ -226,6 +226,42 @@ class DemoAppSeeder extends Seeder
                 'max_carry_forward_days' => null,
                 'sort_order' => 5,
             ],
+            'FL' => [
+                'name' => 'Family Leave',
+                'description' => 'Leave for family-related matters.',
+                'requires_document' => false,
+                'annual_limit' => 5,
+                'can_carry_forward' => false,
+                'max_carry_forward_days' => null,
+                'sort_order' => 6,
+            ],
+            'DT' => [
+                'name' => 'Duty Travel',
+                'description' => 'Official duty travel days.',
+                'requires_document' => false,
+                'annual_limit' => null,
+                'can_carry_forward' => false,
+                'max_carry_forward_days' => null,
+                'sort_order' => 7,
+            ],
+            'RL' => [
+                'name' => 'Release',
+                'description' => 'Release / early release days.',
+                'requires_document' => false,
+                'annual_limit' => null,
+                'can_carry_forward' => false,
+                'max_carry_forward_days' => null,
+                'sort_order' => 8,
+            ],
+            'UML' => [
+                'name' => 'Umra Leave',
+                'description' => 'Umra / Umrah leave.',
+                'requires_document' => true,
+                'annual_limit' => null,
+                'can_carry_forward' => false,
+                'max_carry_forward_days' => null,
+                'sort_order' => 9,
+            ],
         ];
 
         $types = [];

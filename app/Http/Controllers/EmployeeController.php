@@ -103,7 +103,7 @@ class EmployeeController extends Controller
             ->with(
                 'success',
                 sprintf(
-                    'Imported %d employee(s) from CSV. Temporary login passwords were generated for each account.',
+                    'Imported %d employee(s) from CSV. Default password is Agro@1234 — they will be asked to change it on first login.',
                     $stats['created'],
                 ),
             );

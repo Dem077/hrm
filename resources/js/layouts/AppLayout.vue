@@ -16,7 +16,7 @@ defineProps<{
     description?: string;
 }>();
 
-const page = usePage<{ auth: Auth; branding: AppBranding }>();
+const page = usePage<{ auth: Auth; branding: AppBranding; reportNavItems?: ReportNavItem[] }>();
 const {
     collapsed,
     mobileOpen,
@@ -31,6 +31,12 @@ const { can, primaryRole } = usePermissions();
 
 const user = computed(() => page.props.auth.user);
 const branding = computed(() => page.props.branding);
+
+type ReportNavItem = {
+    id: number;
+    name: string;
+    href: string;
+};
 
 type NavItem = {
     label: string;
@@ -146,7 +152,48 @@ const humanResourcesNavItems: NavItem[] = [
     },
 ];
 
-const reportsNavItems: NavItem[] = [];
+const reportTemplateIcon =
+    'M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z';
+
+const attendanceReportNavItem: NavItem = {
+    label: 'Attendance Report',
+    href: '/reports/attendance',
+    permission: 'reports.view',
+    icon: reportTemplateIcon,
+    match: (url: string) => url === '/reports/attendance' || url.startsWith('/reports/attendance/'),
+};
+
+const manageReportsNavItem: NavItem = {
+    label: 'Manage Reports',
+    href: '/reports/manage',
+    permission: 'reports.manage',
+    icon: 'M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z',
+    match: (url: string) => url.startsWith('/reports/manage'),
+};
+
+const reportsNavItems = computed<NavItem[]>(() => {
+    const templateItems: NavItem[] = (page.props.reportNavItems ?? []).map((template) => ({
+        label: template.name,
+        href: template.href,
+        permission: 'reports.view',
+        icon: reportTemplateIcon,
+        match: (url: string) => url === template.href || url.startsWith(`${template.href}/`),
+    }));
+
+    const items: NavItem[] = [];
+
+    if (can('reports.view')) {
+        items.push(attendanceReportNavItem);
+    }
+
+    items.push(...templateItems);
+
+    if (can('reports.manage')) {
+        items.push(manageReportsNavItem);
+    }
+
+    return items.filter((item) => can(item.permission));
+});
 
 const configurationNavItems: NavItem[] = [
     {
@@ -226,7 +273,7 @@ const navGroups = computed<NavGroup[]>(() =>
         {
             key: 'reports',
             label: 'Reports',
-            items: reportsNavItems.filter((item) => can(item.permission)),
+            items: reportsNavItems.value,
         },
         {
             key: 'config',
