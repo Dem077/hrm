@@ -8,6 +8,7 @@ use App\Enums\Gender;
 use App\Enums\BloodGroup;
 use App\Enums\MaritalStatus;
 use App\Enums\ZktDevicePrivilege;
+use App\Http\Requests\BulkUpdateEmployeesRequest;
 use App\Http\Requests\ImportEmployeeRequest;
 use App\Http\Requests\StoreEmployeeRequest;
 use App\Http\Requests\UpdateEmployeeRequest;
@@ -51,6 +52,7 @@ class EmployeeController extends Controller
                 ->map(fn (Employee $employee) => $this->formatEmployee($employee)),
             'importPreview' => is_array($pending) ? ($pending['preview'] ?? null) : null,
             'importFileName' => is_array($pending) ? ($pending['original_name'] ?? null) : null,
+            ...$this->bulkEditOptions(),
         ]);
     }
 
@@ -112,6 +114,68 @@ class EmployeeController extends Controller
         $this->clearPendingImport($request);
 
         return back();
+    }
+
+    public function bulkUpdate(BulkUpdateEmployeesRequest $request, ZktDeviceUserSyncService $deviceUserSyncService): RedirectResponse
+    {
+        $employeeIds = $request->validated('employee_ids');
+        $patch = $request->employeePatch();
+        $validated = $request->validated();
+        $syncLocationGroups = array_key_exists('zkt_location_group_ids', $validated);
+        $locationGroupIds = $syncLocationGroups
+            ? $validated['zkt_location_group_ids']
+            : [];
+
+        $employees = Employee::query()
+            ->whereIn('id', $employeeIds)
+            ->get();
+
+        DB::transaction(function () use ($employees, $patch, $syncLocationGroups, $locationGroupIds): void {
+            foreach ($employees as $employee) {
+                $row = $patch;
+
+                if (array_key_exists('manager_id', $row) && (int) $row['manager_id'] === (int) $employee->id) {
+                    unset($row['manager_id']);
+                }
+
+                if ($row !== []) {
+                    $employee->update($row);
+                }
+
+                if ($syncLocationGroups) {
+                    $employee->zktLocationGroups()->sync($locationGroupIds);
+                }
+            }
+        });
+
+        if ($syncLocationGroups && $request->user()?->can('zkt-devices.manage-users')) {
+            $ids = $employees->pluck('id')->all();
+
+            app()->terminating(function () use ($ids, $deviceUserSyncService): void {
+                foreach ($ids as $employeeId) {
+                    try {
+                        $freshEmployee = Employee::query()->find($employeeId);
+
+                        if (! $freshEmployee) {
+                            continue;
+                        }
+
+                        $deviceUserSyncService->syncEmployee(
+                            $freshEmployee->fresh(['zktLocationGroups', 'zktDeviceSyncs.device']),
+                        );
+                    } catch (Throwable $exception) {
+                        logger()->warning('Deferred bulk employee machine sync failed.', [
+                            'employee_id' => $employeeId,
+                            'error' => $exception->getMessage(),
+                        ]);
+                    }
+                }
+            });
+        }
+
+        return redirect()
+            ->route('employees.index')
+            ->with('success', sprintf('Updated %d employee(s).', $employees->count()));
     }
 
     protected function clearPendingImport(Request $request): void
@@ -401,6 +465,27 @@ class EmployeeController extends Controller
             'account_name' => '',
             'account_no' => '',
             'length_of_service_label' => null,
+        ];
+    }
+
+    /**
+     * Shared lookup data for the employees list bulk-edit modal.
+     *
+     * @return array<string, mixed>
+     */
+    protected function bulkEditOptions(): array
+    {
+        $options = $this->formOptions();
+
+        return [
+            'grades' => $options['grades'],
+            'managers' => $options['managers'],
+            'employmentTypes' => $options['employmentTypes'],
+            'dutyTypes' => $options['dutyTypes'],
+            'banks' => $options['banks'],
+            'nationalities' => $options['nationalities'],
+            'devicePrivileges' => $options['devicePrivileges'],
+            'locationGroups' => $options['locationGroups'],
         ];
     }
 

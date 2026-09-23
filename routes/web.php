@@ -67,6 +67,9 @@ Route::middleware('auth')->group(function () {
         Route::post('employees/import/cancel', [EmployeeController::class, 'cancelImport'])
             ->middleware('permission:employees.create')
             ->name('employees.import.cancel');
+        Route::post('employees/bulk-update', [EmployeeController::class, 'bulkUpdate'])
+            ->middleware('permission:employees.update')
+            ->name('employees.bulk-update');
 
         Route::resource('employees', EmployeeController::class)->middleware([
             'index' => 'permission:employees.view',

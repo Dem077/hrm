@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Head, Link, useForm } from '@inertiajs/vue3';
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 
 import EmptyState from '@/components/ui/EmptyState.vue';
 import EmployeeAvatar from '@/components/ui/EmployeeAvatar.vue';
@@ -9,26 +9,39 @@ import UiActionMenu from '@/components/ui/UiActionMenu.vue';
 import UiActionMenuItem from '@/components/ui/UiActionMenuItem.vue';
 import UiButton from '@/components/ui/UiButton.vue';
 import UiInput from '@/components/ui/UiInput.vue';
+import type { GradeOption } from '@/components/ui/GradeSelect.vue';
 import { usePermissions } from '@/composables/usePermissions';
 import AppLayout from '@/layouts/AppLayout.vue';
 import { formatDate } from '@/lib/format';
+import BulkEditModal from '@/pages/Employees/components/BulkEditModal.vue';
 import ImportPreviewModal from '@/pages/Employees/components/ImportPreviewModal.vue';
 import type { EmployeeImportPreview } from '@/pages/Employees/components/ImportPreviewModal.vue';
-import type { Employee } from '@/types/hrm';
+import type { DevicePrivilegeOption, DutyTypeOption, Employee, EnumOption, SelectOption } from '@/types/hrm';
 
 const props = defineProps<{
     employees: Employee[];
     importPreview?: EmployeeImportPreview | null;
     importFileName?: string | null;
+    grades: GradeOption[];
+    managers: SelectOption[];
+    employmentTypes: EnumOption[];
+    dutyTypes: DutyTypeOption[];
+    banks: EnumOption[];
+    nationalities: EnumOption[];
+    devicePrivileges: DevicePrivilegeOption[];
+    locationGroups: Array<{ id: number; name: string; code: string | null }>;
 }>();
 
 const { can } = usePermissions();
 const canCreate = can('employees.create');
+const canUpdate = can('employees.update');
 const searchText = ref('');
 const fileInput = ref<HTMLInputElement | null>(null);
 const importForm = useForm<{ file: File | null }>({
     file: null,
 });
+const selectedIds = ref<number[]>([]);
+const bulkEditOpen = ref(false);
 
 const previewOpen = computed(() => Boolean(props.importPreview));
 
@@ -60,8 +73,75 @@ const filteredEmployees = computed(() => {
     });
 });
 
+const filteredIds = computed(() =>
+    filteredEmployees.value
+        .map((employee) => employee.id)
+        .filter((id): id is number => typeof id === 'number'),
+);
+
+const allFilteredSelected = computed(() => {
+    if (filteredIds.value.length === 0) {
+        return false;
+    }
+
+    return filteredIds.value.every((id) => selectedIds.value.includes(id));
+});
+
+const selectedOutsideFiltersCount = computed(() => {
+    const visible = new Set(filteredIds.value);
+
+    return selectedIds.value.filter((id) => !visible.has(id)).length;
+});
+
 const hasEmployees = computed(() => props.employees.length > 0);
 const hasMatches = computed(() => filteredEmployees.value.length > 0);
+
+watch(
+    () => props.employees,
+    (employees) => {
+        const valid = new Set(
+            employees.map((employee) => employee.id).filter((id): id is number => typeof id === 'number'),
+        );
+        selectedIds.value = selectedIds.value.filter((id) => valid.has(id));
+    },
+);
+
+function employeeId(employee: Employee): number | null {
+    return typeof employee.id === 'number' ? employee.id : null;
+}
+
+function isSelected(id: number | null): boolean {
+    return id !== null && selectedIds.value.includes(id);
+}
+
+function toggleEmployee(id: number | null): void {
+    if (id === null) {
+        return;
+    }
+
+    if (selectedIds.value.includes(id)) {
+        selectedIds.value = selectedIds.value.filter((selected) => selected !== id);
+        return;
+    }
+
+    selectedIds.value = [...selectedIds.value, id];
+}
+
+function toggleSelectAllFiltered(): void {
+    if (allFilteredSelected.value) {
+        const filtered = new Set(filteredIds.value);
+        selectedIds.value = selectedIds.value.filter((id) => !filtered.has(id));
+        return;
+    }
+
+    const next = new Set(selectedIds.value);
+    filteredIds.value.forEach((id) => next.add(id));
+    selectedIds.value = Array.from(next);
+}
+
+function clearSelection(): void {
+    selectedIds.value = [];
+}
 
 function downloadSampleCsv(): void {
     globalThis.location.assign('/employees/sample-csv');
@@ -121,15 +201,54 @@ function onImportFileChange(event: Event): void {
 
         <p v-if="importForm.errors.file" class="mb-4 text-sm text-red-600">{{ importForm.errors.file }}</p>
 
-        <div v-if="hasEmployees" class="mb-4 max-w-md">
-            <UiInput
-                v-model="searchText"
-                label="Search"
-                placeholder="Name, staff ID, NID, email, or manager"
-            />
-            <p v-if="searchText.trim()" class="mt-2 text-xs text-slate-500">
-                Showing {{ filteredEmployees.length }} of {{ employees.length }}
-            </p>
+        <div v-if="hasEmployees" class="mb-4 flex flex-col gap-4">
+            <div class="max-w-md">
+                <UiInput
+                    v-model="searchText"
+                    label="Search"
+                    placeholder="Name, staff ID, NID, email, or manager"
+                />
+                <p v-if="searchText.trim()" class="mt-2 text-xs text-slate-500">
+                    Showing {{ filteredEmployees.length }} of {{ employees.length }}
+                </p>
+            </div>
+
+            <div
+                v-if="canUpdate"
+                class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-700 dark:bg-slate-800/60"
+            >
+                <div class="flex flex-wrap items-center gap-3 text-sm">
+                    <label class="inline-flex items-center gap-2">
+                        <input
+                            type="checkbox"
+                            class="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                            :checked="allFilteredSelected"
+                            :disabled="filteredIds.length === 0"
+                            @change="toggleSelectAllFiltered"
+                        />
+                        <span>Select filtered ({{ filteredIds.length }})</span>
+                    </label>
+                    <span v-if="selectedIds.length" class="text-slate-500">
+                        {{ selectedIds.length }} selected
+                        <template v-if="selectedOutsideFiltersCount">
+                            · {{ selectedOutsideFiltersCount }} outside current search
+                        </template>
+                    </span>
+                </div>
+                <div class="flex flex-wrap items-center gap-2">
+                    <UiButton v-if="selectedIds.length" size="sm" variant="ghost" @click="clearSelection">
+                        Clear selection
+                    </UiButton>
+                    <UiButton
+                        size="sm"
+                        variant="primary"
+                        :disabled="selectedIds.length === 0"
+                        @click="bulkEditOpen = true"
+                    >
+                        Edit selected
+                    </UiButton>
+                </div>
+            </div>
         </div>
 
         <EmptyState
@@ -171,9 +290,21 @@ function onImportFileChange(event: Event): void {
             <article
                 v-for="employee in filteredEmployees"
                 :key="employee.id ?? employee.staff_id"
-                class="rounded-xl border border-slate-200 bg-surface p-4 shadow-sm transition hover:border-brand-500/30 dark:border-slate-800 dark:hover:border-brand-500/20"
+                class="rounded-xl border bg-surface p-4 shadow-sm transition hover:border-brand-500/30 dark:hover:border-brand-500/20"
+                :class="
+                    isSelected(employeeId(employee))
+                        ? 'border-brand-500/60 dark:border-brand-500/40'
+                        : 'border-slate-200 dark:border-slate-800'
+                "
             >
                 <div class="flex items-start gap-3">
+                    <input
+                        v-if="canUpdate && employeeId(employee) !== null"
+                        type="checkbox"
+                        class="mt-1.5 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                        :checked="isSelected(employeeId(employee))"
+                        @change="toggleEmployee(employeeId(employee))"
+                    />
                     <EmployeeAvatar :photo-url="employee.profile_photo_url" :name="employee.name" size="sm" />
                     <div class="min-w-0 flex-1">
                         <Link
@@ -225,6 +356,22 @@ function onImportFileChange(event: Event): void {
             :preview="props.importPreview ?? null"
             :file-name="props.importFileName"
             @close="() => {}"
+        />
+
+        <BulkEditModal
+            :open="bulkEditOpen"
+            :employee-ids="selectedIds"
+            :selected-count="selectedIds.length"
+            :grades="grades"
+            :managers="managers"
+            :employment-types="employmentTypes"
+            :duty-types="dutyTypes"
+            :banks="banks"
+            :nationalities="nationalities"
+            :device-privileges="devicePrivileges"
+            :location-groups="locationGroups"
+            @close="bulkEditOpen = false"
+            @success="clearSelection"
         />
     </AppLayout>
 </template>
