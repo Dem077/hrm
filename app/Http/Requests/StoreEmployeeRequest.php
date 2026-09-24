@@ -8,8 +8,10 @@ use App\Enums\Gender;
 use App\Enums\BloodGroup;
 use App\Enums\MaritalStatus;
 use App\Enums\ZktDevicePrivilege;
+use App\Support\EmployeeUnset;
 use App\Support\PermissionRegistry;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
 class StoreEmployeeRequest extends FormRequest
@@ -35,6 +37,17 @@ class StoreEmployeeRequest extends FormRequest
         $dutyType = $this->input('duty_type', DutyType::Normal->value);
         $isShiftDuty = $dutyType === DutyType::Shift->value;
         $usesCustomDutyTimes = ! $isShiftDuty && $this->boolean('uses_custom_duty_times', false);
+        $staffId = trim((string) $this->input('staff_id', ''));
+
+        $nationalId = $this->normalizeUnsettable($this->input('national_id'));
+        if ($nationalId === null && $staffId !== '') {
+            $nationalId = EmployeeUnset::VALUE.'-'.$staffId;
+        }
+
+        $email = $this->normalizeUnsettable($this->input('email'));
+        $loginEmail = $email !== null && filter_var($email, FILTER_VALIDATE_EMAIL)
+            ? mb_strtolower($email)
+            : ($staffId !== '' ? 'unset.'.Str::slug($staffId, '').'@import.local' : null);
 
         $merge = [
             'is_active' => $this->boolean('is_active', true),
@@ -53,21 +66,29 @@ class StoreEmployeeRequest extends FormRequest
                 ->unique()
                 ->values()
                 ->all(),
+            'national_id' => $nationalId ?? EmployeeUnset::VALUE,
+            'email' => $email ?? EmployeeUnset::VALUE,
+            'login_email' => $loginEmail,
+            'mobile_number' => $this->normalizeUnsettable($this->input('mobile_number')) ?? EmployeeUnset::VALUE,
+            'joined_date' => $this->normalizeUnsettable($this->input('joined_date')),
             'current_address' => $this->input('current_address') ?: null,
             'permanent_address' => $this->input('permanent_address') ?: null,
             'ext_no' => $this->input('ext_no') ?: null,
-            'personal_email' => $this->input('personal_email') ?: null,
-            'office_email' => $this->input('office_email') ?: null,
+            'personal_email' => $this->normalizeOptionalEmail($this->input('personal_email')),
+            'office_email' => $this->normalizeOptionalEmail($this->input('office_email')),
             'emergency_contact_name' => $this->input('emergency_contact_name') ?: null,
-            'emergency_contact_number' => $this->input('emergency_contact_number') ?: null,
+            'emergency_contact_number' => $this->normalizeUnsettable($this->input('emergency_contact_number')) ?? EmployeeUnset::VALUE,
             'marital_status' => $this->input('marital_status') ?: null,
             'blood_group' => $this->input('blood_group') ?: null,
             'date_of_birth' => $this->input('date_of_birth') ?: null,
-            'nationality' => $this->input('nationality') ?: null,
+            'nationality' => $this->normalizeUnsettable($this->input('nationality')) ?? EmployeeUnset::VALUE,
             'religion' => $this->input('religion') ?: null,
-            'work_location' => $this->input('work_location') ?: null,
+            'work_location' => $this->normalizeUnsettable($this->input('work_location')) ?? EmployeeUnset::VALUE,
             'qualification' => $this->input('qualification') ?: null,
             'employment_type' => $this->input('employment_type') ?: null,
+            'bank_name' => $this->normalizeBankCode($this->input('bank_name')),
+            'account_name' => $this->normalizeUnsettable($this->input('account_name')) ?? EmployeeUnset::VALUE,
+            'account_no' => $this->normalizeUnsettable($this->input('account_no')) ?? EmployeeUnset::VALUE,
         ];
 
         if ($usesCustomDutyTimes) {
@@ -99,6 +120,35 @@ class StoreEmployeeRequest extends FormRequest
         }
 
         $this->merge($merge);
+    }
+
+    protected function normalizeUnsettable(mixed $value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        $raw = trim((string) $value);
+
+        if ($raw === '' || strcasecmp($raw, 'NULL') === 0 || EmployeeUnset::isUnset($raw)) {
+            return null;
+        }
+
+        return $raw;
+    }
+
+    protected function normalizeOptionalEmail(mixed $value): ?string
+    {
+        $normalized = $this->normalizeUnsettable($value);
+
+        return $normalized === null ? EmployeeUnset::VALUE : $normalized;
+    }
+
+    protected function normalizeBankCode(mixed $value): string
+    {
+        $normalized = $this->normalizeUnsettable($value);
+
+        return $normalized === null ? EmployeeUnset::VALUE : mb_strtoupper($normalized);
     }
 
     protected function normalizeTimeForValidation(?string $time): ?string
@@ -135,13 +185,27 @@ class StoreEmployeeRequest extends FormRequest
      */
     protected function employeeRules(): array
     {
+        $emailIsUnset = EmployeeUnset::isUnset($this->input('email'));
+        $nationalityIsUnset = EmployeeUnset::isUnset($this->input('nationality'));
+        $bankIsUnset = EmployeeUnset::isUnset($this->input('bank_name'));
+        $personalEmailIsUnset = EmployeeUnset::isUnset($this->input('personal_email'));
+        $officeEmailIsUnset = EmployeeUnset::isUnset($this->input('office_email'));
+
         return [
             'staff_id' => ['required', 'string', 'max:50', 'unique:employees,staff_id'],
             'name' => ['required', 'string', 'max:255'],
             'national_id' => ['required', 'string', 'max:50', 'unique:employees,national_id'],
-            'email' => ['required', 'email', 'max:255', 'unique:employees,email', 'unique:users,email'],
+            'email' => array_values(array_filter([
+                'required',
+                'string',
+                'max:255',
+                $emailIsUnset ? null : 'email',
+                $emailIsUnset ? null : 'unique:employees,email',
+                $emailIsUnset ? null : 'unique:users,email',
+            ])),
+            'login_email' => ['required', 'email', 'max:255', 'unique:users,email'],
             'mobile_number' => ['nullable', 'string', 'max:30'],
-            'joined_date' => ['required', 'date'],
+            'joined_date' => ['nullable', 'date'],
             'gender' => ['required', Rule::enum(Gender::class)],
             'grade_id' => ['nullable', 'exists:structure_grades,id'],
             'device_privilege' => ['nullable', Rule::enum(ZktDevicePrivilege::class)],
@@ -166,26 +230,41 @@ class StoreEmployeeRequest extends FormRequest
             'current_address' => ['nullable', 'string', 'max:1000'],
             'permanent_address' => ['nullable', 'string', 'max:1000'],
             'ext_no' => ['nullable', 'string', 'max:30'],
-            'personal_email' => ['nullable', 'email', 'max:255'],
-            'office_email' => ['nullable', 'email', 'max:255'],
+            'personal_email' => array_values(array_filter([
+                'nullable',
+                'string',
+                'max:255',
+                $personalEmailIsUnset ? null : 'email',
+            ])),
+            'office_email' => array_values(array_filter([
+                'nullable',
+                'string',
+                'max:255',
+                $officeEmailIsUnset ? null : 'email',
+            ])),
             'emergency_contact_name' => ['nullable', 'string', 'max:255'],
             'emergency_contact_number' => ['nullable', 'string', 'max:30'],
             'marital_status' => ['nullable', Rule::enum(MaritalStatus::class)],
             'blood_group' => ['nullable', Rule::enum(BloodGroup::class)],
             'date_of_birth' => ['nullable', 'date', 'before_or_equal:today'],
-            'nationality' => [
+            'nationality' => array_values(array_filter([
                 'nullable',
                 'string',
                 'max:100',
-                Rule::exists('nationalities', 'name'),
-            ],
+                $nationalityIsUnset ? null : Rule::exists('nationalities', 'name'),
+            ])),
             'religion' => ['nullable', 'string', 'max:100'],
             'work_location' => ['nullable', 'string', 'max:255'],
             'qualification' => ['nullable', 'string', 'max:255'],
             'employment_type' => ['nullable', Rule::enum(EmploymentType::class)],
-            'bank_name' => ['required', 'string', 'max:50', Rule::exists('banks', 'code')->where('is_active', true)],
-            'account_name' => ['required', 'string', 'max:255'],
-            'account_no' => ['required', 'string', 'max:50'],
+            'bank_name' => array_values(array_filter([
+                'nullable',
+                'string',
+                'max:50',
+                $bankIsUnset ? null : Rule::exists('banks', 'code')->where('is_active', true),
+            ])),
+            'account_name' => ['nullable', 'string', 'max:255'],
+            'account_no' => ['nullable', 'string', 'max:50'],
         ];
     }
 

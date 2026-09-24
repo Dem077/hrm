@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use App\Models\Employee;
+use App\Support\EmployeeUnset;
 use Illuminate\Validation\Rule;
 
 class UpdateEmployeeRequest extends StoreEmployeeRequest
@@ -23,16 +24,25 @@ class UpdateEmployeeRequest extends StoreEmployeeRequest
     {
         /** @var Employee $employee */
         $employee = $this->route('employee');
+        $emailIsUnset = EmployeeUnset::isUnset($this->input('email'));
 
         return [
             ...$this->employeeRules(),
+            ...$this->roleRules(),
             'staff_id' => ['required', 'string', 'max:50', Rule::unique('employees', 'staff_id')->ignore($employee->id)],
             'national_id' => ['required', 'string', 'max:50', Rule::unique('employees', 'national_id')->ignore($employee->id)],
-            'email' => [
+            'email' => array_values(array_filter([
+                'required',
+                'string',
+                'max:255',
+                $emailIsUnset ? null : 'email',
+                $emailIsUnset ? null : Rule::unique('employees', 'email')->ignore($employee->id),
+                $emailIsUnset ? null : Rule::unique('users', 'email')->ignore($employee->user_id),
+            ])),
+            'login_email' => [
                 'required',
                 'email',
                 'max:255',
-                Rule::unique('employees', 'email')->ignore($employee->id),
                 Rule::unique('users', 'email')->ignore($employee->user_id),
             ],
             'manager_id' => [

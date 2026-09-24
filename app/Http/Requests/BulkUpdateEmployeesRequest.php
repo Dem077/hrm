@@ -5,6 +5,7 @@ namespace App\Http\Requests;
 use App\Enums\DutyType;
 use App\Enums\EmploymentType;
 use App\Enums\ZktDevicePrivilege;
+use App\Support\EmployeeUnset;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
@@ -74,15 +75,24 @@ class BulkUpdateEmployeesRequest extends FormRequest
         }
 
         if ($this->has('bank_name')) {
-            $merge['bank_name'] = $this->input('bank_name') ?: null;
+            $raw = trim((string) ($this->input('bank_name') ?? ''));
+            $merge['bank_name'] = ($raw === '' || EmployeeUnset::isUnset($raw))
+                ? EmployeeUnset::VALUE
+                : mb_strtoupper($raw);
         }
 
         if ($this->has('work_location')) {
-            $merge['work_location'] = $this->input('work_location') ?: null;
+            $raw = trim((string) ($this->input('work_location') ?? ''));
+            $merge['work_location'] = ($raw === '' || EmployeeUnset::isUnset($raw))
+                ? EmployeeUnset::VALUE
+                : $raw;
         }
 
         if ($this->has('nationality')) {
-            $merge['nationality'] = $this->input('nationality') ?: null;
+            $raw = trim((string) ($this->input('nationality') ?? ''));
+            $merge['nationality'] = ($raw === '' || EmployeeUnset::isUnset($raw))
+                ? EmployeeUnset::VALUE
+                : $raw;
         }
 
         if ($this->has('religion')) {
@@ -139,21 +149,25 @@ class BulkUpdateEmployeesRequest extends FormRequest
             'works_saturday' => ['sometimes', 'boolean'],
             'duty_type' => ['sometimes', Rule::enum(DutyType::class)],
             'employment_type' => ['sometimes', 'nullable', Rule::enum(EmploymentType::class)],
-            'bank_name' => [
+            'bank_name' => array_values(array_filter([
                 'sometimes',
                 'nullable',
                 'string',
                 'max:50',
-                Rule::exists('banks', 'code')->where('is_active', true),
-            ],
+                EmployeeUnset::isUnset($this->input('bank_name'))
+                    ? null
+                    : Rule::exists('banks', 'code')->where('is_active', true),
+            ])),
             'work_location' => ['sometimes', 'nullable', 'string', 'max:255'],
-            'nationality' => [
+            'nationality' => array_values(array_filter([
                 'sometimes',
                 'nullable',
                 'string',
                 'max:100',
-                Rule::exists('nationalities', 'name'),
-            ],
+                EmployeeUnset::isUnset($this->input('nationality'))
+                    ? null
+                    : Rule::exists('nationalities', 'name'),
+            ])),
             'religion' => ['sometimes', 'nullable', 'string', 'max:100'],
             'qualification' => ['sometimes', 'nullable', 'string', 'max:255'],
             'device_privilege' => ['sometimes', Rule::enum(ZktDevicePrivilege::class)],

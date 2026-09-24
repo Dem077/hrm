@@ -46,7 +46,7 @@ class ZktDeviceController extends Controller
             'connectionModes' => ZktConnectionMode::options(),
             'brands' => AttendanceMachineBrand::options(),
             'machineTypes' => ZktMachineType::options(),
-            'admsCloudUrl' => rtrim((string) config('app.url'), '/').'/iclock',
+            ...$this->admsConnectionProps(),
         ]);
     }
 
@@ -88,7 +88,7 @@ class ZktDeviceController extends Controller
             'connectionModes' => ZktConnectionMode::options(),
             'brands' => AttendanceMachineBrand::options(),
             'machineTypes' => ZktMachineType::options(),
-            'admsCloudUrl' => rtrim((string) config('app.url'), '/').'/iclock',
+            ...$this->admsConnectionProps(),
         ]);
     }
 
@@ -572,6 +572,34 @@ class ZktDeviceController extends Controller
         }
 
         return back()->with('error', 'This machine is inactive.');
+    }
+
+    /**
+     * @return array{
+     *     admsCloudUrl: string,
+     *     admsHost: string,
+     *     admsPort: int,
+     *     admsScheme: string,
+     *     admsUsesHttps: bool
+     * }
+     */
+    protected function admsConnectionProps(): array
+    {
+        $appUrl = rtrim((string) config('app.url'), '/');
+        $parts = parse_url($appUrl) ?: [];
+        $scheme = strtolower((string) ($parts['scheme'] ?? 'http'));
+        $host = (string) ($parts['host'] ?? '127.0.0.1');
+        $port = isset($parts['port'])
+            ? (int) $parts['port']
+            : ($scheme === 'https' ? 443 : 80);
+
+        return [
+            'admsCloudUrl' => $appUrl.'/iclock',
+            'admsHost' => $host,
+            'admsPort' => $port,
+            'admsScheme' => $scheme,
+            'admsUsesHttps' => $scheme === 'https',
+        ];
     }
 
     /**

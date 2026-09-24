@@ -332,7 +332,7 @@ function submit(): void {
                 <input v-model="apply.bank_name" type="checkbox" class="mt-2.5 rounded border-slate-300 text-brand-600 focus:ring-brand-500" />
                 <div class="min-w-0 flex-1">
                     <UiSelect v-model="values.bank_name" label="Bank" :disabled="!apply.bank_name" :error="form.errors.bank_name">
-                        <option value="">Clear</option>
+                        <option value="">Unset</option>
                         <option v-for="bank in banks" :key="bank.value" :value="bank.value">{{ bank.label }}</option>
                     </UiSelect>
                 </div>
@@ -358,7 +358,7 @@ function submit(): void {
                         :disabled="!apply.nationality"
                         :error="form.errors.nationality"
                     >
-                        <option value="">Clear</option>
+                        <option value="">Unset</option>
                         <option v-for="option in nationalities" :key="option.value" :value="option.value">
                             {{ option.label }}
                         </option>

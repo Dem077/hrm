@@ -25,7 +25,6 @@ use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
 use Spatie\Permission\Models\Role;
@@ -199,18 +198,28 @@ class EmployeeController extends Controller
 
     public function store(StoreEmployeeRequest $request, ZktDeviceUserSyncService $deviceUserSyncService): RedirectResponse
     {
-        $data = $request->safe()->except('password', 'role_names', 'zkt_location_group_ids', 'profile_photo', 'remove_profile_photo');
+        $data = $request->safe()->except(
+            'password',
+            'role_names',
+            'zkt_location_group_ids',
+            'profile_photo',
+            'remove_profile_photo',
+            'login_email',
+        );
+        $loginEmail = $request->validated('login_email');
         $password = $request->filled('password')
             ? $request->string('password')->value()
-            : Str::password(12);
+            : \App\Services\Employee\EmployeeCsvService::DEFAULT_PASSWORD;
+        $mustChangePassword = ! $request->filled('password');
 
         $employee = null;
 
-        DB::transaction(function () use ($request, $data, $password, &$employee): void {
+        DB::transaction(function () use ($request, $data, $password, $loginEmail, $mustChangePassword, &$employee): void {
             $user = User::query()->create([
                 'name' => $data['name'],
-                'email' => $data['email'],
+                'email' => $loginEmail,
                 'password' => $password,
+                'must_change_password' => $mustChangePassword,
             ]);
 
             $employee = Employee::query()->create([
@@ -252,13 +261,11 @@ class EmployeeController extends Controller
 
         $message = $request->filled('password')
             ? 'Employee and login account created successfully.'
-            : "Employee created successfully. Temporary login password: {$password}";
+            : 'Employee created successfully. Default login password: Agro@1234 (must change on first login).';
 
-        $redirect = redirect()
+        return redirect()
             ->route('employees.index')
             ->with('success', $message);
-
-        return $redirect;
     }
 
     public function show(Employee $employee): Response
@@ -288,22 +295,30 @@ class EmployeeController extends Controller
 
     public function update(UpdateEmployeeRequest $request, Employee $employee, ZktDeviceUserSyncService $deviceUserSyncService): RedirectResponse
     {
-        $data = $request->safe()->except('password', 'role_names', 'zkt_location_group_ids', 'profile_photo', 'remove_profile_photo');
+        $data = $request->safe()->except(
+            'password',
+            'role_names',
+            'zkt_location_group_ids',
+            'profile_photo',
+            'remove_profile_photo',
+            'login_email',
+        );
+        $loginEmail = $request->validated('login_email');
         $password = $request->filled('password')
             ? $request->string('password')->value()
             : null;
 
         $message = null;
 
-        DB::transaction(function () use ($request, $employee, $data, $password, &$message): void {
+        DB::transaction(function () use ($request, $employee, $data, $password, $loginEmail, &$message): void {
             $employee->update($data);
             $this->syncProfilePhoto($request, $employee);
 
             if ($employee->user) {
                 $employee->user->update([
                     'name' => $data['name'],
-                    'email' => $data['email'],
-                    ...($password ? ['password' => $password] : []),
+                    'email' => $loginEmail,
+                    ...($password ? ['password' => $password, 'must_change_password' => false] : []),
                 ]);
 
                 $this->syncUserRoles($request, $employee->user);
@@ -311,19 +326,20 @@ class EmployeeController extends Controller
                 return;
             }
 
-            $generatedPassword = $password ?? Str::password(12);
+            $generatedPassword = $password ?? \App\Services\Employee\EmployeeCsvService::DEFAULT_PASSWORD;
 
             $user = User::query()->create([
                 'name' => $data['name'],
-                'email' => $data['email'],
+                'email' => $loginEmail,
                 'password' => $generatedPassword,
+                'must_change_password' => $password === null,
             ]);
 
             $employee->update(['user_id' => $user->id]);
             $this->syncUserRoles($request, $user);
 
             if (! $password) {
-                $message = "Employee updated. Login account created. Temporary password: {$generatedPassword}";
+                $message = 'Employee updated. Login account created. Default password: Agro@1234 (must change on first login).';
             }
         });
 
@@ -427,7 +443,7 @@ class EmployeeController extends Controller
             'national_id' => '',
             'email' => '',
             'mobile_number' => '',
-            'joined_date' => now()->toDateString(),
+            'joined_date' => '',
             'gender' => Gender::Male->value,
             'grade_id' => null,
             'device_privilege' => ZktDevicePrivilege::Employee->value,

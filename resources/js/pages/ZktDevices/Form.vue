@@ -20,6 +20,10 @@ const props = defineProps<{
     brands: BrandOption[];
     machineTypes: MachineTypeOption[];
     admsCloudUrl: string;
+    admsHost: string;
+    admsPort: number;
+    admsScheme: string;
+    admsUsesHttps: boolean;
 }>();
 
 const isEditing = computed(() => props.device.id !== null);
@@ -217,16 +221,48 @@ function submit() {
                             v-model="form.serial_number"
                             label="Serial number"
                             required
-                            hint="Must match the SN shown on the machine (Cloud / ADMS settings)."
+                            hint="Must match the SN on the machine (Menu → Comm. → Cloud / ADMS)."
                             :error="form.errors.serial_number"
                         />
-                        <div class="md:col-span-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm dark:border-slate-700 dark:bg-surface-elevated">
-                            <p class="font-medium text-slate-800 dark:text-slate-200">Cloud / ADMS server URL</p>
-                            <p class="mt-1 break-all font-mono text-brand-700 dark:text-brand-300">{{ admsCloudUrl }}</p>
-                            <p class="mt-2 text-slate-500 dark:text-slate-400">
-                                On the machine, enable Cloud/ADMS/Push and set the server to this URL (some firmwares want host only with path
-                                <span class="font-mono">/iclock</span>). The machine must reach HRM over the internet.
-                            </p>
+                        <div class="md:col-span-2 space-y-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm dark:border-slate-700 dark:bg-surface-elevated">
+                            <div>
+                                <p class="font-medium text-slate-800 dark:text-slate-200">Cloud / ADMS endpoint</p>
+                                <p class="mt-1 break-all font-mono text-brand-700 dark:text-brand-300">{{ admsCloudUrl }}</p>
+                            </div>
+
+                            <div class="rounded-lg border border-slate-200 bg-white px-3 py-3 dark:border-slate-600 dark:bg-surface">
+                                <p class="font-medium text-slate-800 dark:text-slate-200">Older devices (F18 and similar — IP only)</p>
+                                <p class="mt-1 text-slate-500 dark:text-slate-400">
+                                    These menus do not accept a full URL. Enter the public host/IP and port; the firmware adds
+                                    <span class="font-mono">/iclock</span> itself.
+                                </p>
+                                <dl class="mt-3 grid gap-2 sm:grid-cols-2">
+                                    <div>
+                                        <dt class="text-xs font-semibold uppercase tracking-wide text-slate-400">Server IP / Domain</dt>
+                                        <dd class="mt-0.5 font-mono text-slate-900 dark:text-slate-100">{{ admsHost }}</dd>
+                                    </div>
+                                    <div>
+                                        <dt class="text-xs font-semibold uppercase tracking-wide text-slate-400">Port</dt>
+                                        <dd class="mt-0.5 font-mono text-slate-900 dark:text-slate-100">{{ admsPort }}</dd>
+                                    </div>
+                                </dl>
+                                <ul class="mt-3 list-disc space-y-1 pl-5 text-slate-500 dark:text-slate-400">
+                                    <li>Enable Cloud / ADMS / Push (not PC Connection / TCP).</li>
+                                    <li>Copy the serial number into this form exactly.</li>
+                                    <li>
+                                        The device must reach this host over the internet (public IP, port forward, or tunnel).
+                                        Local Herd URLs only work on the same LAN.
+                                    </li>
+                                    <li v-if="admsUsesHttps">
+                                        Many F18 firmwares speak HTTP only. If the device will not connect on HTTPS/{{ admsPort }},
+                                        expose HRM on HTTP port 80 for <span class="font-mono">/iclock</span> (or set
+                                        <span class="font-mono">APP_URL</span> to that HTTP endpoint).
+                                    </li>
+                                    <li v-else>
+                                        Prefer HTTP port 80 when possible — older ADMS stacks often fail on HTTPS.
+                                    </li>
+                                </ul>
+                            </div>
                         </div>
                     </template>
 

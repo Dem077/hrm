@@ -103,14 +103,28 @@ const tabs = computed(() => {
     return items;
 });
 
+function isUnsetValue(value: string | null | undefined): boolean {
+    if (value == null) {
+        return true;
+    }
+
+    const normalized = value.trim().toLowerCase();
+
+    return normalized === '' || normalized === 'unset' || normalized.startsWith('unset-');
+}
+
+function unsettable(value: string | null | undefined): string {
+    return isUnsetValue(value) ? '' : String(value);
+}
+
 const form = useForm({
     staff_id: props.employee.staff_id,
     name: props.employee.name,
     profile_photo: null as File | null,
     remove_profile_photo: false,
-    national_id: props.employee.national_id,
-    email: props.employee.email ?? '',
-    mobile_number: props.employee.mobile_number ?? '',
+    national_id: unsettable(props.employee.national_id),
+    email: unsettable(props.employee.email),
+    mobile_number: unsettable(props.employee.mobile_number),
     joined_date: props.employee.joined_date ?? '',
     gender: props.employee.gender,
     grade_id: props.employee.grade_id ?? '',
@@ -134,21 +148,21 @@ const form = useForm({
     current_address: props.employee.current_address ?? '',
     permanent_address: props.employee.permanent_address ?? '',
     ext_no: props.employee.ext_no ?? '',
-    personal_email: props.employee.personal_email ?? '',
-    office_email: props.employee.office_email ?? '',
+    personal_email: unsettable(props.employee.personal_email),
+    office_email: unsettable(props.employee.office_email),
     emergency_contact_name: props.employee.emergency_contact_name ?? '',
-    emergency_contact_number: props.employee.emergency_contact_number ?? '',
+    emergency_contact_number: unsettable(props.employee.emergency_contact_number),
     marital_status: props.employee.marital_status ?? '',
     blood_group: props.employee.blood_group ?? '',
     date_of_birth: props.employee.date_of_birth ?? '',
-    nationality: props.employee.nationality ?? '',
+    nationality: unsettable(props.employee.nationality),
     religion: props.employee.religion ?? '',
-    work_location: props.employee.work_location ?? '',
+    work_location: unsettable(props.employee.work_location),
     qualification: props.employee.qualification ?? '',
     employment_type: props.employee.employment_type ?? '',
-    bank_name: props.employee.bank_name ?? '',
-    account_name: props.employee.account_name ?? '',
-    account_no: props.employee.account_no ?? '',
+    bank_name: unsettable(props.employee.bank_name),
+    account_name: unsettable(props.employee.account_name),
+    account_no: unsettable(props.employee.account_no),
 });
 
 const selectedGrade = computed(() => {
@@ -163,9 +177,9 @@ const selectedGrade = computed(() => {
 type LoginEmailSource = 'office' | 'personal';
 
 function detectLoginEmailSource(): LoginEmailSource {
-    const email = (props.employee.email ?? '').trim().toLowerCase();
-    const personal = (props.employee.personal_email ?? '').trim().toLowerCase();
-    const office = (props.employee.office_email ?? '').trim().toLowerCase();
+    const email = unsettable(props.employee.email).trim().toLowerCase();
+    const personal = unsettable(props.employee.personal_email).trim().toLowerCase();
+    const office = unsettable(props.employee.office_email).trim().toLowerCase();
 
     if (email && personal && email === personal) {
         return 'personal';
@@ -183,8 +197,10 @@ const loginEmailSource = ref<LoginEmailSource>(detectLoginEmailSource());
 const selectedLoginEmail = computed(() => {
     const value = loginEmailSource.value === 'personal' ? form.personal_email : form.office_email;
 
-    return (value ?? '').trim();
+    return unsettable(value).trim();
 });
+
+const loginEmailDisplay = computed(() => selectedLoginEmail.value || 'Unset (login uses staff ID placeholder)');
 
 const lengthOfServiceLabel = computed(() => {
     if (!form.joined_date) {
@@ -377,24 +393,40 @@ watch(
                     <div class="grid gap-5 md:grid-cols-2">
                         <UiInput v-model="form.staff_id" label="Staff ID" required :error="form.errors.staff_id" />
                         <UiInput v-model="form.name" label="Full name" required :error="form.errors.name" />
-                        <UiInput v-model="form.national_id" label="National ID" required :error="form.errors.national_id" />
-                        <UiSelect v-model="form.gender" label="Gender" :error="form.errors.gender">
+                        <UiInput
+                            v-model="form.national_id"
+                            label="National ID"
+                            hint="Leave blank to save as Unset."
+                            :error="form.errors.national_id"
+                        />
+                        <UiSelect v-model="form.gender" label="Gender" required :error="form.errors.gender">
                             <option v-for="option in genders" :key="option.value" :value="option.value">
                                 {{ option.label }}
                             </option>
                         </UiSelect>
-                        <UiSelect v-model="loginEmailSource" label="Login email" required :error="form.errors.email">
+                        <UiSelect v-model="loginEmailSource" label="Login email" :error="form.errors.email">
                             <option value="office">Office email</option>
                             <option value="personal">Personal email</option>
                         </UiSelect>
                         <UiInput
-                            :model-value="selectedLoginEmail || '—'"
+                            :model-value="loginEmailDisplay"
                             label="Login email address"
-                            hint="Uses the selected email from Profile details. Office email is selected by default."
+                            hint="Uses the selected email from Profile details. Blank emails save as Unset and use a staff-ID login placeholder."
                             readonly
                         />
-                        <UiInput v-model="form.mobile_number" label="Mobile number" :error="form.errors.mobile_number" />
-                        <UiInput v-model="form.joined_date" label="Joined date" type="date" required :error="form.errors.joined_date" />
+                        <UiInput
+                            v-model="form.mobile_number"
+                            label="Mobile number"
+                            hint="Leave blank to save as Unset."
+                            :error="form.errors.mobile_number"
+                        />
+                        <UiInput
+                            v-model="form.joined_date"
+                            label="Joined date"
+                            type="date"
+                            hint="Optional — leave blank if unknown."
+                            :error="form.errors.joined_date"
+                        />
                         <label class="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-surface-elevated dark:text-slate-300">
                             <input v-model="form.is_active" type="checkbox" class="rounded border-slate-300 bg-white text-brand-600 dark:border-slate-600 dark:bg-surface dark:text-brand-500" />
                             Employee is active
@@ -407,7 +439,7 @@ watch(
                     :description="
                         isEditing
                             ? 'Leave blank to keep the current password.'
-                            : 'Leave blank to auto-generate a temporary password shown after save.'
+                            : 'Leave blank to use Agro@1234 (must change on first login).'
                     "
                 >
                     <UiInput
@@ -426,10 +458,27 @@ watch(
                         <UiTextarea v-model="form.current_address" label="Current address" :error="form.errors.current_address" />
                         <UiTextarea v-model="form.permanent_address" label="Permanent address" :error="form.errors.permanent_address" />
                         <UiInput v-model="form.ext_no" label="Ext No" :error="form.errors.ext_no" />
-                        <UiInput v-model="form.personal_email" label="Personal email" type="email" :error="form.errors.personal_email" />
-                        <UiInput v-model="form.office_email" label="Office email" type="email" :error="form.errors.office_email" />
+                        <UiInput
+                            v-model="form.personal_email"
+                            label="Personal email"
+                            type="email"
+                            hint="Leave blank to save as Unset."
+                            :error="form.errors.personal_email"
+                        />
+                        <UiInput
+                            v-model="form.office_email"
+                            label="Office email"
+                            type="email"
+                            hint="Leave blank to save as Unset."
+                            :error="form.errors.office_email"
+                        />
                         <UiInput v-model="form.emergency_contact_name" label="Emergency contact name" :error="form.errors.emergency_contact_name" />
-                        <UiInput v-model="form.emergency_contact_number" label="Emergency contact number" :error="form.errors.emergency_contact_number" />
+                        <UiInput
+                            v-model="form.emergency_contact_number"
+                            label="Emergency contact number"
+                            hint="Leave blank to save as Unset."
+                            :error="form.errors.emergency_contact_number"
+                        />
                     </div>
                 </UiCard>
 
@@ -479,10 +528,10 @@ watch(
                     </div>
                 </UiCard>
 
-                <UiCard title="Banking details" description="Required for payroll and reimbursements.">
+                <UiCard title="Banking details" description="Needed for payroll — leave blank to save as Unset until filled later.">
                     <div class="grid gap-5 md:grid-cols-3">
-                        <UiSelect v-model="form.bank_name" label="Bank name" required :error="form.errors.bank_name">
-                            <option value="">Select bank</option>
+                        <UiSelect v-model="form.bank_name" label="Bank name" :error="form.errors.bank_name">
+                            <option value="">Unset</option>
                             <option
                                 v-if="form.bank_name && !banks.some((bank) => bank.value === form.bank_name)"
                                 :value="form.bank_name"
@@ -493,8 +542,18 @@ watch(
                                 {{ bank.label }}
                             </option>
                         </UiSelect>
-                        <UiInput v-model="form.account_name" label="Account name" required :error="form.errors.account_name" />
-                        <UiInput v-model="form.account_no" label="Account no" required :error="form.errors.account_no" />
+                        <UiInput
+                            v-model="form.account_name"
+                            label="Account name"
+                            hint="Leave blank to save as Unset."
+                            :error="form.errors.account_name"
+                        />
+                        <UiInput
+                            v-model="form.account_no"
+                            label="Account no"
+                            hint="Leave blank to save as Unset."
+                            :error="form.errors.account_no"
+                        />
                     </div>
                 </UiCard>
             </div>
