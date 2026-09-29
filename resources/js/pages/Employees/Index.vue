@@ -35,6 +35,7 @@ const props = defineProps<{
 const { can } = usePermissions();
 const canCreate = can('employees.create');
 const canUpdate = can('employees.update');
+const canImportCsv = canCreate || canUpdate;
 const searchText = ref('');
 const fileInput = ref<HTMLInputElement | null>(null);
 const importForm = useForm<{ file: File | null }>({
@@ -147,6 +148,10 @@ function downloadSampleCsv(): void {
     globalThis.location.assign('/employees/sample-csv');
 }
 
+function exportEmployeesCsv(): void {
+    globalThis.location.assign('/employees/export-csv');
+}
+
 function openImportPicker(): void {
     fileInput.value?.click();
 }
@@ -182,9 +187,14 @@ function onImportFileChange(event: Event): void {
             description="Manage staff records, grade assignments, and reporting lines for approvals."
         >
             <template #actions>
-                <UiActionMenu v-if="canCreate" label="CSV" variant="secondary" size="md">
-                    <UiActionMenuItem @click="downloadSampleCsv">Download template</UiActionMenuItem>
-                    <UiActionMenuItem :disabled="importForm.processing" @click="openImportPicker">
+                <UiActionMenu label="CSV" variant="secondary" size="md">
+                    <UiActionMenuItem @click="exportEmployeesCsv">Export current employees</UiActionMenuItem>
+                    <UiActionMenuItem v-if="canImportCsv" @click="downloadSampleCsv">Download blank template</UiActionMenuItem>
+                    <UiActionMenuItem
+                        v-if="canImportCsv"
+                        :disabled="importForm.processing"
+                        @click="openImportPicker"
+                    >
                         {{ importForm.processing ? 'Preparing…' : 'Import CSV' }}
                     </UiActionMenuItem>
                 </UiActionMenu>

@@ -24,7 +24,7 @@ export type EmployeeImportPreviewRow = {
     bank_name: string;
     account_name: string;
     account_no: string;
-    action: 'create';
+    action: 'create' | 'update';
 };
 
 export type EmployeeImportPreview = {
@@ -32,6 +32,7 @@ export type EmployeeImportPreview = {
     summary: {
         rows: number;
         create: number;
+        update: number;
     };
 };
 
@@ -53,8 +54,17 @@ const summaryText = computed(() => {
     }
 
     const s = props.preview.summary;
+    const parts = [`${s.rows} row(s)`];
 
-    return `${s.rows} row(s) · ${s.create} employee(s) will be created`;
+    if (s.create > 0) {
+        parts.push(`${s.create} will be created`);
+    }
+
+    if (s.update > 0) {
+        parts.push(`${s.update} will be updated`);
+    }
+
+    return parts.join(' · ');
 });
 
 function cancel() {
@@ -80,15 +90,16 @@ function confirm() {
     <UiModal
         :open="open"
         title="Review employee CSV import"
-        :description="fileName ? `File: ${fileName}` : 'Verify the rows below before creating employees.'"
+        :description="fileName ? `File: ${fileName}` : 'Verify the rows below before creating or updating employees.'"
         max-width="2xl"
         @close="cancel"
     >
         <div v-if="preview" class="space-y-4">
             <p class="text-sm text-slate-600 dark:text-slate-400">{{ summaryText }}</p>
             <p class="text-xs text-slate-500">
+                Matching <span class="font-medium">staff_id</span> rows update existing employees. New staff IDs create employees.
                 Blank or NULL cells become Unset. Numbers separated by / are stored as mobile + emergency contact.
-                Each imported employee gets login password Agro@1234 and must change it on first sign-in.
+                Newly created logins use password Agro@1234 and must change it on first sign-in. Updates do not reset passwords.
             </p>
 
             <div class="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700">
@@ -132,7 +143,10 @@ function confirm() {
                             </td>
                             <td class="whitespace-nowrap px-3 py-2">{{ row.manager_staff_id || '—' }}</td>
                             <td class="whitespace-nowrap px-3 py-2">
-                                <UiBadge label="New" color="success" />
+                                <UiBadge
+                                    :label="row.action === 'update' ? 'Update' : 'New'"
+                                    :color="row.action === 'update' ? 'warning' : 'success'"
+                                />
                             </td>
                         </tr>
                     </tbody>

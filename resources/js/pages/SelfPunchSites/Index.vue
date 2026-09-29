@@ -3,12 +3,15 @@ import { Head, router, useForm } from '@inertiajs/vue3';
 import { ref } from 'vue';
 
 import GeoFenceMapPicker from '@/components/GeoFenceMapPicker.vue';
+import EmployeeMultiPicker from '@/components/ui/EmployeeMultiPicker.vue';
+import type { PickerEmployee } from '@/components/ui/EmployeeMultiPicker.vue';
 import PageHeader from '@/components/ui/PageHeader.vue';
 import UiButton from '@/components/ui/UiButton.vue';
 import UiCard from '@/components/ui/UiCard.vue';
 import UiInput from '@/components/ui/UiInput.vue';
 import { usePermissions } from '@/composables/usePermissions';
 import AppLayout from '@/layouts/AppLayout.vue';
+import type { SelectOption } from '@/types/hrm';
 
 type SelfPunchSite = {
     id: number | null;
@@ -38,7 +41,8 @@ const props = defineProps<{
     sites: SelfPunchSite[];
     doorSites: RemoteDoorSite[];
     accessDevices: Array<{ id: number; name: string; connection_mode: string; serial_number: string | null }>;
-    employees: Array<{ id: number; name: string; staff_id: string }>;
+    employees: PickerEmployee[];
+    departments: SelectOption[];
     emptySite: SelfPunchSite;
     emptyDoorSite: RemoteDoorSite;
 }>();
@@ -112,24 +116,6 @@ function editSite(site: SelfPunchSite) {
     form.is_active = site.is_active;
     form.employee_ids = [...(site.employee_ids ?? site.employees?.map((e) => e.id) ?? [])];
     form.clearErrors();
-}
-
-function toggleEmployee(employeeId: number) {
-    const index = form.employee_ids.indexOf(employeeId);
-    if (index >= 0) {
-        form.employee_ids.splice(index, 1);
-        return;
-    }
-    form.employee_ids.push(employeeId);
-}
-
-function toggleDoorEmployee(employeeId: number) {
-    const index = doorForm.employee_ids.indexOf(employeeId);
-    if (index >= 0) {
-        doorForm.employee_ids.splice(index, 1);
-        return;
-    }
-    doorForm.employee_ids.push(employeeId);
 }
 
 function submit() {
@@ -359,32 +345,12 @@ function destroyDoorSite(id: number, name: string) {
                         </p>
                     </div>
 
-                    <div>
-                        <p class="mb-2 text-sm font-medium text-slate-700 dark:text-slate-200">Allowed employees</p>
-                        <p class="mb-2 text-xs text-slate-500">Only employees with a login account are listed.</p>
-                        <div class="max-h-56 space-y-2 overflow-y-auto rounded-xl border border-slate-200 p-3 dark:border-slate-700">
-                            <label
-                                v-for="employee in employees"
-                                :key="employee.id"
-                                class="flex items-start gap-3 rounded-lg px-2 py-2 text-sm hover:bg-slate-50 dark:hover:bg-surface-muted"
-                            >
-                                <input
-                                    type="checkbox"
-                                    class="mt-0.5 rounded border-slate-300 text-brand-600"
-                                    :checked="form.employee_ids.includes(employee.id)"
-                                    @change="toggleEmployee(employee.id)"
-                                />
-                                <span>
-                                    <span class="font-medium">{{ employee.name }}</span>
-                                    <span class="block text-xs text-slate-500">{{ employee.staff_id }}</span>
-                                </span>
-                            </label>
-                            <p v-if="employees.length === 0" class="text-sm text-slate-500">
-                                No employees with login accounts found.
-                            </p>
-                        </div>
-                        <p v-if="form.errors.employee_ids" class="mt-1 text-sm text-red-600">{{ form.errors.employee_ids }}</p>
-                    </div>
+                    <EmployeeMultiPicker
+                        v-model="form.employee_ids"
+                        :employees="employees"
+                        :departments="departments"
+                        :error="form.errors.employee_ids"
+                    />
 
                     <div class="flex flex-wrap gap-2">
                         <UiButton type="submit" variant="primary" :disabled="form.processing">
@@ -503,18 +469,12 @@ function destroyDoorSite(id: number, name: string) {
                         />
                     </div>
 
-                    <div>
-                        <p class="mb-2 text-sm font-medium text-slate-700 dark:text-slate-200">Allowed employees</p>
-                        <div class="max-h-56 space-y-2 overflow-y-auto rounded-xl border border-slate-200 p-3 dark:border-slate-700">
-                            <label v-for="employee in employees" :key="`door-${employee.id}`" class="flex items-start gap-3 rounded-lg px-2 py-2 text-sm">
-                                <input type="checkbox" class="mt-0.5 rounded border-slate-300 text-brand-600" :checked="doorForm.employee_ids.includes(employee.id)" @change="toggleDoorEmployee(employee.id)" />
-                                <span>
-                                    <span class="font-medium">{{ employee.name }}</span>
-                                    <span class="block text-xs text-slate-500">{{ employee.staff_id }}</span>
-                                </span>
-                            </label>
-                        </div>
-                    </div>
+                    <EmployeeMultiPicker
+                        v-model="doorForm.employee_ids"
+                        :employees="employees"
+                        :departments="departments"
+                        :error="doorForm.errors.employee_ids"
+                    />
 
                     <div class="flex flex-wrap gap-2">
                         <UiButton type="submit" variant="primary" :disabled="doorForm.processing">{{ editingDoorId ? 'Save changes' : 'Create door site' }}</UiButton>

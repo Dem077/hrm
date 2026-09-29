@@ -68,8 +68,33 @@ class EmployeeCsvService
         ]);
     }
 
+    public function export(): StreamedResponse
+    {
+        $filename = 'employees-export-'.now()->format('Y-m-d').'.csv';
+
+        $employees = Employee::query()
+            ->with(['manager:id,staff_id'])
+            ->orderBy('name')
+            ->get();
+
+        return response()->streamDownload(function () use ($employees): void {
+            $handle = fopen('php://output', 'w');
+
+            fwrite($handle, "\xEF\xBB\xBF");
+            fputcsv($handle, self::HEADERS, ',', '"', '\\');
+
+            foreach ($employees as $employee) {
+                fputcsv($handle, $this->exportRow($employee), ',', '"', '\\');
+            }
+
+            fclose($handle);
+        }, $filename, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+        ]);
+    }
+
     /**
-     * @return array{rows: list<array<string, mixed>>, summary: array{rows: int, create: int}}
+     * @return array{rows: list<array<string, mixed>>, summary: array{rows: int, create: int, update: int}}
      */
     public function preview(UploadedFile $file): array
     {
@@ -78,8 +103,13 @@ class EmployeeCsvService
         $validatedRows = $this->validateAllRows($file);
 
         $previewRows = [];
+        $create = 0;
+        $update = 0;
 
         foreach ($validatedRows as $row) {
+            $action = $row['action'];
+            $action === 'update' ? $update++ : $create++;
+
             $previewRows[] = [
                 'line' => $row['line'],
                 'staff_id' => $row['staff_id'],
@@ -98,7 +128,7 @@ class EmployeeCsvService
                 'bank_name' => $row['bank_name'],
                 'account_name' => $row['account_name'],
                 'account_no' => $row['account_no'],
-                'action' => 'create',
+                'action' => $action,
             ];
         }
 
@@ -106,13 +136,14 @@ class EmployeeCsvService
             'rows' => $previewRows,
             'summary' => [
                 'rows' => count($previewRows),
-                'create' => count($previewRows),
+                'create' => $create,
+                'update' => $update,
             ],
         ];
     }
 
     /**
-     * @return array{created: int, rows: int}
+     * @return array{created: int, updated: int, rows: int}
      */
     public function import(UploadedFile $file): array
     {
@@ -121,11 +152,22 @@ class EmployeeCsvService
         $validatedRows = $this->validateAllRows($file);
 
         $created = 0;
+        $updated = 0;
 
-        DB::transaction(function () use ($validatedRows, &$created): void {
-            $createdByStaffId = [];
+        DB::transaction(function () use ($validatedRows, &$created, &$updated): void {
+            $employeesByStaffId = [];
 
             foreach ($validatedRows as $row) {
+                if ($row['action'] === 'update') {
+                    $employee = Employee::query()->findOrFail($row['existing_employee_id']);
+                    $employee->update($this->employeeAttributes($row));
+                    $this->syncUserForEmployee($employee, $row, createIfMissing: false);
+                    $employeesByStaffId[mb_strtolower($employee->staff_id)] = $employee->fresh();
+                    $updated++;
+
+                    continue;
+                }
+
                 $user = User::query()->create([
                     'name' => $row['name'],
                     'email' => $row['user_email'],
@@ -134,46 +176,37 @@ class EmployeeCsvService
                 ]);
 
                 $employee = Employee::query()->create([
+                    ...$this->employeeAttributes($row),
                     'staff_id' => $row['staff_id'],
-                    'name' => $row['name'],
-                    'national_id' => $row['national_id'],
-                    'email' => $row['email'],
-                    'mobile_number' => $row['mobile_number'],
-                    'emergency_contact_number' => $row['emergency_contact_number'],
-                    'joined_date' => $row['joined_date'],
-                    'gender' => $row['gender'],
-                    'employment_type' => $row['employment_type'],
-                    'duty_type' => $row['duty_type'],
-                    'works_saturday' => $row['works_saturday'],
-                    'is_active' => $row['is_active'],
                     'uses_custom_duty_times' => false,
-                    'grade_id' => $row['grade_id'],
                     'device_privilege' => ZktDevicePrivilege::Employee,
-                    'bank_name' => $row['bank_name'],
-                    'account_name' => $row['account_name'],
-                    'account_no' => $row['account_no'],
-                    'nationality' => $row['nationality'],
-                    'work_location' => $row['work_location'],
-                    'personal_email' => $row['personal_email'],
-                    'office_email' => $row['office_email'],
                     'user_id' => $user->id,
                 ]);
 
-                $createdByStaffId[mb_strtolower($employee->staff_id)] = $employee;
+                $employeesByStaffId[mb_strtolower($employee->staff_id)] = $employee;
                 $created++;
             }
 
             foreach ($validatedRows as $row) {
-                if ($row['manager_staff_id'] === null) {
+                $employee = $employeesByStaffId[mb_strtolower($row['staff_id'])] ?? null;
+
+                if (! $employee) {
                     continue;
                 }
 
-                $employee = $createdByStaffId[mb_strtolower($row['staff_id'])] ?? null;
+                if ($row['manager_staff_id'] === null) {
+                    if ($employee->manager_id !== null) {
+                        $employee->update(['manager_id' => null]);
+                    }
+
+                    continue;
+                }
+
                 $managerKey = mb_strtolower($row['manager_staff_id']);
-                $manager = $createdByStaffId[$managerKey]
+                $manager = $employeesByStaffId[$managerKey]
                     ?? Employee::query()->whereRaw('LOWER(staff_id) = ?', [$managerKey])->first();
 
-                if ($employee && $manager && (int) $employee->id !== (int) $manager->id) {
+                if ($manager && (int) $employee->id !== (int) $manager->id) {
                     $employee->update(['manager_id' => $manager->id]);
                 }
             }
@@ -181,6 +214,7 @@ class EmployeeCsvService
 
         return [
             'created' => $created,
+            'updated' => $updated,
             'rows' => count($validatedRows),
         ];
     }
@@ -216,23 +250,34 @@ class EmployeeCsvService
             ->map(fn (StructureGrade $grade) => $grade->label())
             ->all();
 
-        $existingStaffIds = Employee::query()
-            ->pluck('staff_id')
-            ->mapWithKeys(fn ($id) => [mb_strtolower((string) $id) => true])
-            ->all();
-        $existingNationalIds = Employee::query()
-            ->pluck('national_id')
-            ->mapWithKeys(fn ($id) => [mb_strtolower((string) $id) => true])
-            ->all();
-        $existingEmployeeEmails = Employee::query()
-            ->whereNotNull('email')
-            ->pluck('email')
-            ->mapWithKeys(fn ($email) => [mb_strtolower((string) $email) => true])
-            ->all();
-        $existingUserEmails = User::query()
-            ->pluck('email')
-            ->mapWithKeys(fn ($email) => [mb_strtolower((string) $email) => true])
-            ->all();
+        $existingEmployees = Employee::query()
+            ->with('user:id,email')
+            ->get(['id', 'staff_id', 'national_id', 'email', 'user_id']);
+
+        $existingStaffIds = [];
+        $existingNationalIds = [];
+        $existingEmployeeEmails = [];
+        $existingUserEmails = [];
+
+        foreach ($existingEmployees as $employee) {
+            $existingStaffIds[mb_strtolower((string) $employee->staff_id)] = $employee->id;
+
+            if ($employee->national_id !== null && $employee->national_id !== '') {
+                $existingNationalIds[mb_strtolower((string) $employee->national_id)] = $employee->id;
+            }
+
+            if ($employee->email !== null && $employee->email !== '' && ! EmployeeUnset::isUnset($employee->email)) {
+                $existingEmployeeEmails[mb_strtolower((string) $employee->email)] = $employee->id;
+            }
+
+            if ($employee->user?->email) {
+                $existingUserEmails[mb_strtolower((string) $employee->user->email)] = $employee->id;
+            }
+        }
+
+        foreach (User::query()->whereDoesntHave('employee')->pluck('email') as $email) {
+            $existingUserEmails[mb_strtolower((string) $email)] = 0;
+        }
 
         $seenStaffIds = [];
         $seenNationalIds = [];
@@ -290,10 +335,10 @@ class EmployeeCsvService
      * @param  list<string>  $activeBankCodes
      * @param  list<string>  $nationalities
      * @param  array<int, string>  $gradeLabels
-     * @param  array<string, true>  $existingStaffIds
-     * @param  array<string, true>  $existingNationalIds
-     * @param  array<string, true>  $existingEmployeeEmails
-     * @param  array<string, true>  $existingUserEmails
+     * @param  array<string, int>  $existingStaffIds
+     * @param  array<string, int>  $existingNationalIds
+     * @param  array<string, int>  $existingEmployeeEmails
+     * @param  array<string, int>  $existingUserEmails
      * @param  array<string, true>  $seenStaffIds
      * @param  array<string, true>  $seenNationalIds
      * @param  array<string, true>  $seenEmails
@@ -326,6 +371,10 @@ class EmployeeCsvService
         if ($name === null) {
             throw ValidationException::withMessages(['file' => "Row {$line}: name is required."]);
         }
+
+        $staffKey = mb_strtolower($staffId);
+        $existingEmployeeId = $existingStaffIds[$staffKey] ?? null;
+        $action = $existingEmployeeId !== null ? 'update' : 'create';
 
         $nationalIdRaw = $this->rawValue($row['national_id'] ?? '');
         $nationalId = $nationalIdRaw ?? (self::UNSET.'-'.$staffId);
@@ -363,7 +412,6 @@ class EmployeeCsvService
         $accountName = $this->unsettableString($row['account_name'] ?? '');
         $accountNo = $this->unsettableString($row['account_no'] ?? '');
 
-        $staffKey = mb_strtolower($staffId);
         $nationalKey = mb_strtolower($nationalId);
         $emailKey = mb_strtolower($employeeEmail);
         $userEmailKey = mb_strtolower($userEmail);
@@ -384,22 +432,25 @@ class EmployeeCsvService
             throw ValidationException::withMessages(['file' => "Row {$line}: duplicate login email \"{$userEmail}\" in the CSV."]);
         }
 
-        if (isset($existingStaffIds[$staffKey])) {
-            throw ValidationException::withMessages(['file' => "Row {$line}: staff_id \"{$staffId}\" already exists."]);
-        }
-
-        if (isset($existingNationalIds[$nationalKey])) {
+        $nationalOwnerId = $existingNationalIds[$nationalKey] ?? null;
+        if ($nationalOwnerId !== null && $nationalOwnerId !== $existingEmployeeId) {
             throw ValidationException::withMessages(['file' => "Row {$line}: national_id \"{$nationalId}\" already exists."]);
         }
 
-        if (
-            $employeeEmail !== self::UNSET
-            && (isset($existingEmployeeEmails[$emailKey]) || isset($existingUserEmails[$emailKey]))
-        ) {
-            throw ValidationException::withMessages(['file' => "Row {$line}: email \"{$employeeEmail}\" already exists."]);
+        if ($employeeEmail !== self::UNSET) {
+            $emailOwnerId = $existingEmployeeEmails[$emailKey] ?? null;
+            $userEmailOwnerId = $existingUserEmails[$emailKey] ?? null;
+
+            if (
+                ($emailOwnerId !== null && $emailOwnerId !== $existingEmployeeId)
+                || ($userEmailOwnerId !== null && $userEmailOwnerId !== $existingEmployeeId)
+            ) {
+                throw ValidationException::withMessages(['file' => "Row {$line}: email \"{$employeeEmail}\" already exists."]);
+            }
         }
 
-        if (isset($existingUserEmails[$userEmailKey])) {
+        $loginEmailOwnerId = $existingUserEmails[$userEmailKey] ?? null;
+        if ($loginEmailOwnerId !== null && $loginEmailOwnerId !== $existingEmployeeId) {
             throw ValidationException::withMessages(['file' => "Row {$line}: login email \"{$userEmail}\" already exists."]);
         }
 
@@ -458,6 +509,8 @@ class EmployeeCsvService
 
         return [
             'line' => $line,
+            'action' => $action,
+            'existing_employee_id' => $existingEmployeeId,
             'staff_id' => $staffId,
             'name' => $name,
             'national_id' => $nationalId,
@@ -482,6 +535,126 @@ class EmployeeCsvService
             'personal_email' => $personalEmail,
             'office_email' => $officeEmail,
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     * @return array<string, mixed>
+     */
+    protected function employeeAttributes(array $row): array
+    {
+        return [
+            'name' => $row['name'],
+            'national_id' => $row['national_id'],
+            'email' => $row['email'],
+            'mobile_number' => $row['mobile_number'],
+            'emergency_contact_number' => $row['emergency_contact_number'],
+            'joined_date' => $row['joined_date'],
+            'gender' => $row['gender'],
+            'employment_type' => $row['employment_type'],
+            'duty_type' => $row['duty_type'],
+            'works_saturday' => $row['works_saturday'],
+            'is_active' => $row['is_active'],
+            'grade_id' => $row['grade_id'],
+            'bank_name' => $row['bank_name'],
+            'account_name' => $row['account_name'],
+            'account_no' => $row['account_no'],
+            'nationality' => $row['nationality'],
+            'work_location' => $row['work_location'],
+            'personal_email' => $row['personal_email'],
+            'office_email' => $row['office_email'],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     */
+    protected function syncUserForEmployee(Employee $employee, array $row, bool $createIfMissing): void
+    {
+        $employee->loadMissing('user');
+
+        if ($employee->user) {
+            $updates = ['name' => $row['name']];
+
+            if ($row['email'] !== self::UNSET) {
+                $updates['email'] = $row['user_email'];
+            }
+
+            $employee->user->update($updates);
+
+            return;
+        }
+
+        if (! $createIfMissing) {
+            return;
+        }
+
+        $user = User::query()->create([
+            'name' => $row['name'],
+            'email' => $row['user_email'],
+            'password' => self::DEFAULT_PASSWORD,
+            'must_change_password' => true,
+        ]);
+
+        $employee->update(['user_id' => $user->id]);
+    }
+
+    /**
+     * @return list<string>
+     */
+    protected function exportRow(Employee $employee): array
+    {
+        return [
+            $employee->staff_id,
+            $employee->name,
+            $this->csvUnsettable($employee->national_id),
+            $this->csvUnsettable($employee->email),
+            $this->csvMobile($employee->mobile_number, $employee->emergency_contact_number),
+            $employee->joined_date?->toDateString() ?? '',
+            $employee->gender->value,
+            $employee->employment_type?->value ?? '',
+            $employee->duty_type->value,
+            $employee->works_saturday ? 'yes' : 'no',
+            $employee->is_active ? 'yes' : 'no',
+            $employee->grade_id !== null ? (string) $employee->grade_id : '',
+            $employee->manager?->staff_id ?? '',
+            $this->csvUnsettable($employee->bank_name),
+            $this->csvUnsettable($employee->account_name),
+            $this->csvUnsettable($employee->account_no),
+            $this->csvUnsettable($employee->nationality),
+            $this->csvUnsettable($employee->work_location),
+            $this->csvUnsettable($employee->personal_email),
+            $this->csvUnsettable($employee->office_email),
+        ];
+    }
+
+    protected function csvUnsettable(mixed $value): string
+    {
+        if (EmployeeUnset::isUnset($value)) {
+            return '';
+        }
+
+        return (string) $value;
+    }
+
+    protected function csvMobile(mixed $mobile, mixed $emergency): string
+    {
+        $primary = EmployeeUnset::isUnset($mobile) ? '' : trim((string) $mobile);
+        $secondary = EmployeeUnset::isUnset($emergency) ? '' : trim((string) $emergency);
+
+        if ($primary === '' && $secondary === '') {
+            return '';
+        }
+
+        if ($secondary === '') {
+            return $primary;
+        }
+
+        if ($primary === '') {
+            return '/'.$secondary;
+        }
+
+        return $primary.'/'.$secondary;
     }
 
     /**

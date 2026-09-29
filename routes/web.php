@@ -63,17 +63,19 @@ Route::middleware('auth')->group(function () {
         ->name('dashboard');
 
     Route::middleware('permission:employees.view')->group(function () {
+        Route::get('employees/export-csv', [EmployeeController::class, 'export'])
+            ->name('employees.export-csv');
         Route::get('employees/sample-csv', [EmployeeController::class, 'downloadSample'])
-            ->middleware('permission:employees.create')
+            ->middleware('permission:employees.create|employees.update')
             ->name('employees.sample-csv');
         Route::post('employees/import/preview', [EmployeeController::class, 'previewImport'])
-            ->middleware('permission:employees.create')
+            ->middleware('permission:employees.create|employees.update')
             ->name('employees.import.preview');
         Route::post('employees/import', [EmployeeController::class, 'import'])
-            ->middleware('permission:employees.create')
+            ->middleware('permission:employees.create|employees.update')
             ->name('employees.import');
         Route::post('employees/import/cancel', [EmployeeController::class, 'cancelImport'])
-            ->middleware('permission:employees.create')
+            ->middleware('permission:employees.create|employees.update')
             ->name('employees.import.cancel');
         Route::post('employees/bulk-update', [EmployeeController::class, 'bulkUpdate'])
             ->middleware('permission:employees.update')

@@ -9,6 +9,7 @@ use App\Models\Employee;
 use App\Models\RemoteDoorSite;
 use App\Models\SelfPunchSite;
 use App\Models\ZktDevice;
+use App\Support\StructureNodeOptions;
 use Illuminate\Http\RedirectResponse;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -47,13 +48,16 @@ class SelfPunchSiteController extends Controller
             'employees' => Employee::query()
                 ->where('is_active', true)
                 ->whereNotNull('user_id')
+                ->with('grade.level')
                 ->orderBy('name')
-                ->get(['id', 'name', 'staff_id'])
+                ->get(['id', 'name', 'staff_id', 'grade_id'])
                 ->map(fn (Employee $employee) => [
                     'id' => $employee->id,
                     'name' => $employee->name,
                     'staff_id' => $employee->staff_id,
+                    'department_id' => $employee->grade?->level?->structure_node_id,
                 ]),
+            'departments' => StructureNodeOptions::active(),
             'emptySite' => $this->emptySite(),
             'emptyDoorSite' => $this->emptyDoorSite(),
         ]);

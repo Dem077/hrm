@@ -60,6 +60,11 @@ class EmployeeController extends Controller
         return $this->employeeCsvService->downloadSample();
     }
 
+    public function export(): StreamedResponse
+    {
+        return $this->employeeCsvService->export();
+    }
+
     public function previewImport(ImportEmployeeRequest $request): RedirectResponse
     {
         $this->clearPendingImport($request);
@@ -97,15 +102,26 @@ class EmployeeController extends Controller
         $stats = $this->employeeCsvService->import($uploaded);
         $this->clearPendingImport($request);
 
+        $parts = [];
+
+        if ($stats['created'] > 0) {
+            $parts[] = sprintf(
+                '%d created (default password Agro@1234 — change required on first login)',
+                $stats['created'],
+            );
+        }
+
+        if ($stats['updated'] > 0) {
+            $parts[] = sprintf('%d updated', $stats['updated']);
+        }
+
+        $detail = $parts === []
+            ? 'No employee changes were applied.'
+            : implode(', ', $parts).'.';
+
         return redirect()
             ->route('employees.index')
-            ->with(
-                'success',
-                sprintf(
-                    'Imported %d employee(s) from CSV. Default password is Agro@1234 — they will be asked to change it on first login.',
-                    $stats['created'],
-                ),
-            );
+            ->with('success', "CSV import complete: {$detail}");
     }
 
     public function cancelImport(Request $request): RedirectResponse
