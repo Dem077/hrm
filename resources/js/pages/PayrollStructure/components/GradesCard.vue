@@ -6,12 +6,11 @@ import UiCard from '@/components/ui/UiCard.vue';
 import UiInput from '@/components/ui/UiInput.vue';
 import { formatPayrollMoney } from '@/lib/payroll';
 import GradePackageModal from '@/pages/PayrollStructure/components/GradePackageModal.vue';
-import type { LoanBankOption, PayrollComponent, StructureGradePackage } from '@/types/payroll';
+import type { PayrollComponent, StructureGradePackage } from '@/types/payroll';
 
 const props = defineProps<{
     grades: StructureGradePackage[];
     components: PayrollComponent[];
-    loanBanks: LoanBankOption[];
     canManage: boolean;
 }>();
 
@@ -380,7 +379,6 @@ function closeModal() {
             :open="modalOpen"
             :grade="editingGrade"
             :components="components"
-            :loan-banks="loanBanks"
             @close="closeModal"
             @saved="closeModal"
         />

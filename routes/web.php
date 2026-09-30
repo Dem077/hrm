@@ -16,6 +16,7 @@ use App\Http\Controllers\StructureNodeController;
 use App\Http\Controllers\DutyRosterController;
 use App\Http\Controllers\DutyShiftTemplateController;
 use App\Http\Controllers\EmployeeController;
+use App\Http\Controllers\EmployeeLoanController;
 use App\Http\Controllers\LeaveBalanceController;
 use App\Http\Controllers\LeaveRequestController;
 use App\Http\Controllers\OvertimeRequestController;
@@ -380,6 +381,16 @@ Route::middleware('auth')->group(function () {
 
     Route::middleware('permission:payroll-structure.view')->group(function () {
         Route::get('payroll-structure', [PayrollStructureController::class, 'index'])->name('payroll-structure.index');
+        Route::get('payroll-structure/loans', [EmployeeLoanController::class, 'index'])->name('payroll-structure.loans.index');
+        Route::post('payroll-structure/loans', [EmployeeLoanController::class, 'store'])
+            ->middleware('permission:payroll-structure.update')
+            ->name('payroll-structure.loans.store');
+        Route::put('payroll-structure/loans/{employee_loan}', [EmployeeLoanController::class, 'update'])
+            ->middleware('permission:payroll-structure.update')
+            ->name('payroll-structure.loans.update');
+        Route::delete('payroll-structure/loans/{employee_loan}', [EmployeeLoanController::class, 'destroy'])
+            ->middleware('permission:payroll-structure.update')
+            ->name('payroll-structure.loans.destroy');
         Route::post('payroll-structure/components', [PayrollComponentController::class, 'store'])
             ->middleware('permission:payroll-structure.update')
             ->name('payroll-structure.components.store');

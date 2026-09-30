@@ -44,6 +44,8 @@ type NavItem = {
     permission: string;
     icon: string;
     match: (url: string) => boolean;
+    children?: NavItem[];
+    nestKey?: string;
 };
 
 type NavGroup = {
@@ -215,7 +217,26 @@ const configurationNavItems: NavItem[] = [
         href: '/payroll-structure',
         permission: 'payroll-structure.view',
         icon: 'M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z',
-        match: (url: string) => url.startsWith('/payroll-structure'),
+        nestKey: 'payroll-structure',
+        match: (url: string) =>
+            url.startsWith('/payroll-structure') && !url.startsWith('/payroll-structure/loans'),
+        children: [
+            {
+                label: 'Components & grades',
+                href: '/payroll-structure',
+                permission: 'payroll-structure.view',
+                icon: 'M4 6h16M4 12h16M4 18h7',
+                match: (url: string) =>
+                    url.startsWith('/payroll-structure') && !url.startsWith('/payroll-structure/loans'),
+            },
+            {
+                label: 'Employee Loans',
+                href: '/payroll-structure/loans',
+                permission: 'payroll-structure.view',
+                icon: 'M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z',
+                match: (url: string) => url.startsWith('/payroll-structure/loans'),
+            },
+        ],
     },
     {
         label: 'Machine Location Groups',
@@ -287,8 +308,28 @@ function isActive(match: (url: string) => boolean): boolean {
     return match(page.url);
 }
 
+function isItemActive(item: NavItem): boolean {
+    if (isActive(item.match)) {
+        return true;
+    }
+
+    return (item.children ?? []).some((child) => isItemActive(child));
+}
+
 function isGroupActive(items: NavItem[]): boolean {
-    return items.some((item) => isActive(item.match));
+    return items.some((item) => isItemActive(item));
+}
+
+function visibleChildren(item: NavItem): NavItem[] {
+    return (item.children ?? []).filter((child) => can(child.permission));
+}
+
+function nestExpanded(item: NavItem): boolean {
+    if (!item.nestKey) {
+        return false;
+    }
+
+    return showNavGroupItems(item.nestKey);
 }
 
 const sidebarWidthClass = computed(() => (collapsed.value ? 'lg:w-[4.5rem]' : 'lg:w-[280px]'));
@@ -302,6 +343,19 @@ function navLinkClass(item: NavItem, nested = false): string[] {
               ? 'gap-2.5 py-2 pl-3 pr-3'
               : 'gap-3 px-3 py-2.5',
         isActive(item.match)
+            ? 'bg-brand-600/15 text-brand-600 ring-1 ring-brand-500/20 dark:text-brand-400'
+            : 'text-sidebar-muted hover:bg-sidebar-active hover:text-slate-900 dark:hover:text-slate-100',
+    ];
+}
+
+function parentNavClass(item: NavItem): string[] {
+    const childActive = visibleChildren(item).some((child) => isActive(child.match));
+
+    return [
+        collapsed.value
+            ? 'gap-3 px-3 py-2.5 lg:justify-center lg:gap-0 lg:px-0 lg:py-3'
+            : 'gap-2.5 py-2 pl-3 pr-2',
+        isActive(item.match) || childActive
             ? 'bg-brand-600/15 text-brand-600 ring-1 ring-brand-500/20 dark:text-brand-400'
             : 'text-sidebar-muted hover:bg-sidebar-active hover:text-slate-900 dark:hover:text-slate-100',
     ];
@@ -331,6 +385,12 @@ watch(
             if (isGroupActive(group.items)) {
                 setNavGroupExpanded(group.key, true);
             }
+
+            group.items.forEach((item) => {
+                if (item.nestKey && isItemActive(item)) {
+                    setNavGroupExpanded(item.nestKey, true);
+                }
+            });
         });
     },
     { immediate: true },
@@ -442,20 +502,76 @@ watch(
                         class="space-y-1"
                         :class="collapsed ? '' : 'rounded-xl border border-sidebar-border/70 bg-sidebar-active/30 p-1.5 dark:bg-surface-elevated/20'"
                     >
-                        <Link
-                            v-for="item in group.items"
-                            :key="item.href"
-                            :href="item.href"
-                            :title="collapsed ? item.label : undefined"
-                            class="flex items-center rounded-lg text-sm font-medium transition"
-                            :class="navLinkClass(item, true)"
-                            @click="closeMobile"
-                        >
-                            <svg class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
-                                <path stroke-linecap="round" stroke-linejoin="round" :d="item.icon" />
-                            </svg>
-                            <span :class="collapsed ? 'truncate lg:hidden' : 'truncate'">{{ item.label }}</span>
-                        </Link>
+                        <template v-for="item in group.items" :key="item.href + (item.nestKey ?? '')">
+                            <div v-if="visibleChildren(item).length > 0">
+                                <div class="flex items-center gap-1">
+                                    <Link
+                                        :href="item.href"
+                                        :title="collapsed ? item.label : undefined"
+                                        class="flex min-w-0 flex-1 items-center rounded-lg text-sm font-medium transition"
+                                        :class="parentNavClass(item)"
+                                        @click="closeMobile"
+                                    >
+                                        <svg class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
+                                            <path stroke-linecap="round" stroke-linejoin="round" :d="item.icon" />
+                                        </svg>
+                                        <span :class="collapsed ? 'truncate lg:hidden' : 'truncate'">{{ item.label }}</span>
+                                    </Link>
+                                    <button
+                                        v-if="item.nestKey"
+                                        type="button"
+                                        class="hidden h-8 w-8 shrink-0 items-center justify-center rounded-lg text-sidebar-muted transition hover:bg-sidebar-active hover:text-slate-900 dark:hover:text-slate-100 lg:inline-flex"
+                                        :class="collapsed ? 'lg:hidden' : ''"
+                                        :title="nestExpanded(item) ? 'Collapse' : 'Expand'"
+                                        @click="toggleNavGroupExpanded(item.nestKey!)"
+                                    >
+                                        <svg
+                                            class="h-4 w-4 transition-transform duration-200"
+                                            :class="nestExpanded(item) ? 'rotate-180' : ''"
+                                            fill="none"
+                                            viewBox="0 0 24 24"
+                                            stroke="currentColor"
+                                            stroke-width="2"
+                                        >
+                                            <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+                                        </svg>
+                                    </button>
+                                </div>
+                                <div
+                                    v-show="nestExpanded(item)"
+                                    class="mt-1 space-y-1"
+                                    :class="collapsed ? '' : 'ml-3 border-l border-sidebar-border/80 pl-2'"
+                                >
+                                    <Link
+                                        v-for="child in visibleChildren(item)"
+                                        :key="child.href"
+                                        :href="child.href"
+                                        :title="collapsed ? child.label : undefined"
+                                        class="flex items-center rounded-lg text-sm font-medium transition"
+                                        :class="navLinkClass(child, true)"
+                                        @click="closeMobile"
+                                    >
+                                        <svg class="h-3.5 w-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
+                                            <path stroke-linecap="round" stroke-linejoin="round" :d="child.icon" />
+                                        </svg>
+                                        <span :class="collapsed ? 'truncate lg:hidden' : 'truncate'">{{ child.label }}</span>
+                                    </Link>
+                                </div>
+                            </div>
+                            <Link
+                                v-else
+                                :href="item.href"
+                                :title="collapsed ? item.label : undefined"
+                                class="flex items-center rounded-lg text-sm font-medium transition"
+                                :class="navLinkClass(item, true)"
+                                @click="closeMobile"
+                            >
+                                <svg class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
+                                    <path stroke-linecap="round" stroke-linejoin="round" :d="item.icon" />
+                                </svg>
+                                <span :class="collapsed ? 'truncate lg:hidden' : 'truncate'">{{ item.label }}</span>
+                            </Link>
+                        </template>
                     </div>
                 </div>
             </nav>

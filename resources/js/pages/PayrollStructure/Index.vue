@@ -7,13 +7,12 @@ import { usePermissions } from '@/composables/usePermissions';
 import AppLayout from '@/layouts/AppLayout.vue';
 import GradesCard from '@/pages/PayrollStructure/components/GradesCard.vue';
 import PayrollComponentsCard from '@/pages/PayrollStructure/components/PayrollComponentsCard.vue';
-import type { LoanBankOption, PayrollComponent, StructureGradePackage } from '@/types/payroll';
+import type { PayrollComponent, StructureGradePackage } from '@/types/payroll';
 
 defineProps<{
     components: PayrollComponent[];
     grades: StructureGradePackage[];
     emptyComponent: PayrollComponent;
-    loanBanks: LoanBankOption[];
     employmentTypes: Array<{ value: string; label: string }>;
     nationalities: Array<{ value: string; label: string }>;
     applicabilityFields: Array<{ value: string; label: string }>;
@@ -37,7 +36,7 @@ function destroyComponent(id: number, name: string) {
     <AppLayout>
         <PageHeader
             title="Payroll structure"
-            description="Define payroll components, then build designation salary structures with fixed amounts and daily rates."
+            description="Define payroll components and designation salary structures. Employee loans are managed separately under Employee Loans."
         />
 
         <div class="space-y-8">
@@ -55,7 +54,6 @@ function destroyComponent(id: number, name: string) {
             <GradesCard
                 :grades="grades"
                 :components="components"
-                :loan-banks="loanBanks"
                 :can-manage="canManage"
             />
         </div>

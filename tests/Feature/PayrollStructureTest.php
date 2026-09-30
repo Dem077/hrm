@@ -203,21 +203,19 @@ it('supports hourly attendance allowance components excluded from fixed net', fu
             ->where('grades.0.items.1.amount', 120));
 });
 
-it('creates a grade package with loan repayment details', function () {
+it('rejects loan components on designation packages', function () {
     $basicSalary = PayrollComponent::query()->where('code', 'basic_salary')->firstOrFail();
     $grade = makeGradeForPayrollTests('Accounts Officer');
 
-    $this->actingAs($this->user)->post('/payroll-structure/components', [
-        'name' => 'Staff Loan',
-        'code' => 'staff_loan',
+    $loan = PayrollComponent::query()->create([
+        'name' => 'Legacy Staff Loan',
+        'code' => 'legacy_staff_loan',
         'type' => 'loan',
         'calculation_method' => 'fixed',
         'is_mandatory' => false,
         'sort_order' => 20,
-        'is_active' => true,
+        'is_active' => false,
     ]);
-
-    $loan = PayrollComponent::query()->where('code', 'staff_loan')->firstOrFail();
 
     $response = $this->actingAs($this->user)->put('/payroll-structure/grades/'.$grade->id, [
         'items' => [
@@ -235,17 +233,7 @@ it('creates a grade package with loan repayment details', function () {
     ]);
 
     $response->assertRedirect();
-    $response->assertSessionHas('success');
-
-    $this->actingAs($this->user)
-        ->get('/payroll-structure')
-        ->assertInertia(fn ($page) => $page
-            ->where('grades.0.items.1.type', 'loan')
-            ->where('grades.0.items.1.amount', 3500)
-            ->where('grades.0.items.1.loan_months', 24)
-            ->where('grades.0.items.1.loan_bank', 'MIB')
-            ->where('grades.0.totals.deductions', 3500)
-            ->where('grades.0.totals.net', 36500));
+    $response->assertSessionHasErrors('items.1.payroll_component_id');
 });
 
 it('prevents editing basic salary', function () {

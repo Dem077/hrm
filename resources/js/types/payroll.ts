@@ -19,6 +19,28 @@ export type LoanBankOption = {
     label: string;
 };
 
+export type EmployeeLoan = {
+    id: number | null;
+    employee_id: number | null;
+    employee?: {
+        id: number;
+        name: string;
+        staff_id: string;
+        label: string;
+    } | null;
+    name: string;
+    monthly_amount: number | string;
+    loan_months: number | null;
+    total_amount?: number | null;
+    remaining_months?: number | null;
+    remaining_amount?: number | null;
+    loan_bank: string | null;
+    loan_bank_label?: string | null;
+    start_date: string | null;
+    notes: string | null;
+    is_active: boolean;
+};
+
 export type PayrollCalculationMethodOption = {
     value: PayrollComponentCalculationMethod;
     label: string;

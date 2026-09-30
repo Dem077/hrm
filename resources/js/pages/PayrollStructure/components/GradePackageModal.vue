@@ -7,13 +7,12 @@ import UiModal from '@/components/ui/UiModal.vue';
 import { componentToPayrollItem, usesGlobalRateCalculation } from '@/lib/payroll';
 import DesignationTotalsSummary from '@/pages/PayrollStructure/components/DesignationTotalsSummary.vue';
 import PayrollItemsEditor from '@/pages/PayrollStructure/components/PayrollItemsEditor.vue';
-import type { DesignationPayrollItem, LoanBankOption, PayrollComponent, StructureGradePackage } from '@/types/payroll';
+import type { DesignationPayrollItem, PayrollComponent, StructureGradePackage } from '@/types/payroll';
 
 const props = defineProps<{
     open: boolean;
     grade: StructureGradePackage | null;
     components: PayrollComponent[];
-    loanBanks: LoanBankOption[];
 }>();
 
 const emit = defineEmits<{
@@ -88,7 +87,6 @@ function submit() {
             <PayrollItemsEditor
                 :items="form.items"
                 :components="components"
-                :loan-banks="loanBanks"
                 :errors="form.errors"
                 @update:items="form.items = $event"
             />

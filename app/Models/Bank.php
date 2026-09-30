@@ -80,6 +80,11 @@ class Bank extends Model
             return true;
         }
 
+        if (\Illuminate\Support\Facades\Schema::hasTable('employee_loans')
+            && \Illuminate\Support\Facades\DB::table('employee_loans')->where('loan_bank', $this->code)->exists()) {
+            return true;
+        }
+
         if (\Illuminate\Support\Facades\Schema::hasTable('grade_payroll_component')
             && \Illuminate\Support\Facades\DB::table('grade_payroll_component')->where('loan_bank', $this->code)->exists()) {
             return true;

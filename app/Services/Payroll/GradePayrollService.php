@@ -159,18 +159,16 @@ class GradePayrollService
             }
 
             $component = $componentsById->get($componentId);
-            $pivot = [
+
+            if ($component?->isLoan()) {
+                continue;
+            }
+
+            $sync[$componentId] = [
                 'amount' => round((float) $item['amount'], 2),
                 'loan_months' => null,
                 'loan_bank' => null,
             ];
-
-            if ($component?->isLoan()) {
-                $pivot['loan_months'] = (int) $item['loan_months'];
-                $pivot['loan_bank'] = (string) $item['loan_bank'];
-            }
-
-            $sync[$componentId] = $pivot;
         }
 
         foreach ($mandatoryIds as $componentId) {
@@ -224,6 +222,7 @@ class GradePayrollService
         $path = $grade->resolvePath();
 
         $items = $grade->payrollComponents
+            ->reject(fn (PayrollComponent $component) => $component->isLoan())
             ->map(fn (PayrollComponent $component) => $this->formatComponentPivotItem($component))
             ->values()
             ->all();

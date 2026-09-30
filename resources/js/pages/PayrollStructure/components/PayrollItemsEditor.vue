@@ -10,12 +10,11 @@ import {
     updatePayrollItem,
     usesGlobalRateCalculation,
 } from '@/lib/payroll';
-import type { DesignationPayrollItem, LoanBankOption, PayrollComponent } from '@/types/payroll';
+import type { DesignationPayrollItem, PayrollComponent } from '@/types/payroll';
 
 const props = defineProps<{
     items: DesignationPayrollItem[];
     components: PayrollComponent[];
-    loanBanks: LoanBankOption[];
     errors: Record<string, string>;
 }>();
 
@@ -30,6 +29,7 @@ const optionalComponents = computed(() =>
         (component) =>
             !component.is_mandatory &&
             component.is_active &&
+            component.type !== 'loan' &&
             !usesGlobalRateCalculation(component.calculation_method),
     ),
 );
@@ -48,32 +48,14 @@ function updateAmount(item: DesignationPayrollItem, amount: number) {
     emit('update:items', updatePayrollItem(props.items, item, { amount }));
 }
 
-function updateLoanMonths(item: DesignationPayrollItem, loanMonths: number) {
-    emit('update:items', updatePayrollItem(props.items, item, { loan_months: loanMonths }));
-}
-
-function updateLoanBank(item: DesignationPayrollItem, loanBank: string) {
-    const bank = props.loanBanks.find((option) => option.value === loanBank);
-
-    emit(
-        'update:items',
-        updatePayrollItem(props.items, item, {
-            loan_bank: loanBank,
-            loan_bank_label: bank?.label ?? loanBank,
-        }),
-    );
-}
-
 function addOptionalComponent(componentId: number) {
     const component = props.components.find((row) => row.id === componentId);
 
-    if (!component) {
+    if (!component || component.type === 'loan') {
         return;
     }
 
-    const defaultBank = props.loanBanks[0] ?? null;
-
-    emit('update:items', [...props.items, componentToPayrollItem(component, 0, defaultBank)]);
+    emit('update:items', [...props.items, componentToPayrollItem(component, 0)]);
 }
 
 function removeItem(item: DesignationPayrollItem) {
@@ -216,59 +198,6 @@ function removeItem(item: DesignationPayrollItem) {
                             </template>
                             (configure under Payroll components)
                         </p>
-                    </div>
-                </div>
-            </section>
-
-            <section v-if="groups.loans.length > 0" class="overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700">
-                <div class="border-b border-slate-200 bg-slate-50 px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:border-slate-700 dark:bg-surface-elevated dark:text-slate-400">
-                    Loans
-                </div>
-                <div class="divide-y divide-slate-100 dark:divide-slate-800">
-                    <div
-                        v-for="item in groups.loans"
-                        :key="item.payroll_component_id"
-                        class="grid gap-3 px-4 py-3 md:grid-cols-[1fr_repeat(3,minmax(0,9rem))_auto] md:items-start"
-                    >
-                        <div>
-                            <p class="font-medium text-slate-900 dark:text-white">{{ item.name }}</p>
-                            <p class="text-xs text-slate-500 dark:text-slate-400">Monthly deduction for the repayment period</p>
-                        </div>
-                        <UiInput
-                            :model-value="item.amount"
-                            label="Monthly payment"
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            :error="errors[`items.${itemIndex(item)}.amount`]"
-                            @update:model-value="updateAmount(item, Number($event))"
-                        />
-                        <UiInput
-                            :model-value="item.loan_months ?? ''"
-                            label="Period (months)"
-                            type="number"
-                            min="1"
-                            step="1"
-                            :error="errors[`items.${itemIndex(item)}.loan_months`]"
-                            @update:model-value="updateLoanMonths(item, Number($event))"
-                        />
-                        <div>
-                            <label class="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Bank</label>
-                            <select
-                                :value="item.loan_bank ?? ''"
-                                class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20 dark:border-slate-700 dark:bg-surface-elevated dark:text-white"
-                                @change="updateLoanBank(item, ($event.target as HTMLSelectElement).value)"
-                            >
-                                <option value="" disabled>Select bank</option>
-                                <option v-for="bank in loanBanks" :key="bank.value" :value="bank.value">
-                                    {{ bank.label }}
-                                </option>
-                            </select>
-                            <p v-if="errors[`items.${itemIndex(item)}.loan_bank`]" class="mt-1 text-sm text-red-600">
-                                {{ errors[`items.${itemIndex(item)}.loan_bank`] }}
-                            </p>
-                        </div>
-                        <UiButton type="button" size="sm" variant="ghost" class="self-end" @click="removeItem(item)">Remove</UiButton>
                     </div>
                 </div>
             </section>

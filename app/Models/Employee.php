@@ -280,4 +280,9 @@ class Employee extends Model
     {
         return $this->hasMany(PayrollRunAdjustment::class);
     }
+
+    public function loans(): HasMany
+    {
+        return $this->hasMany(EmployeeLoan::class);
+    }
 }

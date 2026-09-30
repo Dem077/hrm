@@ -6,6 +6,7 @@ use App\Enums\EmploymentType;
 use App\Enums\PayrollApplicabilityField;
 use App\Enums\PayrollApplicabilityOperator;
 use App\Enums\PayrollComponentCalculationMethod;
+use App\Enums\PayrollComponentType;
 use App\Models\PayrollComponent;
 use Illuminate\Support\Facades\DB;
 
@@ -21,6 +22,7 @@ class PayrollComponentService
     public function listForIndex(): array
     {
         return PayrollComponent::query()
+            ->where('type', '!=', PayrollComponentType::Loan->value)
             ->withCount('grades')
             ->orderBy('sort_order')
             ->orderBy('name')

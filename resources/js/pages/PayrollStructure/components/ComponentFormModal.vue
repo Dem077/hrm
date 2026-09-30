@@ -33,9 +33,8 @@ const form = useForm({
     },
 });
 
-const isLoanType = computed(() => form.type === 'loan');
 const isCustomFormula = computed(() => form.calculation_method === 'custom_formula');
-const showConditions = computed(() => !isLoanType.value && form.is_mandatory);
+const showConditions = computed(() => form.is_mandatory);
 
 const formulaVariableOptions = computed(() => {
     const options = props.component?.formula_variable_options ?? props.emptyComponent.formula_variable_options;
@@ -181,11 +180,10 @@ function submit() {
                 >
                     <option value="addition">Addition</option>
                     <option value="deduction">Deduction</option>
-                    <option value="loan">Loan</option>
                 </select>
                 <p v-if="form.errors.type" class="mt-1 text-sm text-red-600">{{ form.errors.type }}</p>
             </div>
-            <div v-if="!isLoanType">
+            <div>
                 <label class="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">Calculation</label>
                 <select
                     v-model="form.calculation_method"
@@ -201,11 +199,8 @@ function submit() {
                 </p>
                 <p v-if="form.errors.calculation_method" class="mt-1 text-sm text-red-600">{{ form.errors.calculation_method }}</p>
             </div>
-            <div v-else class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-600 dark:border-slate-700 dark:bg-surface-elevated dark:text-slate-400">
-                Loan components use monthly payment, repayment period, and bank details on each designation.
-            </div>
 
-            <div v-if="!isLoanType && isCustomFormula" class="md:col-span-2">
+            <div v-if="isCustomFormula" class="md:col-span-2">
                 <PayrollFormulaBuilder
                     v-model="form.calculation_formula"
                     :variables="formulaVariableOptions"
@@ -214,7 +209,7 @@ function submit() {
             </div>
 
             <UiInput v-model.number="form.sort_order" label="Sort order" type="number" min="0" :error="form.errors.sort_order" />
-            <label v-if="!isLoanType" class="flex items-center gap-2 self-end pb-2 text-sm text-slate-700 dark:text-slate-300">
+            <label class="flex items-center gap-2 self-end pb-2 text-sm text-slate-700 dark:text-slate-300">
                 <input v-model="form.is_mandatory" type="checkbox" class="rounded border-slate-300 text-brand-600 focus:ring-brand-500" />
                 Mandatory for all designations
             </label>

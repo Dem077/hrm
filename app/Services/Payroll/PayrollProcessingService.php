@@ -62,6 +62,7 @@ class PayrollProcessingService
                 'grade.level.node.group',
                 'grade.level.node.parent',
                 'grade.payrollComponents' => fn ($query) => $query->where('is_active', true),
+                'loans' => fn ($query) => $query->where('is_active', true)->orderBy('name'),
             ])
             ->where('is_active', true)
             ->when($departmentId, function ($query) use ($departmentId) {
@@ -110,6 +111,7 @@ class PayrollProcessingService
             $overtimeHours = $this->overtimeRequestService->approvedHoursInPeriod($employee->id, $from, $to);
 
             $components = ($employee->grade?->payrollComponents ?? collect())
+                ->filter(fn (PayrollComponent $component) => $component->type !== PayrollComponentType::Loan)
                 ->filter(fn (PayrollComponent $component) => $component->appliesToEmployee($employee))
                 ->values();
             $basicSalary = (float) (($employee->grade?->payrollComponents ?? collect())
@@ -210,6 +212,36 @@ class PayrollProcessingService
                         $overtimeHours,
                         $basicSalary,
                         $component->calculation_formula,
+                    ),
+                ];
+            }
+
+            foreach ($employee->loans as $loan) {
+                $amount = round((float) $loan->monthly_amount, 2);
+                $deductions += $amount;
+
+                $details[] = [
+                    'component' => $loan->name,
+                    'method' => PayrollComponentCalculationMethod::Fixed->value,
+                    'method_label' => PayrollComponentCalculationMethod::Fixed->label(),
+                    'rate' => $amount,
+                    'amount' => $amount,
+                    'type' => PayrollComponentType::Loan->value,
+                    'basic_salary' => null,
+                    'formula' => null,
+                    'formula_variables' => null,
+                    'loan_months' => $loan->loan_months,
+                    'loan_bank' => $loan->loan_bank,
+                    'loan_bank_label' => $loan->loan_bank ? \App\Models\Bank::labelFor($loan->loan_bank) : null,
+                    'calculation_inputs' => [
+                        'monthly_amount' => $amount,
+                        'loan_months' => $loan->loan_months,
+                        'loan_bank' => $loan->loan_bank,
+                    ],
+                    'calculation_summary' => sprintf(
+                        'Employee loan repayment: %s%s',
+                        number_format($amount, 2),
+                        $loan->loan_months ? " over {$loan->loan_months} month(s)" : '',
                     ),
                 ];
             }

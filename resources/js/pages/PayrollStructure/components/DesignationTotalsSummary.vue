@@ -31,8 +31,5 @@ const totals = computed(() => calculateDesignationTotals(props.items));
             {{ totals.attendance_allowance_count }} attendance allowance component(s) are excluded from fixed net.
             They are calculated from rate × attended days / worked hours.
         </p>
-        <p v-if="totals.has_loans" class="text-xs text-slate-500 dark:text-slate-400">
-            {{ totals.loan_count }} loan(s) included in deductions as monthly repayments for their set period.
-        </p>
     </div>
 </template>

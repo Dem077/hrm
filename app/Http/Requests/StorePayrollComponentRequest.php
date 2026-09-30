@@ -56,6 +56,13 @@ class StorePayrollComponentRequest extends FormRequest
     public function withValidator(Validator $validator): void
     {
         $validator->after(function (Validator $validator): void {
+            if ($this->input('type') === PayrollComponentType::Loan->value) {
+                $validator->errors()->add(
+                    'type',
+                    'Loans are managed per employee under Employee Loans, not as payroll structure components.',
+                );
+            }
+
             if ($this->input('type') === PayrollComponentType::Loan->value && $this->boolean('is_mandatory')) {
                 $validator->errors()->add('is_mandatory', 'Loan components cannot be mandatory for all designations.');
             }
