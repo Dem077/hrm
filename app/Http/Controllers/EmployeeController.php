@@ -42,13 +42,37 @@ class EmployeeController extends Controller
     public function index(Request $request): Response
     {
         $pending = $request->session()->get(self::IMPORT_SESSION_KEY);
+        $search = trim((string) $request->input('search', ''));
+
+        $employees = Employee::query()
+            ->with(['grade.level.group', 'grade.level.node.group', 'manager:id,name,staff_id', 'user:id,name,email'])
+            ->when($search !== '', function ($query) use ($search) {
+                $query->where(function ($inner) use ($search) {
+                    $inner->where('name', 'like', "%{$search}%")
+                        ->orWhere('staff_id', 'like', "%{$search}%")
+                        ->orWhere('national_id', 'like', "%{$search}%")
+                        ->orWhere('email', 'like', "%{$search}%")
+                        ->orWhere('mobile_number', 'like', "%{$search}%")
+                        ->orWhereHas('manager', function ($managerQuery) use ($search) {
+                            $managerQuery->where('name', 'like', "%{$search}%")
+                                ->orWhere('staff_id', 'like', "%{$search}%");
+                        })
+                        ->orWhereHas('grade', function ($gradeQuery) use ($search) {
+                            $gradeQuery->where('title', 'like', "%{$search}%")
+                                ->orWhere('grade', 'like', "%{$search}%");
+                        });
+                });
+            })
+            ->orderBy('name')
+            ->paginate(24)
+            ->withQueryString()
+            ->through(fn (Employee $employee) => $this->formatEmployee($employee));
 
         return Inertia::render('Employees/Index', [
-            'employees' => Employee::query()
-                ->with(['grade.level.group', 'grade.level.node.group', 'manager:id,name,staff_id', 'user:id,name,email'])
-                ->orderBy('name')
-                ->get()
-                ->map(fn (Employee $employee) => $this->formatEmployee($employee)),
+            'employees' => $employees,
+            'filters' => [
+                'search' => $search,
+            ],
             'importPreview' => is_array($pending) ? ($pending['preview'] ?? null) : null,
             'importFileName' => is_array($pending) ? ($pending['original_name'] ?? null) : null,
             ...$this->bulkEditOptions(),

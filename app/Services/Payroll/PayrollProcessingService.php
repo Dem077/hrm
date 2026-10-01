@@ -44,6 +44,7 @@ class PayrollProcessingService
     }
 
     /**
+     * @param  (callable(int $done, int $total, Employee $employee): void)|null  $onProgress
      * @return array{period: array<string, string>, rows: list<array<string, mixed>>}
      */
     public function buildForDateRange(
@@ -51,6 +52,7 @@ class PayrollProcessingService
         CarbonInterface $to,
         string $label,
         ?int $departmentId = null,
+        ?callable $onProgress = null,
     ): array {
         if ($to->lt($from)) {
             [$from, $to] = [$to, $from];
@@ -88,188 +90,35 @@ class PayrollProcessingService
             'running payroll',
         );
 
+        $attendanceByEmployee = $this->collectAttendanceByEmployee($from, $to, $departmentId);
+        $employeeIds = $employees->pluck('id')->map(fn ($id) => (int) $id)->all();
+        $overtimeByEmployee = $employeeIds === []
+            ? []
+            : $this->overtimeRequestService->approvedHoursByEmployeeInPeriod($from, $to, $employeeIds);
+        $bankLabels = \App\Models\Bank::query()->pluck('name', 'code')->all();
+
         $rows = [];
+        $total = $employees->count();
+        $done = 0;
 
-            foreach ($employees as $employee) {
-            $attendance = $this->attendanceSheetService->build($from, $to, null, $employee->id);
-            $attendanceRows = collect($attendance['rows']);
-            $summary = $this->attendanceSheetService->summarizeRows($attendance['rows']);
-            $daysAttended = $attendanceRows
-                ->whereIn('status', [
-                    AttendanceDayStatus::Present->value,
-                    AttendanceDayStatus::Late->value,
-                    AttendanceDayStatus::Incomplete->value,
-                ])
-                ->count();
-            $hoursWorked = round(
-                $attendanceRows->sum(fn (array $row) => (float) ($row['working_minutes'] ?? 0)) / 60,
-                2,
-            );
-            $lateMinutes = (int) ($summary['late_minutes'] ?? 0);
-            $absentDays = (int) ($summary['absent_days'] ?? 0);
-            $presentDays = (int) ($summary['present_days'] ?? $daysAttended);
-            $overtimeHours = $this->overtimeRequestService->approvedHoursInPeriod($employee->id, $from, $to);
+        if ($onProgress) {
+            $onProgress(0, $total, $employees->first() ?? new Employee);
+        }
 
-            $components = ($employee->grade?->payrollComponents ?? collect())
-                ->filter(fn (PayrollComponent $component) => $component->type !== PayrollComponentType::Loan)
-                ->filter(fn (PayrollComponent $component) => $component->appliesToEmployee($employee))
-                ->values();
-            $basicSalary = (float) (($employee->grade?->payrollComponents ?? collect())
-                ->firstWhere('code', PayrollComponent::BASIC_SALARY_CODE)
-                ?->pivot
-                ?->amount ?? 0);
-
-            $formulaVariables = $this->buildFormulaVariables(
+        foreach ($employees as $employee) {
+            $rows[] = $this->buildEmployeeRow(
+                $employee,
                 $from,
                 $to,
-                $attendanceRows->all(),
-                $basicSalary,
-                $overtimeHours,
+                $attendanceByEmployee[$employee->id] ?? [],
+                (float) ($overtimeByEmployee[$employee->id] ?? 0),
+                $bankLabels,
             );
+            $done++;
 
-            $gross = 0.0;
-            $deductions = 0.0;
-            $details = [];
-
-            foreach ($components as $component) {
-                // Running totals for custom formulas (components earlier in sort order only).
-                $formulaVariables['gross_salary'] = round($gross, 2);
-                $formulaVariables['total_deductions'] = round($deductions, 2);
-                $formulaVariables['net_salary'] = round($gross - $deductions, 2);
-
-                $rate = $component->usesGlobalRate()
-                    ? (float) ($component->global_rate ?? 0)
-                    : (float) ($component->pivot->amount ?? 0);
-
-                $amount = match ($component->calculation_method) {
-                    PayrollComponentCalculationMethod::Daily => round($rate * $daysAttended, 2),
-                    PayrollComponentCalculationMethod::Hourly => round($rate * $hoursWorked, 2),
-                    PayrollComponentCalculationMethod::PerLateMinute => round($rate * $lateMinutes, 2),
-                    PayrollComponentCalculationMethod::PerLateMinuteOfBasic => round(
-                        ($basicSalary * ($rate / 100)) * $lateMinutes,
-                        2,
-                    ),
-                    PayrollComponentCalculationMethod::PerAbsentDay => round($rate * $absentDays, 2),
-                    PayrollComponentCalculationMethod::PerAbsentDayOfBasic => round(
-                        ($basicSalary * ($rate / 100)) * $absentDays,
-                        2,
-                    ),
-                    PayrollComponentCalculationMethod::PerOvertimeHour => round($rate * $overtimeHours, 2),
-                    PayrollComponentCalculationMethod::PerOvertimeHourOfBasic => round(
-                        ($basicSalary * ($rate / 100)) * $overtimeHours,
-                        2,
-                    ),
-                    PayrollComponentCalculationMethod::CustomFormula => $this->safeEvaluateFormula(
-                        (string) ($component->calculation_formula ?? ''),
-                        $formulaVariables,
-                    ),
-                    default => $rate,
-                };
-
-                if ($component->type === PayrollComponentType::Addition) {
-                    $gross += $amount;
-                } else {
-                    $deductions += $amount;
-                }
-
-                $details[] = [
-                    'component' => $component->name,
-                    'method' => $component->calculation_method->value,
-                    'method_label' => $component->calculation_method->label(),
-                    'rate' => $rate,
-                    'amount' => $amount,
-                    'type' => $component->type->value,
-                    'basic_salary' => $component->calculation_method->isPercentageOfBasicSalary()
-                        || $component->calculation_method->isCustomFormula()
-                        ? $basicSalary
-                        : null,
-                    'formula' => $component->calculation_method->isCustomFormula()
-                        ? $component->calculation_formula
-                        : null,
-                    'formula_variables' => $component->calculation_method->isCustomFormula()
-                        ? $formulaVariables
-                        : null,
-                    'calculation_inputs' => $this->calculationInputs(
-                        $component->calculation_method,
-                        $rate,
-                        $daysAttended,
-                        $hoursWorked,
-                        $lateMinutes,
-                        $absentDays,
-                        $overtimeHours,
-                        $basicSalary,
-                        $formulaVariables,
-                        $component->calculation_formula,
-                    ),
-                    'calculation_summary' => $this->calculationSummary(
-                        $component->calculation_method,
-                        $rate,
-                        $amount,
-                        $daysAttended,
-                        $hoursWorked,
-                        $lateMinutes,
-                        $absentDays,
-                        $overtimeHours,
-                        $basicSalary,
-                        $component->calculation_formula,
-                    ),
-                ];
+            if ($onProgress && ($done === $total || $done === 1 || $done % 5 === 0)) {
+                $onProgress($done, $total, $employee);
             }
-
-            foreach ($employee->loans as $loan) {
-                $amount = round((float) $loan->monthly_amount, 2);
-                $deductions += $amount;
-
-                $details[] = [
-                    'component' => $loan->name,
-                    'method' => PayrollComponentCalculationMethod::Fixed->value,
-                    'method_label' => PayrollComponentCalculationMethod::Fixed->label(),
-                    'rate' => $amount,
-                    'amount' => $amount,
-                    'type' => PayrollComponentType::Loan->value,
-                    'basic_salary' => null,
-                    'formula' => null,
-                    'formula_variables' => null,
-                    'loan_months' => $loan->loan_months,
-                    'loan_bank' => $loan->loan_bank,
-                    'loan_bank_label' => $loan->loan_bank ? \App\Models\Bank::labelFor($loan->loan_bank) : null,
-                    'calculation_inputs' => [
-                        'monthly_amount' => $amount,
-                        'loan_months' => $loan->loan_months,
-                        'loan_bank' => $loan->loan_bank,
-                    ],
-                    'calculation_summary' => sprintf(
-                        'Employee loan repayment: %s%s',
-                        number_format($amount, 2),
-                        $loan->loan_months ? " over {$loan->loan_months} month(s)" : '',
-                    ),
-                ];
-            }
-
-            $path = $employee->grade?->resolvePath();
-
-            $rows[] = [
-                'employee_id' => $employee->id,
-                'staff_id' => $employee->staff_id,
-                'employee_name' => $employee->name,
-                'national_id' => $employee->national_id,
-                'department' => $path['node']['name'] ?? $path['group']['name'] ?? null,
-                'department_id' => $path['node']['id'] ?? null,
-                'designation' => $employee->grade?->label(),
-                'bank_name' => $employee->bank_name,
-                'account_name' => $employee->account_name,
-                'account_no' => $employee->account_no,
-                'days_attended' => $daysAttended,
-                'hours_worked' => $hoursWorked,
-                'late_minutes' => $lateMinutes,
-                'absent_days' => $absentDays,
-                'present_days' => (int) ($formulaVariables['present_days'] ?? $daysAttended),
-                'gross' => round($gross, 2),
-                'deductions' => round($deductions, 2),
-                'net' => round($gross - $deductions, 2),
-                'details' => $details,
-                'formula_variables' => $formulaVariables,
-            ];
         }
 
         return [
@@ -279,6 +128,242 @@ class PayrollProcessingService
                 'label' => $label,
             ],
             'rows' => $rows,
+        ];
+    }
+
+    /**
+     * @return array<int, list<array<string, mixed>>>
+     */
+    protected function collectAttendanceByEmployee(
+        CarbonInterface $from,
+        CarbonInterface $to,
+        ?int $departmentId = null,
+    ): array {
+        $byEmployee = [];
+        $cursor = $from->copy()->startOfDay();
+        $end = $to->copy()->startOfDay();
+
+        while ($cursor->lte($end)) {
+            $chunkEnd = $cursor->copy()->addDays(AttendanceSheetService::MAX_DAYS);
+            if ($chunkEnd->gt($end)) {
+                $chunkEnd = $end->copy();
+            }
+
+            $chunk = $this->attendanceSheetService->build(
+                $cursor,
+                $chunkEnd,
+                $departmentId,
+                null,
+                includePunchEdits: false,
+                includeDepartment: false,
+            );
+
+            foreach ($chunk['rows'] as $row) {
+                $employeeId = (int) ($row['employee_id'] ?? 0);
+                if ($employeeId <= 0) {
+                    continue;
+                }
+
+                $byEmployee[$employeeId][] = $row;
+            }
+
+            $cursor = $chunkEnd->copy()->addDay();
+        }
+
+        return $byEmployee;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $attendanceRows
+     * @param  array<string, string>  $bankLabels
+     * @return array<string, mixed>
+     */
+    protected function buildEmployeeRow(
+        Employee $employee,
+        CarbonInterface $from,
+        CarbonInterface $to,
+        array $attendanceRows,
+        float $overtimeHours,
+        array $bankLabels = [],
+    ): array {
+        $attendanceCollection = collect($attendanceRows);
+        $summary = $this->attendanceSheetService->summarizeRows($attendanceRows);
+        $daysAttended = $attendanceCollection
+            ->whereIn('status', [
+                AttendanceDayStatus::Present->value,
+                AttendanceDayStatus::Late->value,
+                AttendanceDayStatus::Incomplete->value,
+            ])
+            ->count();
+        $hoursWorked = round(
+            $attendanceCollection->sum(fn (array $row) => (float) ($row['working_minutes'] ?? 0)) / 60,
+            2,
+        );
+        $lateMinutes = (int) ($summary['late_minutes'] ?? 0);
+        $absentDays = (int) ($summary['absent_days'] ?? 0);
+        $presentDays = (int) ($summary['present_days'] ?? $daysAttended);
+
+        $components = ($employee->grade?->payrollComponents ?? collect())
+            ->filter(fn (PayrollComponent $component) => $component->type !== PayrollComponentType::Loan)
+            ->filter(fn (PayrollComponent $component) => $component->appliesToEmployee($employee))
+            ->values();
+        $basicSalary = (float) (($employee->grade?->payrollComponents ?? collect())
+            ->firstWhere('code', PayrollComponent::BASIC_SALARY_CODE)
+            ?->pivot
+            ?->amount ?? 0);
+
+        $formulaVariables = $this->buildFormulaVariables(
+            $from,
+            $to,
+            $attendanceRows,
+            $basicSalary,
+            $overtimeHours,
+        );
+
+        $gross = 0.0;
+        $deductions = 0.0;
+        $details = [];
+
+        foreach ($components as $component) {
+            // Running totals for custom formulas (components earlier in sort order only).
+            $formulaVariables['gross_salary'] = round($gross, 2);
+            $formulaVariables['total_deductions'] = round($deductions, 2);
+            $formulaVariables['net_salary'] = round($gross - $deductions, 2);
+
+            $rate = $component->usesGlobalRate()
+                ? (float) ($component->global_rate ?? 0)
+                : (float) ($component->pivot->amount ?? 0);
+
+            $amount = match ($component->calculation_method) {
+                PayrollComponentCalculationMethod::Daily => round($rate * $daysAttended, 2),
+                PayrollComponentCalculationMethod::Hourly => round($rate * $hoursWorked, 2),
+                PayrollComponentCalculationMethod::PerLateMinute => round($rate * $lateMinutes, 2),
+                PayrollComponentCalculationMethod::PerLateMinuteOfBasic => round(
+                    ($basicSalary * ($rate / 100)) * $lateMinutes,
+                    2,
+                ),
+                PayrollComponentCalculationMethod::PerAbsentDay => round($rate * $absentDays, 2),
+                PayrollComponentCalculationMethod::PerAbsentDayOfBasic => round(
+                    ($basicSalary * ($rate / 100)) * $absentDays,
+                    2,
+                ),
+                PayrollComponentCalculationMethod::PerOvertimeHour => round($rate * $overtimeHours, 2),
+                PayrollComponentCalculationMethod::PerOvertimeHourOfBasic => round(
+                    ($basicSalary * ($rate / 100)) * $overtimeHours,
+                    2,
+                ),
+                PayrollComponentCalculationMethod::CustomFormula => $this->safeEvaluateFormula(
+                    (string) ($component->calculation_formula ?? ''),
+                    $formulaVariables,
+                ),
+                default => $rate,
+            };
+
+            if ($component->type === PayrollComponentType::Addition) {
+                $gross += $amount;
+            } else {
+                $deductions += $amount;
+            }
+
+            $details[] = [
+                'component' => $component->name,
+                'method' => $component->calculation_method->value,
+                'method_label' => $component->calculation_method->label(),
+                'rate' => $rate,
+                'amount' => $amount,
+                'type' => $component->type->value,
+                'basic_salary' => $component->calculation_method->isPercentageOfBasicSalary()
+                    || $component->calculation_method->isCustomFormula()
+                    ? $basicSalary
+                    : null,
+                'formula' => $component->calculation_method->isCustomFormula()
+                    ? $component->calculation_formula
+                    : null,
+                'formula_variables' => $component->calculation_method->isCustomFormula()
+                    ? $formulaVariables
+                    : null,
+                'calculation_inputs' => $this->calculationInputs(
+                    $component->calculation_method,
+                    $rate,
+                    $daysAttended,
+                    $hoursWorked,
+                    $lateMinutes,
+                    $absentDays,
+                    $overtimeHours,
+                    $basicSalary,
+                    $formulaVariables,
+                    $component->calculation_formula,
+                ),
+                'calculation_summary' => $this->calculationSummary(
+                    $component->calculation_method,
+                    $rate,
+                    $amount,
+                    $daysAttended,
+                    $hoursWorked,
+                    $lateMinutes,
+                    $absentDays,
+                    $overtimeHours,
+                    $basicSalary,
+                    $component->calculation_formula,
+                ),
+            ];
+        }
+
+        foreach ($employee->loans as $loan) {
+            $amount = round((float) $loan->monthly_amount, 2);
+            $deductions += $amount;
+
+            $details[] = [
+                'component' => $loan->name,
+                'method' => PayrollComponentCalculationMethod::Fixed->value,
+                'method_label' => PayrollComponentCalculationMethod::Fixed->label(),
+                'rate' => $amount,
+                'amount' => $amount,
+                'type' => PayrollComponentType::Loan->value,
+                'basic_salary' => null,
+                'formula' => null,
+                'formula_variables' => null,
+                'loan_months' => $loan->loan_months,
+                'loan_bank' => $loan->loan_bank,
+                'loan_bank_label' => $loan->loan_bank
+                    ? ($bankLabels[$loan->loan_bank] ?? \App\Models\Bank::labelFor($loan->loan_bank))
+                    : null,
+                'calculation_inputs' => [
+                    'monthly_amount' => $amount,
+                    'loan_months' => $loan->loan_months,
+                    'loan_bank' => $loan->loan_bank,
+                ],
+                'calculation_summary' => sprintf(
+                    'Employee loan repayment: %s%s',
+                    number_format($amount, 2),
+                    $loan->loan_months ? " over {$loan->loan_months} month(s)" : '',
+                ),
+            ];
+        }
+
+        $path = $employee->grade?->resolvePath();
+
+        return [
+            'employee_id' => $employee->id,
+            'staff_id' => $employee->staff_id,
+            'employee_name' => $employee->name,
+            'national_id' => $employee->national_id,
+            'department' => $path['node']['name'] ?? $path['group']['name'] ?? null,
+            'department_id' => $path['node']['id'] ?? null,
+            'designation' => $employee->grade?->label(),
+            'bank_name' => $employee->bank_name,
+            'account_name' => $employee->account_name,
+            'account_no' => $employee->account_no,
+            'days_attended' => $daysAttended,
+            'hours_worked' => $hoursWorked,
+            'late_minutes' => $lateMinutes,
+            'absent_days' => $absentDays,
+            'present_days' => (int) ($formulaVariables['present_days'] ?? $daysAttended),
+            'gross' => round($gross, 2),
+            'deductions' => round($deductions, 2),
+            'net' => round($gross - $deductions, 2),
+            'details' => $details,
+            'formula_variables' => $formulaVariables,
         ];
     }
 

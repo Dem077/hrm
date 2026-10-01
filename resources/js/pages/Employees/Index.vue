@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Head, Link, useForm } from '@inertiajs/vue3';
+import { Head, Link, router, useForm } from '@inertiajs/vue3';
 import { computed, ref, watch } from 'vue';
 
 import EmptyState from '@/components/ui/EmptyState.vue';
@@ -16,10 +16,14 @@ import { formatDate } from '@/lib/format';
 import BulkEditModal from '@/pages/Employees/components/BulkEditModal.vue';
 import ImportPreviewModal from '@/pages/Employees/components/ImportPreviewModal.vue';
 import type { EmployeeImportPreview } from '@/pages/Employees/components/ImportPreviewModal.vue';
-import type { DevicePrivilegeOption, DutyTypeOption, Employee, EnumOption, SelectOption } from '@/types/hrm';
+import type { Employee, EnumOption, SelectOption, DevicePrivilegeOption, DutyTypeOption } from '@/types/hrm';
+import type { Paginated } from '@/types/attendance';
 
 const props = defineProps<{
-    employees: Employee[];
+    employees: Paginated<Employee>;
+    filters: {
+        search?: string | null;
+    };
     importPreview?: EmployeeImportPreview | null;
     importFileName?: string | null;
     grades: GradeOption[];
@@ -36,7 +40,7 @@ const { can } = usePermissions();
 const canCreate = can('employees.create');
 const canUpdate = can('employees.update');
 const canImportCsv = canCreate || canUpdate;
-const searchText = ref('');
+const searchText = ref(props.filters.search ?? '');
 const fileInput = ref<HTMLInputElement | null>(null);
 const importForm = useForm<{ file: File | null }>({
     file: null,
@@ -46,66 +50,36 @@ const bulkEditOpen = ref(false);
 
 const previewOpen = computed(() => Boolean(props.importPreview));
 
-const filteredEmployees = computed(() => {
-    const needle = searchText.value.trim().toLowerCase();
+watch(
+    () => props.filters.search,
+    (value) => {
+        searchText.value = value ?? '';
+    },
+);
 
-    if (needle === '') {
-        return props.employees;
-    }
-
-    return props.employees.filter((employee) => {
-        const haystack = [
-            employee.name,
-            employee.staff_id,
-            employee.national_id,
-            employee.email,
-            employee.mobile_number,
-            employee.manager?.name,
-            employee.manager?.staff_id,
-            employee.grade?.label,
-            employee.grade?.path_label,
-            employee.department?.name,
-        ]
-            .filter(Boolean)
-            .join(' ')
-            .toLowerCase();
-
-        return haystack.includes(needle);
-    });
-});
-
-const filteredIds = computed(() =>
-    filteredEmployees.value
+const pageEmployees = computed(() => props.employees.data);
+const pageIds = computed(() =>
+    pageEmployees.value
         .map((employee) => employee.id)
         .filter((id): id is number => typeof id === 'number'),
 );
 
-const allFilteredSelected = computed(() => {
-    if (filteredIds.value.length === 0) {
+const allPageSelected = computed(() => {
+    if (pageIds.value.length === 0) {
         return false;
     }
 
-    return filteredIds.value.every((id) => selectedIds.value.includes(id));
+    return pageIds.value.every((id) => selectedIds.value.includes(id));
 });
 
-const selectedOutsideFiltersCount = computed(() => {
-    const visible = new Set(filteredIds.value);
+const selectedOutsidePageCount = computed(() => {
+    const visible = new Set(pageIds.value);
 
     return selectedIds.value.filter((id) => !visible.has(id)).length;
 });
 
-const hasEmployees = computed(() => props.employees.length > 0);
-const hasMatches = computed(() => filteredEmployees.value.length > 0);
-
-watch(
-    () => props.employees,
-    (employees) => {
-        const valid = new Set(
-            employees.map((employee) => employee.id).filter((id): id is number => typeof id === 'number'),
-        );
-        selectedIds.value = selectedIds.value.filter((id) => valid.has(id));
-    },
-);
+const hasEmployees = computed(() => props.employees.total > 0);
+const hasMatches = computed(() => pageEmployees.value.length > 0);
 
 function employeeId(employee: Employee): number | null {
     return typeof employee.id === 'number' ? employee.id : null;
@@ -128,20 +102,36 @@ function toggleEmployee(id: number | null): void {
     selectedIds.value = [...selectedIds.value, id];
 }
 
-function toggleSelectAllFiltered(): void {
-    if (allFilteredSelected.value) {
-        const filtered = new Set(filteredIds.value);
-        selectedIds.value = selectedIds.value.filter((id) => !filtered.has(id));
+function toggleSelectAllPage(): void {
+    if (allPageSelected.value) {
+        const page = new Set(pageIds.value);
+        selectedIds.value = selectedIds.value.filter((id) => !page.has(id));
         return;
     }
 
     const next = new Set(selectedIds.value);
-    filteredIds.value.forEach((id) => next.add(id));
+    pageIds.value.forEach((id) => next.add(id));
     selectedIds.value = Array.from(next);
 }
 
 function clearSelection(): void {
     selectedIds.value = [];
+}
+
+function applySearch(): void {
+    router.get(
+        '/employees',
+        { search: searchText.value.trim() || undefined },
+        {
+            preserveState: true,
+            replace: true,
+        },
+    );
+}
+
+function clearSearch(): void {
+    searchText.value = '';
+    applySearch();
 }
 
 function downloadSampleCsv(): void {
@@ -211,20 +201,31 @@ function onImportFileChange(event: Event): void {
 
         <p v-if="importForm.errors.file" class="mb-4 text-sm text-red-600">{{ importForm.errors.file }}</p>
 
-        <div v-if="hasEmployees" class="mb-4 flex flex-col gap-4">
-            <div class="max-w-md">
-                <UiInput
-                    v-model="searchText"
-                    label="Search"
-                    placeholder="Name, staff ID, NID, email, or manager"
-                />
-                <p v-if="searchText.trim()" class="mt-2 text-xs text-slate-500">
-                    Showing {{ filteredEmployees.length }} of {{ employees.length }}
-                </p>
-            </div>
+        <div class="mb-4 flex flex-col gap-4">
+            <form class="flex max-w-xl flex-col gap-3 sm:flex-row sm:items-end" @submit.prevent="applySearch">
+                <div class="min-w-0 flex-1">
+                    <UiInput
+                        v-model="searchText"
+                        label="Search"
+                        placeholder="Name, staff ID, NID, email, or manager"
+                    />
+                </div>
+                <UiButton type="submit" variant="primary">Search</UiButton>
+                <UiButton
+                    v-if="filters.search"
+                    type="button"
+                    variant="ghost"
+                    @click="clearSearch"
+                >
+                    Clear
+                </UiButton>
+            </form>
+            <p v-if="hasEmployees" class="text-xs text-slate-500">
+                Showing {{ employees.from }}–{{ employees.to }} of {{ employees.total }}
+            </p>
 
             <div
-                v-if="canUpdate"
+                v-if="canUpdate && hasMatches"
                 class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-700 dark:bg-slate-800/60"
             >
                 <div class="flex flex-wrap items-center gap-3 text-sm">
@@ -232,16 +233,16 @@ function onImportFileChange(event: Event): void {
                         <input
                             type="checkbox"
                             class="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
-                            :checked="allFilteredSelected"
-                            :disabled="filteredIds.length === 0"
-                            @change="toggleSelectAllFiltered"
+                            :checked="allPageSelected"
+                            :disabled="pageIds.length === 0"
+                            @change="toggleSelectAllPage"
                         />
-                        <span>Select filtered ({{ filteredIds.length }})</span>
+                        <span>Select page ({{ pageIds.length }})</span>
                     </label>
                     <span v-if="selectedIds.length" class="text-slate-500">
                         {{ selectedIds.length }} selected
-                        <template v-if="selectedOutsideFiltersCount">
-                            · {{ selectedOutsideFiltersCount }} outside current search
+                        <template v-if="selectedOutsidePageCount">
+                            · {{ selectedOutsidePageCount }} on other pages
                         </template>
                     </span>
                 </div>
@@ -262,7 +263,7 @@ function onImportFileChange(event: Event): void {
         </div>
 
         <EmptyState
-            v-if="!hasEmployees"
+            v-if="!hasEmployees && !filters.search"
             title="No employees yet"
             description="Add your first employee to start building departments and approval hierarchies."
         >
@@ -292,74 +293,94 @@ function onImportFileChange(event: Event): void {
                 </svg>
             </template>
             <template #action>
-                <UiButton variant="ghost" @click="searchText = ''">Clear search</UiButton>
+                <UiButton variant="ghost" @click="clearSearch">Clear search</UiButton>
             </template>
         </EmptyState>
 
-        <div v-else class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            <article
-                v-for="employee in filteredEmployees"
-                :key="employee.id ?? employee.staff_id"
-                class="rounded-xl border bg-surface p-4 shadow-sm transition hover:border-brand-500/30 dark:hover:border-brand-500/20"
-                :class="
-                    isSelected(employeeId(employee))
-                        ? 'border-brand-500/60 dark:border-brand-500/40'
-                        : 'border-slate-200 dark:border-slate-800'
-                "
-            >
-                <div class="flex items-start gap-3">
-                    <input
-                        v-if="canUpdate && employeeId(employee) !== null"
-                        type="checkbox"
-                        class="mt-1.5 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
-                        :checked="isSelected(employeeId(employee))"
-                        @change="toggleEmployee(employeeId(employee))"
-                    />
-                    <EmployeeAvatar :photo-url="employee.profile_photo_url" :name="employee.name" size="sm" />
-                    <div class="min-w-0 flex-1">
-                        <Link
-                            :href="`/employees/${employee.id}`"
-                            class="block truncate font-semibold text-slate-900 hover:text-brand-600 dark:text-white dark:hover:text-brand-400"
+        <template v-else>
+            <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                <article
+                    v-for="employee in pageEmployees"
+                    :key="employee.id ?? employee.staff_id"
+                    class="rounded-xl border bg-surface p-4 shadow-sm transition hover:border-brand-500/30 dark:hover:border-brand-500/20"
+                    :class="
+                        isSelected(employeeId(employee))
+                            ? 'border-brand-500/60 dark:border-brand-500/40'
+                            : 'border-slate-200 dark:border-slate-800'
+                    "
+                >
+                    <div class="flex items-start gap-3">
+                        <input
+                            v-if="canUpdate && employeeId(employee) !== null"
+                            type="checkbox"
+                            class="mt-1.5 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                            :checked="isSelected(employeeId(employee))"
+                            @change="toggleEmployee(employeeId(employee))"
+                        />
+                        <EmployeeAvatar :photo-url="employee.profile_photo_url" :name="employee.name" size="sm" />
+                        <div class="min-w-0 flex-1">
+                            <Link
+                                :href="`/employees/${employee.id}`"
+                                class="block truncate font-semibold text-slate-900 hover:text-brand-600 dark:text-white dark:hover:text-brand-400"
+                            >
+                                {{ employee.name }}
+                            </Link>
+                            <p class="text-xs text-slate-500">{{ employee.staff_id }}</p>
+                        </div>
+                        <span
+                            class="shrink-0 rounded-full px-2 py-0.5 text-xs font-medium"
+                            :class="
+                                employee.is_active
+                                    ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300'
+                                    : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
+                            "
                         >
-                            {{ employee.name }}
-                        </Link>
-                        <p class="text-xs text-slate-500">{{ employee.staff_id }}</p>
+                            {{ employee.is_active ? 'Active' : 'Inactive' }}
+                        </span>
                     </div>
-                    <span
-                        class="shrink-0 rounded-full px-2 py-0.5 text-xs font-medium"
-                        :class="
-                            employee.is_active
-                                ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300'
-                                : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
-                        "
-                    >
-                        {{ employee.is_active ? 'Active' : 'Inactive' }}
-                    </span>
-                </div>
 
-                <dl class="mt-3 space-y-1.5 text-xs">
-                    <div class="flex justify-between gap-2">
-                        <dt class="text-slate-500">Org / Grade</dt>
-                        <dd class="truncate text-slate-700 dark:text-slate-300">
-                            {{ employee.grade?.label ?? employee.department?.name ?? '—' }}
-                        </dd>
-                    </div>
-                    <div class="flex justify-between gap-2">
-                        <dt class="text-slate-500">Manager</dt>
-                        <dd class="truncate text-slate-700 dark:text-slate-300">{{ employee.manager?.name ?? '—' }}</dd>
-                    </div>
-                    <div class="flex justify-between gap-2">
-                        <dt class="text-slate-500">Joined</dt>
-                        <dd class="text-slate-700 dark:text-slate-300">{{ formatDate(employee.joined_date) }}</dd>
-                    </div>
-                </dl>
+                    <dl class="mt-3 space-y-1.5 text-xs">
+                        <div class="flex justify-between gap-2">
+                            <dt class="text-slate-500">Org / Grade</dt>
+                            <dd class="truncate text-slate-700 dark:text-slate-300">
+                                {{ employee.grade?.label ?? employee.department?.name ?? '—' }}
+                            </dd>
+                        </div>
+                        <div class="flex justify-between gap-2">
+                            <dt class="text-slate-500">Manager</dt>
+                            <dd class="truncate text-slate-700 dark:text-slate-300">{{ employee.manager?.name ?? '—' }}</dd>
+                        </div>
+                        <div class="flex justify-between gap-2">
+                            <dt class="text-slate-500">Joined</dt>
+                            <dd class="text-slate-700 dark:text-slate-300">{{ formatDate(employee.joined_date) }}</dd>
+                        </div>
+                    </dl>
 
-                <div class="mt-3 flex gap-2 border-t border-slate-100 pt-3 dark:border-slate-800">
-                    <UiButton size="sm" :href="`/employees/${employee.id}`" variant="ghost">View</UiButton>
-                    <UiButton v-if="can('employees.update')" size="sm" :href="`/employees/${employee.id}/edit`" variant="secondary">Edit</UiButton>
-                </div>
-            </article>
-        </div>
+                    <div class="mt-3 flex gap-2 border-t border-slate-100 pt-3 dark:border-slate-800">
+                        <UiButton size="sm" :href="`/employees/${employee.id}`" variant="ghost">View</UiButton>
+                        <UiButton v-if="can('employees.update')" size="sm" :href="`/employees/${employee.id}/edit`" variant="secondary">Edit</UiButton>
+                    </div>
+                </article>
+            </div>
+
+            <div v-if="employees.links.length > 3" class="mt-5 flex flex-wrap gap-2">
+                <Link
+                    v-for="link in employees.links"
+                    :key="`${link.label}-${link.url}`"
+                    :href="link.url ?? '#'"
+                    class="rounded-lg border px-3 py-1.5 text-sm transition"
+                    :class="[
+                        link.active
+                            ? 'border-brand-300 bg-brand-50 text-brand-800 dark:border-brand-600/40 dark:bg-brand-600/15 dark:text-brand-400'
+                            : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-surface-elevated dark:text-slate-400 dark:hover:bg-surface-muted dark:hover:text-slate-200',
+                        !link.url ? 'pointer-events-none opacity-50' : '',
+                    ]"
+                    preserve-scroll
+                    preserve-state
+                    v-html="link.label"
+                />
+            </div>
+        </template>
 
         <ImportPreviewModal
             :open="previewOpen"

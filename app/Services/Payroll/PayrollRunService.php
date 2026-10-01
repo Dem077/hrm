@@ -3,6 +3,10 @@
 namespace App\Services\Payroll;
 
 use App\Enums\PayrollRunStatus;
+use App\Exceptions\PayrollJobCancelledException;
+use App\Jobs\BuildPayrollRunJob;
+use App\Jobs\BulkAdjustPayrollRunJob;
+use App\Jobs\ExportPayrollRunJob;
 use App\Models\PayrollRun;
 use App\Models\PayrollRunAdjustment;
 use App\Models\PayrollRunAuditLog;
@@ -14,6 +18,7 @@ use Carbon\CarbonInterface;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
@@ -27,7 +32,73 @@ class PayrollRunService
         private readonly PayrollPeriodService $payrollPeriodService,
         private readonly PayrollProcessingService $payrollProcessingService,
         private readonly AttendanceSheetService $attendanceSheetService,
+        private readonly PayrollJobProgress $payrollJobProgress,
     ) {}
+
+    /**
+     * @return array{job_id: string, payroll_run_id: int}
+     */
+    public function queueCreateFromGlobalPeriod(User $user): array
+    {
+        $period = $this->payrollPeriodService->currentPeriod();
+
+        return $this->queueCreateDraft(
+            $period['from'],
+            $period['to'],
+            $period['label'],
+            'global',
+            $user,
+        );
+    }
+
+    /**
+     * @return array{job_id: string, payroll_run_id: int}
+     */
+    public function queueCreateFromCustomPeriod(CarbonInterface $from, CarbonInterface $to, User $user): array
+    {
+        $from = Carbon::parse($from)->startOfDay();
+        $to = Carbon::parse($to)->startOfDay();
+
+        if ($to->lt($from)) {
+            [$from, $to] = [$to, $from];
+        }
+
+        return $this->queueCreateDraft(
+            $from,
+            $to,
+            $from->toDateString().' to '.$to->toDateString(),
+            'custom',
+            $user,
+        );
+    }
+
+    /**
+     * @return array{job_id: string, payroll_run_id: int}
+     */
+    public function queueProcess(PayrollRun $run, User $actor): array
+    {
+        if ($run->status !== PayrollRunStatus::Draft) {
+            throw ValidationException::withMessages([
+                'run' => 'Only draft payroll runs can be processed.',
+            ]);
+        }
+
+        return $this->queueRebuild($run, $actor, 'process');
+    }
+
+    /**
+     * @return array{job_id: string, payroll_run_id: int}
+     */
+    public function queueRerun(PayrollRun $run, User $actor): array
+    {
+        if (! in_array($run->status, [PayrollRunStatus::Draft, PayrollRunStatus::Processed], true)) {
+            throw ValidationException::withMessages([
+                'run' => 'Only draft or processed payroll runs can be rerun.',
+            ]);
+        }
+
+        return $this->queueRebuild($run, $actor, 'rerun');
+    }
 
     public function createDraftFromGlobalPeriod(User $user): PayrollRun
     {
@@ -154,15 +225,22 @@ class PayrollRunService
     }
 
     /**
-     * @return array{run: array<string, mixed>, rows: list<array<string, mixed>>, can_edit: bool}
+     * @return array{
+     *     run: array<string, mixed>,
+     *     rows: \Illuminate\Contracts\Pagination\LengthAwarePaginator,
+     *     bank_totals: list<array<string, mixed>>,
+     *     filter_options: array{banks: list<string>, departments: list<string>},
+     *     can_edit: bool
+     * }
      */
-    public function detailPayload(PayrollRun $run, ?string $query = null): array
-    {
+    public function detailPayload(
+        PayrollRun $run,
+        ?string $query = null,
+        ?string $bank = null,
+        ?string $department = null,
+        int $perPage = 50,
+    ): array {
         $run->loadMissing([
-            'items' => fn ($builder) => $builder
-                ->with('employee:id,bank_name,account_name,account_no')
-                ->orderBy('bank_name')
-                ->orderBy('employee_name'),
             'createdBy:id,name',
             'processedBy:id,name',
             'finalisedBy:id,name',
@@ -170,39 +248,137 @@ class PayrollRunService
             'auditLogs.performedBy:id,name',
         ]);
 
-        $rows = $run->items
-            ->map(fn (PayrollRunItem $item) => $this->toRowArray($item, $run))
-            ->values();
+        $itemsBase = PayrollRunItem::query()->where('payroll_run_id', $run->id);
 
-        if (filled($query)) {
-            $needle = mb_strtolower((string) $query);
-            $rows = $rows->filter(fn (array $row) => str_contains(mb_strtolower((string) $row['employee_name']), $needle)
-                || str_contains(mb_strtolower((string) ($row['staff_id'] ?? '')), $needle)
-                || str_contains(mb_strtolower((string) ($row['national_id'] ?? '')), $needle)
-                || str_contains(mb_strtolower((string) ($row['bank_name'] ?? '')), $needle)
-                || str_contains(mb_strtolower((string) ($row['account_no'] ?? '')), $needle))
-                ->values();
-        }
+        $totalsRow = (clone $itemsBase)
+            ->selectRaw('COALESCE(SUM(gross), 0) as gross, COALESCE(SUM(deductions), 0) as deductions, COALESCE(SUM(net), 0) as net')
+            ->first();
 
-        $bankTotals = $rows
-            ->groupBy(fn (array $row) => filled($row['bank_name']) ? (string) $row['bank_name'] : 'No bank')
-            ->map(fn ($bankRows, $bank) => [
-                'bank' => $bank,
-                'employee_count' => $bankRows->count(),
-                'gross' => round($bankRows->sum('gross'), 2),
-                'deductions' => round($bankRows->sum('deductions'), 2),
-                'net' => round($bankRows->sum('net'), 2),
+        $bankTotals = (clone $itemsBase)
+            ->selectRaw("CASE WHEN bank_name IS NULL OR TRIM(bank_name) = '' THEN 'No bank' ELSE bank_name END as bank")
+            ->selectRaw('COUNT(*) as employee_count')
+            ->selectRaw('COALESCE(SUM(gross), 0) as gross')
+            ->selectRaw('COALESCE(SUM(deductions), 0) as deductions')
+            ->selectRaw('COALESCE(SUM(net), 0) as net')
+            ->groupByRaw("CASE WHEN bank_name IS NULL OR TRIM(bank_name) = '' THEN 'No bank' ELSE bank_name END")
+            ->orderBy('bank')
+            ->get()
+            ->map(fn ($row) => [
+                'bank' => (string) $row->bank,
+                'employee_count' => (int) $row->employee_count,
+                'gross' => round((float) $row->gross, 2),
+                'deductions' => round((float) $row->deductions, 2),
+                'net' => round((float) $row->net, 2),
             ])
-            ->sortBy('bank')
+            ->all();
+
+        $banks = (clone $itemsBase)
+            ->selectRaw("CASE WHEN bank_name IS NULL OR TRIM(bank_name) = '' THEN 'No bank' ELSE bank_name END as bank")
+            ->distinct()
+            ->orderBy('bank')
+            ->pluck('bank')
+            ->map(fn ($value) => (string) $value)
             ->values()
             ->all();
 
+        $departments = (clone $itemsBase)
+            ->selectRaw("CASE WHEN department_name IS NULL OR TRIM(department_name) = '' THEN 'No department' ELSE department_name END as department")
+            ->distinct()
+            ->orderBy('department')
+            ->pluck('department')
+            ->map(fn ($value) => (string) $value)
+            ->values()
+            ->all();
+
+        $filtered = $this->filteredItemsQuery($run->id, $query, $bank, $department)
+            ->with('employee:id,bank_name,account_name,account_no');
+
+        $rows = $filtered
+            ->paginate(max(10, min(200, $perPage)))
+            ->withQueryString()
+            ->through(fn (PayrollRunItem $item) => $this->toRowArray($item, $run));
+
         return [
-            'run' => $this->toRunArray($run),
-            'rows' => $rows->all(),
+            'run' => $this->toRunArray($run, [
+                'gross' => round((float) ($totalsRow->gross ?? 0), 2),
+                'deductions' => round((float) ($totalsRow->deductions ?? 0), 2),
+                'net' => round((float) ($totalsRow->net ?? 0), 2),
+            ]),
+            'rows' => $rows,
             'bank_totals' => $bankTotals,
+            'filter_options' => [
+                'banks' => $banks,
+                'departments' => $departments,
+            ],
             'can_edit' => $run->status->isEditable(),
         ];
+    }
+
+    /**
+     * @return list<int>
+     */
+    public function matchingEmployeeIds(
+        PayrollRun $run,
+        ?string $query = null,
+        ?string $bank = null,
+        ?string $department = null,
+    ): array {
+        return $this->filteredItemsQuery($run->id, $query, $bank, $department)
+            ->orderBy('employee_id')
+            ->pluck('employee_id')
+            ->map(fn ($id) => (int) $id)
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return \Illuminate\Database\Eloquent\Builder<\App\Models\PayrollRunItem>
+     */
+    protected function filteredItemsQuery(
+        int $payrollRunId,
+        ?string $query = null,
+        ?string $bank = null,
+        ?string $department = null,
+    ) {
+        return PayrollRunItem::query()
+            ->where('payroll_run_id', $payrollRunId)
+            ->when(filled($query), function ($builder) use ($query): void {
+                $needle = '%'.mb_strtolower(trim((string) $query)).'%';
+                $builder->where(function ($inner) use ($needle): void {
+                    $inner->whereRaw('LOWER(employee_name) LIKE ?', [$needle])
+                        ->orWhereRaw('LOWER(COALESCE(staff_id, \'\')) LIKE ?', [$needle])
+                        ->orWhereRaw('LOWER(COALESCE(national_id, \'\')) LIKE ?', [$needle])
+                        ->orWhereRaw('LOWER(COALESCE(bank_name, \'\')) LIKE ?', [$needle])
+                        ->orWhereRaw('LOWER(COALESCE(account_name, \'\')) LIKE ?', [$needle])
+                        ->orWhereRaw('LOWER(COALESCE(account_no, \'\')) LIKE ?', [$needle])
+                        ->orWhereRaw('LOWER(COALESCE(department_name, \'\')) LIKE ?', [$needle])
+                        ->orWhereRaw('LOWER(COALESCE(designation_name, \'\')) LIKE ?', [$needle]);
+                });
+            })
+            ->when(filled($bank), function ($builder) use ($bank): void {
+                if ($bank === 'No bank') {
+                    $builder->where(function ($inner): void {
+                        $inner->whereNull('bank_name')->orWhereRaw("TRIM(bank_name) = ''");
+                    });
+
+                    return;
+                }
+
+                $builder->where('bank_name', $bank);
+            })
+            ->when(filled($department), function ($builder) use ($department): void {
+                if ($department === 'No department') {
+                    $builder->where(function ($inner): void {
+                        $inner->whereNull('department_name')->orWhereRaw("TRIM(department_name) = ''");
+                    });
+
+                    return;
+                }
+
+                $builder->where('department_name', $department);
+            })
+            ->orderByRaw("CASE WHEN bank_name IS NULL OR TRIM(bank_name) = '' THEN 'No bank' ELSE bank_name END")
+            ->orderBy('employee_name');
     }
 
     /**
@@ -283,8 +459,9 @@ class PayrollRunService
 
     /**
      * @param  list<int>  $employeeIds
+     * @return array{job_id: string, payroll_run_id: int}
      */
-    public function addBulkAdjustments(
+    public function queueBulkAdjustments(
         PayrollRun $run,
         array $employeeIds,
         string $type,
@@ -292,13 +469,15 @@ class PayrollRunService
         float $amount,
         ?string $remarks,
         User $actor,
-        Request $request,
-    ): int {
+        ?Request $request = null,
+    ): array {
         if (! $run->status->isEditable()) {
             throw ValidationException::withMessages([
                 'run' => 'Finalised payroll runs cannot be edited.',
             ]);
         }
+
+        $this->assertRunNotBusy($run->id);
 
         $employeeIds = array_values(array_unique(array_map('intval', $employeeIds)));
 
@@ -321,21 +500,169 @@ class PayrollRunService
             ]);
         }
 
-        DB::transaction(function () use ($run, $validIds, $type, $title, $amount, $remarks, $actor, $request): void {
-            foreach ($validIds as $employeeId) {
-                $this->createAdjustmentRecord($run, $employeeId, $type, $title, $amount, $remarks, $actor);
+        $lock = Cache::lock("payroll-bulk-adjust:{$run->id}", 30);
+
+        if (! $lock->get()) {
+            throw ValidationException::withMessages([
+                'run' => 'A payroll job is already in progress for this run.',
+            ]);
+        }
+
+        try {
+            $this->assertRunNotBusy($run->id);
+
+            $jobId = $this->payrollJobProgress->create('bulk_adjust', $run->id, $actor->id, [
+                'total' => count($validIds),
+                'ip_address' => $request?->ip(),
+                'user_agent' => $request?->userAgent(),
+            ]);
+            $this->markRunBusy($run->id, $jobId);
+
+            BulkAdjustPayrollRunJob::dispatch(
+                $jobId,
+                $run->id,
+                $actor->id,
+                $validIds,
+                $type,
+                $title,
+                $amount,
+                $remarks,
+            );
+
+            return [
+                'job_id' => $jobId,
+                'payroll_run_id' => $run->id,
+            ];
+        } finally {
+            $lock->release();
+        }
+    }
+
+    /**
+     * @param  list<int>  $employeeIds
+     */
+    public function executeBulkAdjustJob(
+        string $jobId,
+        int $payrollRunId,
+        int $userId,
+        array $employeeIds,
+        string $type,
+        string $title,
+        float $amount,
+        ?string $remarks,
+    ): void {
+        $run = PayrollRun::query()->find($payrollRunId);
+        $user = User::query()->find($userId);
+        $progressMeta = $this->payrollJobProgress->get($jobId) ?? [];
+
+        if (! $run || ! $user) {
+            $this->payrollJobProgress->update($jobId, [
+                'status' => PayrollJobProgress::STATUS_FAILED,
+                'error' => 'Payroll run or user not found.',
+                'message' => 'Failed',
+            ]);
+            $this->clearRunBusy($payrollRunId);
+
+            return;
+        }
+
+        if (! $run->status->isEditable()) {
+            $this->payrollJobProgress->update($jobId, [
+                'status' => PayrollJobProgress::STATUS_FAILED,
+                'error' => 'Finalised payroll runs cannot be edited.',
+                'message' => 'Failed',
+            ]);
+            $this->clearRunBusy($payrollRunId);
+
+            return;
+        }
+
+        $total = count($employeeIds);
+        $done = 0;
+
+        try {
+            $this->payrollJobProgress->update($jobId, [
+                'status' => PayrollJobProgress::STATUS_RUNNING,
+                'total' => $total,
+                'done' => 0,
+                'message' => 'Starting…',
+            ]);
+
+            foreach ($employeeIds as $employeeId) {
+                if ($this->payrollJobProgress->isCancelRequested($jobId)) {
+                    throw new PayrollJobCancelledException('Payroll job cancelled.');
+                }
+
+                $this->createAdjustmentRecord($run, (int) $employeeId, $type, $title, $amount, $remarks, $user);
+                $done++;
+
+                $this->payrollJobProgress->update($jobId, [
+                    'status' => PayrollJobProgress::STATUS_RUNNING,
+                    'done' => $done,
+                    'total' => $total,
+                    'message' => "Adjusted {$done} of {$total} employees…",
+                ]);
             }
 
-            $this->addAuditLog($run, 'bulk_adjustment_added', $actor, $request, false, [
-                'employee_ids' => $validIds,
-                'employee_count' => count($validIds),
+            $auditRequest = Request::create('/', 'POST', [], [], [], array_filter([
+                'REMOTE_ADDR' => $progressMeta['ip_address'] ?? null,
+                'HTTP_USER_AGENT' => $progressMeta['user_agent'] ?? null,
+            ], fn ($value) => is_string($value) && $value !== ''));
+
+            $this->addAuditLog($run, 'bulk_adjustment_added', $user, $auditRequest, false, [
+                'employee_ids' => $employeeIds,
+                'employee_count' => $done,
                 'type' => $type,
                 'title' => $title,
                 'amount' => round($amount, 2),
             ]);
-        });
 
-        return count($validIds);
+            $this->payrollJobProgress->update($jobId, [
+                'status' => PayrollJobProgress::STATUS_COMPLETED,
+                'done' => $done,
+                'total' => $total,
+                'percent' => 100,
+                'message' => 'Completed',
+                'error' => null,
+            ]);
+        } catch (PayrollJobCancelledException) {
+            if ($done > 0) {
+                $auditRequest = Request::create('/', 'POST', [], [], [], array_filter([
+                    'REMOTE_ADDR' => $progressMeta['ip_address'] ?? null,
+                    'HTTP_USER_AGENT' => $progressMeta['user_agent'] ?? null,
+                ], fn ($value) => is_string($value) && $value !== ''));
+
+                $this->addAuditLog($run, 'bulk_adjustment_added', $user, $auditRequest, false, [
+                    'employee_ids' => array_slice($employeeIds, 0, $done),
+                    'employee_count' => $done,
+                    'type' => $type,
+                    'title' => $title,
+                    'amount' => round($amount, 2),
+                    'cancelled' => true,
+                ]);
+            }
+
+            $this->payrollJobProgress->update($jobId, [
+                'status' => PayrollJobProgress::STATUS_CANCELLED,
+                'done' => $done,
+                'total' => $total,
+                'message' => $done > 0
+                    ? "Cancelled after adjusting {$done} of {$total} employees"
+                    : 'Cancelled',
+            ]);
+        } catch (\Throwable $e) {
+            $this->payrollJobProgress->update($jobId, [
+                'status' => PayrollJobProgress::STATUS_FAILED,
+                'done' => $done,
+                'total' => $total,
+                'error' => $e->getMessage(),
+                'message' => 'Failed',
+            ]);
+
+            throw $e;
+        } finally {
+            $this->clearRunBusy($payrollRunId);
+        }
     }
 
     protected function createAdjustmentRecord(
@@ -391,12 +718,117 @@ class PayrollRunService
         });
     }
 
-    public function exportRun(PayrollRun $run): StreamedResponse
+    /**
+     * @return array{job_id: string, payroll_run_id: int}
+     */
+    public function queueExport(PayrollRun $run, User $user): array
+    {
+        $itemCount = PayrollRunItem::query()->where('payroll_run_id', $run->id)->count();
+
+        $jobId = $this->payrollJobProgress->create('export', $run->id, $user->id, [
+            'total' => $itemCount,
+        ]);
+
+        ExportPayrollRunJob::dispatch($jobId, $run->id);
+
+        return [
+            'job_id' => $jobId,
+            'payroll_run_id' => $run->id,
+        ];
+    }
+
+    public function executeExportJob(string $jobId, int $payrollRunId): void
+    {
+        $run = PayrollRun::query()->find($payrollRunId);
+
+        if (! $run) {
+            $this->payrollJobProgress->update($jobId, [
+                'status' => PayrollJobProgress::STATUS_FAILED,
+                'error' => 'Payroll run not found.',
+                'message' => 'Failed',
+                'download_ready' => false,
+            ]);
+
+            return;
+        }
+
+        try {
+            $this->payrollJobProgress->update($jobId, [
+                'status' => PayrollJobProgress::STATUS_RUNNING,
+                'message' => 'Preparing export…',
+            ]);
+
+            $built = $this->buildExportSpreadsheet($run, function (int $done, int $total) use ($jobId): void {
+                if ($this->payrollJobProgress->isCancelRequested($jobId)) {
+                    throw new PayrollJobCancelledException('Payroll job cancelled.');
+                }
+
+                $this->payrollJobProgress->update($jobId, [
+                    'status' => PayrollJobProgress::STATUS_RUNNING,
+                    'done' => $done,
+                    'total' => $total,
+                    'message' => $total > 0
+                        ? "Exporting {$done} of {$total} employees…"
+                        : 'No employees to export…',
+                ]);
+            });
+
+            if ($this->payrollJobProgress->isCancelRequested($jobId)) {
+                throw new PayrollJobCancelledException('Payroll job cancelled.');
+            }
+
+            $tempPath = tempnam(sys_get_temp_dir(), 'payroll-export-');
+
+            if ($tempPath === false) {
+                throw new \RuntimeException('Unable to create temporary export file.');
+            }
+
+            $xlsxTempPath = $tempPath.'.xlsx';
+            @unlink($tempPath);
+
+            $writer = new Xlsx($built['spreadsheet']);
+            $writer->save($xlsxTempPath);
+
+            $this->payrollJobProgress->storeFile($jobId, $xlsxTempPath, $built['filename']);
+            $this->payrollJobProgress->update($jobId, [
+                'status' => PayrollJobProgress::STATUS_COMPLETED,
+                'percent' => 100,
+                'message' => 'Completed',
+                'error' => null,
+                'download_ready' => true,
+            ]);
+        } catch (PayrollJobCancelledException) {
+            $this->payrollJobProgress->deleteArtifacts($jobId);
+            $this->payrollJobProgress->update($jobId, [
+                'status' => PayrollJobProgress::STATUS_CANCELLED,
+                'message' => 'Cancelled',
+                'download_ready' => false,
+            ]);
+        } catch (\Throwable $e) {
+            $this->payrollJobProgress->deleteArtifacts($jobId);
+            $this->payrollJobProgress->update($jobId, [
+                'status' => PayrollJobProgress::STATUS_FAILED,
+                'error' => $e->getMessage(),
+                'message' => 'Failed',
+                'download_ready' => false,
+            ]);
+
+            throw $e;
+        }
+    }
+
+    /**
+     * @return array{spreadsheet: Spreadsheet, filename: string}
+     */
+    protected function buildExportSpreadsheet(PayrollRun $run, ?callable $onProgress = null): array
     {
         $run->loadMissing('items');
 
+        $items = $run->items;
+        $total = $items->count();
         $componentNames = [];
-        foreach ($run->items as $item) {
+
+        foreach ($items as $item) {
             foreach ($item->details ?? [] as $detail) {
                 if (! is_array($detail)) {
                     continue;
@@ -436,7 +868,9 @@ class PayrollRunService
         $sheet->fromArray($headers, null, 'A1');
 
         $rowNum = 2;
-        foreach ($run->items as $item) {
+        $done = 0;
+
+        foreach ($items as $item) {
             $amountsByComponent = [];
             foreach ($item->details ?? [] as $detail) {
                 if (! is_array($detail)) {
@@ -476,6 +910,15 @@ class PayrollRunService
 
             $sheet->fromArray($row, null, 'A'.$rowNum);
             $rowNum++;
+            $done++;
+
+            if ($onProgress && ($done === $total || $done % 25 === 0)) {
+                $onProgress($done, $total);
+            }
+        }
+
+        if ($onProgress) {
+            $onProgress($done, $total);
         }
 
         $lastColumnIndex = count($headers);
@@ -483,14 +926,180 @@ class PayrollRunService
             $sheet->getColumnDimension(Coordinate::stringFromColumnIndex($columnIndex))->setAutoSize(true);
         }
 
-        $writer = new Xlsx($spreadsheet);
-        $filename = "payroll-run-{$run->reference_no}.xlsx";
+        return [
+            'spreadsheet' => $spreadsheet,
+            'filename' => "payroll-run-{$run->reference_no}.xlsx",
+        ];
+    }
+
+    public function exportRun(PayrollRun $run): StreamedResponse
+    {
+        $built = $this->buildExportSpreadsheet($run);
+        $writer = new Xlsx($built['spreadsheet']);
 
         return response()->streamDownload(function () use ($writer): void {
             $writer->save('php://output');
-        }, $filename, [
+        }, $built['filename'], [
             'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         ]);
+    }
+
+    /**
+     * @return array{job_id: string, payroll_run_id: int}
+     */
+    protected function queueCreateDraft(
+        CarbonInterface $from,
+        CarbonInterface $to,
+        string $label,
+        string $source,
+        User $user,
+    ): array {
+        $lockKey = sprintf('payroll-create:%s:%s', $from->toDateString(), $to->toDateString());
+        $lock = Cache::lock($lockKey, 30);
+
+        if (! $lock->get()) {
+            throw ValidationException::withMessages([
+                'period' => 'Another payroll create is already in progress for this period.',
+            ]);
+        }
+
+        try {
+            $this->ensureNoOverlap($from, $to);
+
+            $run = PayrollRun::query()->create([
+                'reference_no' => 'PR-'.now()->format('YmdHis').'-'.str_pad((string) random_int(1, 9999), 4, '0', STR_PAD_LEFT),
+                'period_from' => $from->toDateString(),
+                'period_to' => $to->toDateString(),
+                'period_label' => $label,
+                'period_source' => $source,
+                'status' => PayrollRunStatus::Draft,
+                'created_by_user_id' => $user->id,
+            ]);
+
+            $jobId = $this->payrollJobProgress->create('create', $run->id, $user->id);
+            $this->markRunBusy($run->id, $jobId);
+
+            BuildPayrollRunJob::dispatch($jobId, $run->id, 'create', $user->id);
+
+            return [
+                'job_id' => $jobId,
+                'payroll_run_id' => $run->id,
+            ];
+        } finally {
+            $lock->release();
+        }
+    }
+
+    /**
+     * @return array{job_id: string, payroll_run_id: int}
+     */
+    protected function queueRebuild(PayrollRun $run, User $actor, string $action): array
+    {
+        $this->assertRunNotBusy($run->id);
+
+        $lock = Cache::lock("payroll-rebuild:{$run->id}", 30);
+
+        if (! $lock->get()) {
+            throw ValidationException::withMessages([
+                'run' => 'A payroll rebuild is already in progress for this run.',
+            ]);
+        }
+
+        try {
+            $this->assertRunNotBusy($run->id);
+
+            $jobId = $this->payrollJobProgress->create($action, $run->id, $actor->id);
+            $this->markRunBusy($run->id, $jobId);
+
+            BuildPayrollRunJob::dispatch($jobId, $run->id, $action, $actor->id);
+
+            return [
+                'job_id' => $jobId,
+                'payroll_run_id' => $run->id,
+            ];
+        } finally {
+            $lock->release();
+        }
+    }
+
+    public function executeQueuedJob(string $jobId, int $payrollRunId, string $action, int $userId): void
+    {
+        $run = PayrollRun::query()->find($payrollRunId);
+        $user = User::query()->find($userId);
+
+        if (! $run || ! $user) {
+            $this->payrollJobProgress->update($jobId, [
+                'status' => PayrollJobProgress::STATUS_FAILED,
+                'error' => 'Payroll run or user not found.',
+                'message' => 'Failed',
+            ]);
+            $this->clearRunBusy($payrollRunId);
+
+            return;
+        }
+
+        try {
+            $this->payrollJobProgress->update($jobId, [
+                'status' => PayrollJobProgress::STATUS_RUNNING,
+                'message' => 'Starting…',
+            ]);
+
+            $this->rebuildItemsWithProgress($run, $jobId);
+
+            if ($action === 'process') {
+                $run->update([
+                    'status' => PayrollRunStatus::Processed,
+                    'processed_by_user_id' => $user->id,
+                    'processed_at' => now(),
+                ]);
+                $this->addAuditLog($run, 'processed', $user, null);
+            } elseif ($action === 'rerun') {
+                $this->addAuditLog($run, 'rerun', $user, null, false, [
+                    'status' => $run->status->value,
+                ]);
+            }
+
+            $this->payrollJobProgress->update($jobId, [
+                'status' => PayrollJobProgress::STATUS_COMPLETED,
+                'percent' => 100,
+                'message' => 'Completed',
+                'error' => null,
+                'payroll_run_id' => $run->id,
+            ]);
+            $this->clearRunBusy($run->id);
+        } catch (PayrollJobCancelledException) {
+            if ($action === 'create') {
+                $this->deleteIncompleteRun($run);
+            }
+
+            $this->payrollJobProgress->update($jobId, [
+                'status' => PayrollJobProgress::STATUS_CANCELLED,
+                'message' => 'Cancelled',
+                'payroll_run_id' => $action === 'create' ? null : $run->id,
+            ]);
+            $this->clearRunBusy($payrollRunId);
+        } catch (\Throwable $e) {
+            $clearedRun = false;
+
+            if ($action === 'create') {
+                $hasItems = PayrollRunItem::query()->where('payroll_run_id', $run->id)->exists();
+
+                if (! $hasItems) {
+                    $this->deleteIncompleteRun($run);
+                    $clearedRun = true;
+                }
+            }
+
+            $this->payrollJobProgress->update($jobId, [
+                'status' => PayrollJobProgress::STATUS_FAILED,
+                'error' => $e->getMessage(),
+                'message' => 'Failed',
+                'payroll_run_id' => $clearedRun ? null : $run->id,
+            ]);
+            $this->clearRunBusy($payrollRunId);
+
+            throw $e;
+        }
     }
 
     protected function createDraft(
@@ -522,6 +1131,46 @@ class PayrollRunService
         return $run->fresh(['items']);
     }
 
+    public function rebuildItemsWithProgress(PayrollRun $run, string $jobId): void
+    {
+        $report = $this->payrollProcessingService->buildForDateRange(
+            $run->period_from,
+            $run->period_to,
+            $run->period_label,
+            null,
+            function (int $done, int $total) use ($jobId): void {
+                static $lastCancelCheck = 0;
+
+                if ($done === 0 || $done === $total || ($done - $lastCancelCheck) >= 5) {
+                    $lastCancelCheck = $done;
+
+                    if ($this->payrollJobProgress->isCancelRequested($jobId)) {
+                        throw new PayrollJobCancelledException('Payroll job cancelled.');
+                    }
+                }
+
+                $this->payrollJobProgress->update($jobId, [
+                    'status' => PayrollJobProgress::STATUS_RUNNING,
+                    'done' => $done,
+                    'total' => $total,
+                    'message' => $total > 0
+                        ? "Processing {$done} of {$total} employees…"
+                        : 'No employees to process…',
+                ]);
+            },
+        );
+
+        if ($this->payrollJobProgress->isCancelRequested($jobId)) {
+            throw new PayrollJobCancelledException('Payroll job cancelled.');
+        }
+
+        $this->payrollJobProgress->update($jobId, [
+            'message' => 'Saving payroll items…',
+        ]);
+
+        $this->replaceItemsFromRows($run, $report['rows']);
+    }
+
     protected function rebuildItems(PayrollRun $run): void
     {
         $report = $this->payrollProcessingService->buildForDateRange(
@@ -530,52 +1179,116 @@ class PayrollRunService
             $run->period_label,
         );
 
+        $this->replaceItemsFromRows($run, $report['rows']);
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $rows
+     */
+    protected function replaceItemsFromRows(PayrollRun $run, array $rows): void
+    {
         $existingAdjustments = PayrollRunAdjustment::query()
             ->where('payroll_run_id', $run->id)
             ->get()
             ->groupBy('employee_id');
 
-        PayrollRunItem::query()->where('payroll_run_id', $run->id)->delete();
+        DB::transaction(function () use ($run, $rows, $existingAdjustments): void {
+            PayrollRunItem::query()->where('payroll_run_id', $run->id)->delete();
 
-        foreach ($report['rows'] as $index => $row) {
-            $employeeAdjustments = $existingAdjustments->get($row['employee_id'], collect());
-            $manualAdditions = (float) $employeeAdjustments->where('type', 'addition')->sum('amount');
-            $manualDeductions = (float) $employeeAdjustments->where('type', 'deduction')->sum('amount');
+            $now = now();
+            $payload = [];
 
-            PayrollRunItem::query()->create([
-                'payroll_run_id' => $run->id,
-                'employee_id' => $row['employee_id'],
-                'department_id' => $row['department_id'],
-                'department_name' => $row['department'],
-                'designation_name' => $row['designation'],
-                'staff_id' => $row['staff_id'],
-                'employee_name' => $row['employee_name'],
-                'national_id' => $row['national_id'],
-                'bank_name' => $row['bank_name'] ?? null,
-                'account_name' => $row['account_name'] ?? null,
-                'account_no' => $row['account_no'] ?? null,
-                'days_attended' => $row['days_attended'],
-                'hours_worked' => $row['hours_worked'],
-                'base_gross' => $row['gross'],
-                'base_deductions' => $row['deductions'],
-                'base_net' => $row['net'],
-                'manual_additions' => round($manualAdditions, 2),
-                'manual_deductions' => round($manualDeductions, 2),
-                'gross' => round($row['gross'] + $manualAdditions, 2),
-                'deductions' => round($row['deductions'] + $manualDeductions, 2),
-                'net' => round(($row['gross'] + $manualAdditions) - ($row['deductions'] + $manualDeductions), 2),
-                'details' => $row['details'],
-                'attendance_summary' => [
+            foreach ($rows as $index => $row) {
+                $employeeAdjustments = $existingAdjustments->get($row['employee_id'], collect());
+                $manualAdditions = (float) $employeeAdjustments->where('type', 'addition')->sum('amount');
+                $manualDeductions = (float) $employeeAdjustments->where('type', 'deduction')->sum('amount');
+
+                $payload[] = [
+                    'payroll_run_id' => $run->id,
+                    'employee_id' => $row['employee_id'],
+                    'department_id' => $row['department_id'],
+                    'department_name' => $row['department'],
+                    'designation_name' => $row['designation'],
+                    'staff_id' => $row['staff_id'],
+                    'employee_name' => $row['employee_name'],
+                    'national_id' => $row['national_id'],
+                    'bank_name' => $row['bank_name'] ?? null,
+                    'account_name' => $row['account_name'] ?? null,
+                    'account_no' => $row['account_no'] ?? null,
                     'days_attended' => $row['days_attended'],
                     'hours_worked' => $row['hours_worked'],
-                    'late_minutes' => $row['late_minutes'] ?? null,
-                    'absent_days' => $row['absent_days'] ?? null,
-                    'present_days' => $row['present_days'] ?? null,
-                    'formula_variables' => $row['formula_variables'] ?? null,
-                ],
-                'sort_order' => $index,
+                    'base_gross' => $row['gross'],
+                    'base_deductions' => $row['deductions'],
+                    'base_net' => $row['net'],
+                    'manual_additions' => round($manualAdditions, 2),
+                    'manual_deductions' => round($manualDeductions, 2),
+                    'gross' => round($row['gross'] + $manualAdditions, 2),
+                    'deductions' => round($row['deductions'] + $manualDeductions, 2),
+                    'net' => round(($row['gross'] + $manualAdditions) - ($row['deductions'] + $manualDeductions), 2),
+                    'details' => json_encode($row['details']),
+                    'attendance_summary' => json_encode([
+                        'days_attended' => $row['days_attended'],
+                        'hours_worked' => $row['hours_worked'],
+                        'late_minutes' => $row['late_minutes'] ?? null,
+                        'absent_days' => $row['absent_days'] ?? null,
+                        'present_days' => $row['present_days'] ?? null,
+                        'formula_variables' => $row['formula_variables'] ?? null,
+                    ]),
+                    'sort_order' => $index,
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ];
+            }
+
+            foreach (array_chunk($payload, 200) as $chunk) {
+                PayrollRunItem::query()->insert($chunk);
+            }
+        });
+    }
+
+    protected function deleteIncompleteRun(PayrollRun $run): void
+    {
+        DB::transaction(function () use ($run): void {
+            PayrollRunItem::query()->where('payroll_run_id', $run->id)->delete();
+            PayrollRunAdjustment::query()->where('payroll_run_id', $run->id)->delete();
+            PayrollRunAuditLog::query()->where('payroll_run_id', $run->id)->delete();
+            $run->delete();
+        });
+    }
+
+    protected function assertRunNotBusy(int $payrollRunId): void
+    {
+        $existingJobId = Cache::get($this->runBusyKey($payrollRunId));
+
+        if (! is_string($existingJobId) || $existingJobId === '') {
+            return;
+        }
+
+        $progress = $this->payrollJobProgress->get($existingJobId);
+
+        if ($progress && in_array($progress['status'] ?? null, [
+            PayrollJobProgress::STATUS_QUEUED,
+            PayrollJobProgress::STATUS_RUNNING,
+        ], true)) {
+            throw ValidationException::withMessages([
+                'run' => 'A payroll job is already in progress for this run.',
             ]);
         }
+    }
+
+    protected function markRunBusy(int $payrollRunId, string $jobId): void
+    {
+        Cache::put($this->runBusyKey($payrollRunId), $jobId, 60 * 60 * 6);
+    }
+
+    protected function clearRunBusy(int $payrollRunId): void
+    {
+        Cache::forget($this->runBusyKey($payrollRunId));
+    }
+
+    protected function runBusyKey(int $payrollRunId): string
+    {
+        return "payroll-run-busy:{$payrollRunId}";
     }
 
     protected function ensureNoOverlap(CarbonInterface $from, CarbonInterface $to): void
@@ -688,7 +1401,7 @@ class PayrollRunService
         PayrollRun $run,
         string $eventType,
         User $actor,
-        Request $request,
+        ?Request $request = null,
         bool $passwordConfirmed = false,
         array $context = [],
     ): void {
@@ -696,26 +1409,35 @@ class PayrollRunService
             'payroll_run_id' => $run->id,
             'event_type' => $eventType,
             'performed_by_user_id' => $actor->id,
-            'ip_address' => $request->ip(),
-            'user_agent' => $request->userAgent(),
+            'ip_address' => $request?->ip(),
+            'user_agent' => $request?->userAgent(),
             'password_confirmed' => $passwordConfirmed,
             'context' => $context,
         ]);
     }
 
     /**
+     * @param  array{gross?: float, deductions?: float, net?: float}|null  $totals
      * @return array<string, mixed>
      */
-    protected function toRunArray(PayrollRun $run): array
+    protected function toRunArray(PayrollRun $run, ?array $totals = null): array
     {
-        $totals = $run->items->reduce(
-            fn (array $carry, PayrollRunItem $item) => [
-                'gross' => $carry['gross'] + $item->gross,
-                'deductions' => $carry['deductions'] + $item->deductions,
-                'net' => $carry['net'] + $item->net,
-            ],
-            ['gross' => 0.0, 'deductions' => 0.0, 'net' => 0.0]
-        );
+        if ($totals === null) {
+            $run->loadMissing('items');
+            $totals = $run->items->reduce(
+                fn (array $carry, PayrollRunItem $item) => [
+                    'gross' => $carry['gross'] + $item->gross,
+                    'deductions' => $carry['deductions'] + $item->deductions,
+                    'net' => $carry['net'] + $item->net,
+                ],
+                ['gross' => 0.0, 'deductions' => 0.0, 'net' => 0.0]
+            );
+            $totals = [
+                'gross' => round($totals['gross'], 2),
+                'deductions' => round($totals['deductions'], 2),
+                'net' => round($totals['net'], 2),
+            ];
+        }
 
         return [
             'id' => $run->id,
@@ -734,11 +1456,7 @@ class PayrollRunService
             'processed_by' => $run->processedBy?->name,
             'finalised_by' => $run->finalisedBy?->name,
             'reopened_by' => $run->reopenedBy?->name,
-            'totals' => [
-                'gross' => round($totals['gross'], 2),
-                'deductions' => round($totals['deductions'], 2),
-                'net' => round($totals['net'], 2),
-            ],
+            'totals' => $totals,
             'audit_logs' => $run->auditLogs
                 ->sortByDesc('created_at')
                 ->map(fn (PayrollRunAuditLog $log) => [

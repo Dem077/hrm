@@ -9,6 +9,10 @@ import { initTheme } from '@/composables/useTheme';
 import { setAppTimezone } from '@/lib/timezone';
 import type { AppBranding } from '@/types/branding';
 
+if (! import.meta.env.SSR) {
+    void import('./echo').then((module) => module.initEcho());
+}
+
 initTheme();
 
 const appName = import.meta.env.VITE_APP_NAME || 'HRM';
@@ -47,7 +51,7 @@ createInertiaApp({
 
         const vueApp = createApp({ render: () => h(App, props) }).use(plugin);
 
-        if (typeof window !== 'undefined') {
+        if (! import.meta.env.SSR) {
             vueApp.mount(el);
         }
 

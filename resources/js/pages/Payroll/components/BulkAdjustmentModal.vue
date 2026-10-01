@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import { useForm } from '@inertiajs/vue3';
-import { computed, watch } from 'vue';
+import { computed, reactive, watch } from 'vue';
 
 import UiButton from '@/components/ui/UiButton.vue';
 import UiInput from '@/components/ui/UiInput.vue';
@@ -9,22 +8,30 @@ import UiSelect from '@/components/ui/UiSelect.vue';
 
 const props = defineProps<{
     open: boolean;
-    runId: number;
     selectedCount: number;
     employeeIds: number[];
+    submitting?: boolean;
 }>();
 
 const emit = defineEmits<{
     close: [];
-    success: [];
+    submit: [
+        payload: {
+            employee_ids: number[];
+            type: 'addition' | 'deduction';
+            title: string;
+            amount: number;
+            remarks: string | null;
+        },
+    ];
 }>();
 
-const form = useForm({
-    employee_ids: [] as number[],
+const form = reactive({
     type: 'addition' as 'addition' | 'deduction',
     title: '',
     amount: '',
     remarks: '',
+    errors: {} as Record<string, string>,
 });
 
 const canSubmit = computed(
@@ -32,7 +39,7 @@ const canSubmit = computed(
         props.employeeIds.length > 0 &&
         form.title.trim() !== '' &&
         Number(form.amount) > 0 &&
-        !form.processing,
+        !props.submitting,
 );
 
 watch(
@@ -42,19 +49,11 @@ watch(
             return;
         }
 
-        form.reset();
-        form.clearErrors();
         form.type = 'addition';
-        form.employee_ids = [...props.employeeIds];
-    },
-);
-
-watch(
-    () => props.employeeIds,
-    (ids) => {
-        if (props.open) {
-            form.employee_ids = [...ids];
-        }
+        form.title = '';
+        form.amount = '';
+        form.remarks = '';
+        form.errors = {};
     },
 );
 
@@ -63,13 +62,18 @@ function close(): void {
 }
 
 function submit(): void {
-    form.employee_ids = [...props.employeeIds];
-    form.post(`/payroll/${props.runId}/adjustments/bulk`, {
-        preserveScroll: true,
-        onSuccess: () => {
-            emit('success');
-            close();
-        },
+    form.errors = {};
+
+    if (!canSubmit.value) {
+        return;
+    }
+
+    emit('submit', {
+        employee_ids: [...props.employeeIds],
+        type: form.type,
+        title: form.title.trim(),
+        amount: Number(form.amount),
+        remarks: form.remarks.trim() || null,
     });
 }
 </script>
@@ -104,9 +108,9 @@ function submit(): void {
             <p v-if="form.errors.run" class="text-xs text-red-600 dark:text-red-400">{{ form.errors.run }}</p>
         </div>
         <template #footer>
-            <UiButton variant="ghost" :disabled="form.processing" @click="close">Cancel</UiButton>
+            <UiButton variant="ghost" :disabled="submitting" @click="close">Cancel</UiButton>
             <UiButton variant="primary" :disabled="!canSubmit" @click="submit">
-                {{ form.processing ? 'Saving…' : `Apply to ${selectedCount}` }}
+                {{ submitting ? 'Queuing…' : `Apply to ${selectedCount}` }}
             </UiButton>
         </template>
     </UiModal>

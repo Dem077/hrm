@@ -2,12 +2,15 @@
 
 namespace App\Http\Controllers;
 
+use App\Jobs\BuildTemplateReportJob;
 use App\Http\Requests\StoreReportTemplateRequest;
 use App\Http\Requests\UpdateReportTemplateRequest;
 use App\Models\ReportTemplate;
 use App\Services\ReportGenerator;
+use App\Services\Reports\ReportJobProgress;
 use App\Support\ReportFieldCatalog;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -37,6 +40,26 @@ class ReportTemplateController extends Controller
         abort_unless($this->canViewTemplate($user, $reportTemplate), 403);
 
         return $generator->download($reportTemplate);
+    }
+
+    public function startDownloadJob(
+        ReportTemplate $reportTemplate,
+        Request $request,
+        ReportJobProgress $progress,
+    ) {
+        $user = $request->user();
+
+        abort_unless($this->canViewTemplate($user, $reportTemplate), 403);
+
+        $jobId = $progress->create('template_download', $user->id, [
+            'report_template_id' => $reportTemplate->id,
+        ]);
+
+        BuildTemplateReportJob::dispatch($jobId, $reportTemplate->id);
+
+        return response()->json([
+            'job_id' => $jobId,
+        ]);
     }
 
     public function manage(): Response

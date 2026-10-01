@@ -59,12 +59,14 @@ class AttendanceReportService
     ) {}
 
     /**
+     * @param  (callable(int $done, int $total): void)|null  $onProgress
      * @return list<array<string, mixed>>
      */
     public function rows(
         CarbonInterface $from,
         CarbonInterface $to,
         ?int $departmentId = null,
+        ?callable $onProgress = null,
     ): array {
         $timezone = config('app.timezone', 'UTC');
         $from = $from->copy()->timezone($timezone)->startOfDay();
@@ -74,7 +76,7 @@ class AttendanceReportService
             [$from, $to] = [$to, $from];
         }
 
-        $dayRows = $this->collectDayRows($from, $to, $departmentId);
+        $dayRows = $this->collectDayRows($from, $to, $departmentId, $onProgress);
         $nationalIds = Employee::query()
             ->whereIn('id', collect($dayRows)->pluck('employee_id')->unique()->filter()->all())
             ->pluck('national_id', 'id');
@@ -102,12 +104,17 @@ class AttendanceReportService
             ->all();
     }
 
-    public function download(
+    /**
+     * @param  (callable(int $done, int $total): void)|null  $onProgress
+     * @return array{contents: string, filename: string}
+     */
+    public function buildCsv(
         CarbonInterface $from,
         CarbonInterface $to,
         ?int $departmentId = null,
-    ): StreamedResponse {
-        $rows = $this->rows($from, $to, $departmentId);
+        ?callable $onProgress = null,
+    ): array {
+        $rows = $this->rows($from, $to, $departmentId, $onProgress);
         $csv = Writer::createFromFileObject(new SplTempFileObject);
         $csv->insertOne(self::headers());
 
@@ -133,25 +140,39 @@ class AttendanceReportService
             ]);
         }
 
-        $filename = 'attendance-report-'.$from->toDateString().'-to-'.$to->toDateString().'.csv';
+        return [
+            'contents' => $csv->toString(),
+            'filename' => 'attendance-report-'.$from->toDateString().'-to-'.$to->toDateString().'.csv',
+        ];
+    }
+
+    public function download(
+        CarbonInterface $from,
+        CarbonInterface $to,
+        ?int $departmentId = null,
+    ): StreamedResponse {
+        $built = $this->buildCsv($from, $to, $departmentId);
 
         return response()->streamDownload(
-            fn () => print ($csv->toString()),
-            $filename,
+            fn () => print ($built['contents']),
+            $built['filename'],
             ['Content-Type' => 'text/csv'],
         );
     }
 
     /**
+     * @param  (callable(int $done, int $total): void)|null  $onProgress
      * @return list<array<string, mixed>>
      */
     protected function collectDayRows(
         CarbonInterface $from,
         CarbonInterface $to,
         ?int $departmentId,
+        ?callable $onProgress = null,
     ): array {
         $rows = [];
         $cursor = $from->copy();
+        $chunks = [];
 
         while ($cursor->lte($to)) {
             $chunkEnd = $cursor->copy()->addDays(AttendanceSheetService::MAX_DAYS);
@@ -159,10 +180,25 @@ class AttendanceReportService
                 $chunkEnd = $to->copy();
             }
 
-            $chunk = $this->sheetService->build($cursor, $chunkEnd, $departmentId, null);
-            array_push($rows, ...$chunk['rows']);
-
+            $chunks[] = [$cursor->copy(), $chunkEnd->copy()];
             $cursor = $chunkEnd->copy()->addDay();
+        }
+
+        $total = count($chunks);
+        $done = 0;
+
+        if ($onProgress) {
+            $onProgress(0, $total);
+        }
+
+        foreach ($chunks as [$chunkStart, $chunkEnd]) {
+            $chunk = $this->sheetService->build($chunkStart, $chunkEnd, $departmentId, null);
+            array_push($rows, ...$chunk['rows']);
+            $done++;
+
+            if ($onProgress) {
+                $onProgress($done, $total);
+            }
         }
 
         return $rows;

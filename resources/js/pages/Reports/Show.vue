@@ -1,11 +1,14 @@
 <script setup lang="ts">
 import { Head, Link } from '@inertiajs/vue3';
+import { ref } from 'vue';
 
 import PageHeader from '@/components/ui/PageHeader.vue';
 import UiButton from '@/components/ui/UiButton.vue';
 import UiCard from '@/components/ui/UiCard.vue';
 import { usePermissions } from '@/composables/usePermissions';
 import AppLayout from '@/layouts/AppLayout.vue';
+import ReportJobProgressModal from '@/pages/Reports/components/ReportJobProgressModal.vue';
+import { useReportJobProgress } from '@/pages/Reports/components/useReportJobProgress';
 import type { ReportDefinition, ReportTemplate } from '@/types/reports';
 
 const props = defineProps<{
@@ -14,9 +17,32 @@ const props = defineProps<{
 }>();
 
 const { can } = usePermissions();
+const job = useReportJobProgress();
+const downloadError = ref<string | null>(null);
 
 const definition = (props.template.definition ?? {}) as ReportDefinition;
 const columns = (definition.field_configs ?? []).filter((config) => config.field);
+
+async function downloadCsv(): Promise<void> {
+    if (job.submitting.value) {
+        return;
+    }
+
+    downloadError.value = null;
+
+    try {
+        const result = await job.startJob(`/reports/${props.template.id}/jobs`);
+        job.close();
+        window.location.href = `/reports/jobs/${result.job_id}/download`;
+    } catch (err) {
+        if (err instanceof Error && err.message === 'Cancelled') {
+            job.close();
+            return;
+        }
+
+        downloadError.value = err instanceof Error ? err.message : 'Failed to download report.';
+    }
+}
 </script>
 
 <template>
@@ -28,14 +54,18 @@ const columns = (definition.field_configs ?? []).filter((config) => config.field
             :description="template.description || `Export ${modelLabel} data as configured in this template.`"
         >
             <template #actions>
-                <a :href="`/reports/${template.id}/download`">
-                    <UiButton variant="primary">Download CSV</UiButton>
-                </a>
+                <UiButton variant="primary" :disabled="job.submitting.value" @click="downloadCsv">
+                    {{ job.submitting.value ? 'Preparing…' : 'Download CSV' }}
+                </UiButton>
                 <Link v-if="can('reports.manage')" :href="`/reports/templates/${template.id}/edit`">
                     <UiButton variant="secondary">Edit template</UiButton>
                 </Link>
             </template>
         </PageHeader>
+
+        <p v-if="downloadError" class="mb-4 text-sm text-rose-600 dark:text-rose-400">
+            {{ downloadError }}
+        </p>
 
         <div class="grid gap-4 lg:grid-cols-3">
             <UiCard class="lg:col-span-1">
@@ -97,5 +127,19 @@ const columns = (definition.field_configs ?? []).filter((config) => config.field
                 <p v-else class="mt-3 text-sm text-slate-500">No columns configured yet.</p>
             </UiCard>
         </div>
+
+        <ReportJobProgressModal
+            :open="job.open.value"
+            :progress="job.progress.value"
+            :percent="job.percent.value"
+            :message="job.message.value"
+            :error="job.error.value"
+            :can-cancel="job.canCancel.value"
+            :cancelling="job.cancelling.value"
+            :is-terminal="job.isTerminal.value"
+            unit-label="rows"
+            @cancel="job.cancelJob()"
+            @close="job.close()"
+        />
     </AppLayout>
 </template>

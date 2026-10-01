@@ -27,6 +27,7 @@ use App\Http\Controllers\PayrollController;
 use App\Http\Controllers\PayrollStructureController;
 use App\Http\Controllers\AttendanceReportController;
 use App\Http\Controllers\RemoteDoorSiteController;
+use App\Http\Controllers\ReportJobController;
 use App\Http\Controllers\ReportTemplateController;
 use App\Http\Controllers\RoleController;
 use App\Http\Controllers\SelfPunchController;
@@ -373,8 +374,18 @@ Route::middleware('auth')->group(function () {
     });
 
     Route::middleware('permission:reports.view')->group(function () {
+        Route::get('reports/jobs/{jobId}', [ReportJobController::class, 'status'])->name('reports.jobs.status');
+        Route::post('reports/jobs/{jobId}/cancel', [ReportJobController::class, 'cancel'])->name('reports.jobs.cancel');
+        Route::get('reports/jobs/{jobId}/download', [ReportJobController::class, 'download'])->name('reports.jobs.download');
         Route::get('reports/attendance', [AttendanceReportController::class, 'show'])->name('reports.attendance');
+        Route::post('reports/attendance/jobs', [AttendanceReportController::class, 'startJob'])->name('reports.attendance.jobs');
+        Route::get('reports/attendance/jobs/{jobId}/result', [AttendanceReportController::class, 'result'])
+            ->name('reports.attendance.jobs.result');
+        Route::post('reports/attendance/download-jobs', [AttendanceReportController::class, 'startDownloadJob'])
+            ->name('reports.attendance.download-jobs');
         Route::get('reports/attendance/download', [AttendanceReportController::class, 'download'])->name('reports.attendance.download');
+        Route::post('reports/{report_template}/jobs', [ReportTemplateController::class, 'startDownloadJob'])
+            ->name('reports.jobs.start');
         Route::get('reports/{report_template}/download', [ReportTemplateController::class, 'download'])->name('reports.download');
         Route::get('reports/{report_template}', [ReportTemplateController::class, 'show'])->name('reports.show');
     });
@@ -410,7 +421,15 @@ Route::middleware('auth')->group(function () {
 
     Route::middleware('permission:payroll.view')->group(function () {
         Route::get('payroll', [PayrollController::class, 'index'])->name('payroll.index');
+        Route::get('payroll/jobs/{jobId}', [PayrollController::class, 'jobStatus'])
+            ->name('payroll.jobs.status');
+        Route::post('payroll/jobs/{jobId}/cancel', [PayrollController::class, 'cancelJob'])
+            ->name('payroll.jobs.cancel');
+        Route::get('payroll/jobs/{jobId}/download', [PayrollController::class, 'downloadJob'])
+            ->name('payroll.jobs.download');
         Route::get('payroll/{payroll_run}', [PayrollController::class, 'show'])->name('payroll.show');
+        Route::get('payroll/{payroll_run}/employee-ids', [PayrollController::class, 'matchingEmployeeIds'])
+            ->name('payroll.employee-ids');
         Route::get('payroll/{payroll_run}/employees/{employee}/attendance', [PayrollController::class, 'employeeAttendance'])
             ->name('payroll.employees.attendance');
         Route::get('payroll/{payroll_run}/employees/{employee}/adjustments', [PayrollController::class, 'employeeAdjustments'])
@@ -442,7 +461,7 @@ Route::middleware('auth')->group(function () {
         Route::post('payroll/{payroll_run}/reopen', [PayrollController::class, 'reopen'])
             ->middleware('permission:payroll.finalize')
             ->name('payroll.reopen');
-        Route::get('payroll/{payroll_run}/export', [PayrollController::class, 'export'])
+        Route::post('payroll/{payroll_run}/export', [PayrollController::class, 'export'])
             ->middleware('permission:payroll.export')
             ->name('payroll.export');
     });

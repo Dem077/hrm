@@ -139,14 +139,16 @@ class DummyCompanyStructureSeeder extends Seeder
         ]));
 
         $assigned = $this->assignDemoEmployees($assignmentPool);
+        $assignedAll = $this->assignActiveEmployeesWithoutGrade($assignmentPool);
 
         app(GradePayrollService::class)->backfillMissingMandatoryComponents();
 
         $this->command?->info(sprintf(
-            'Demo structure ready: division %s with departments/units, %d designations; assigned %d DEMO employees.',
+            'Demo structure ready: division %s with departments/units, %d designations; assigned %d DEMO employees and %d other active employees without a designation.',
             $division->name,
             count($assignmentPool) + 2,
             $assigned,
+            $assignedAll,
         ));
     }
 
@@ -254,6 +256,63 @@ class DummyCompanyStructureSeeder extends Seeder
             foreach ($employees->slice(1, 3) as $report) {
                 $report->update(['manager_id' => $manager->id]);
             }
+        }
+
+        return $count;
+    }
+
+    /**
+     * Assign any remaining active employees that have no designation yet.
+     *
+     * @param  list<StructureGrade>  $grades
+     */
+    protected function assignActiveEmployeesWithoutGrade(array $grades): int
+    {
+        if ($grades === []) {
+            $grades = StructureGrade::query()
+                ->where('is_active', true)
+                ->orderBy('sort_order')
+                ->orderBy('id')
+                ->get()
+                ->all();
+        }
+
+        if ($grades === []) {
+            return 0;
+        }
+
+        $employees = Employee::query()
+            ->where('is_active', true)
+            ->whereNull('grade_id')
+            ->orderBy('staff_id')
+            ->orderBy('name')
+            ->get();
+
+        $count = 0;
+
+        foreach ($employees as $index => $employee) {
+            $grade = $grades[$index % count($grades)];
+            $patch = ['grade_id' => $grade->id];
+
+            // Ensure payroll-required fields exist for testing.
+            if (! filled($employee->national_id) || str_starts_with(mb_strtolower((string) $employee->national_id), 'unset')) {
+                $patch['national_id'] = sprintf('A%07d', 8000000 + (int) $employee->id);
+            }
+
+            if (! filled($employee->bank_name) || strcasecmp((string) $employee->bank_name, 'Unset') === 0) {
+                $patch['bank_name'] = ['BML', 'MIB', 'CBM'][$index % 3];
+            }
+
+            if (! filled($employee->account_name) || strcasecmp((string) $employee->account_name, 'Unset') === 0) {
+                $patch['account_name'] = $employee->name;
+            }
+
+            if (! filled($employee->account_no) || strcasecmp((string) $employee->account_no, 'Unset') === 0) {
+                $patch['account_no'] = sprintf('77%08d', 20000000 + (int) $employee->id);
+            }
+
+            $employee->update($patch);
+            $count++;
         }
 
         return $count;

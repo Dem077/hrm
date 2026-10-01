@@ -290,17 +290,38 @@ class OvertimeRequestService
      */
     public function approvedHoursInPeriod(int $employeeId, CarbonInterface $from, CarbonInterface $to): float
     {
+        $map = $this->approvedHoursByEmployeeInPeriod($from, $to, [$employeeId]);
+
+        return $map[$employeeId] ?? 0.0;
+    }
+
+    /**
+     * @param  list<int>|null  $employeeIds
+     * @return array<int, float>
+     */
+    public function approvedHoursByEmployeeInPeriod(
+        CarbonInterface $from,
+        CarbonInterface $to,
+        ?array $employeeIds = null,
+    ): array {
         if ($to->lt($from)) {
             [$from, $to] = [$to, $from];
         }
 
-        $hours = OvertimeRequest::query()
-            ->where('employee_id', $employeeId)
+        $query = OvertimeRequest::query()
             ->where('status', OvertimeRequestStatus::Approved)
             ->whereBetween('overtime_date', [$from->toDateString(), $to->toDateString()])
-            ->sum('hours');
+            ->when($employeeIds !== null, fn ($builder) => $builder->whereIn('employee_id', $employeeIds))
+            ->groupBy('employee_id')
+            ->selectRaw('employee_id, COALESCE(SUM(hours), 0) as total_hours');
 
-        return round((float) $hours, 2);
+        $hours = [];
+
+        foreach ($query->get() as $row) {
+            $hours[(int) $row->employee_id] = round((float) $row->total_hours, 2);
+        }
+
+        return $hours;
     }
 
     /**

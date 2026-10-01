@@ -15,6 +15,21 @@ class ReportGenerator
 {
     public function download(ReportTemplate $template): StreamedResponse
     {
+        $built = $this->buildCsv($template);
+
+        return response()->streamDownload(
+            fn () => print ($built['contents']),
+            $built['filename'],
+            ['Content-Type' => 'text/csv'],
+        );
+    }
+
+    /**
+     * @param  (callable(int $done, int $total): void)|null  $onProgress
+     * @return array{contents: string, filename: string}
+     */
+    public function buildCsv(ReportTemplate $template, ?callable $onProgress = null): array
+    {
         $definition = $template->definition ?? [];
         $modelType = (string) ($definition['model_type'] ?? '');
         $modelClass = ReportFieldCatalog::modelClass($modelType);
@@ -33,7 +48,12 @@ class ReportGenerator
 
         $selectedFields = $fieldConfigs->pluck('field')->values();
         $query = $this->buildQuery($modelClass, $definition, $fieldConfigs);
-        $records = $query->get();
+        $total = (clone $query)->count();
+        $done = 0;
+
+        if ($onProgress) {
+            $onProgress(0, max(1, $total));
+        }
 
         $csv = Writer::createFromFileObject(new SplTempFileObject);
 
@@ -49,21 +69,30 @@ class ReportGenerator
                 ->all()
         );
 
-        foreach ($records as $record) {
-            $csv->insertOne(
-                $selectedFields
-                    ->map(fn (string $field) => $this->resolveFieldValue($record, $field))
-                    ->all()
-            );
+        $query->orderBy($query->getModel()->getKeyName())
+            ->chunkById(200, function ($records) use ($selectedFields, $csv, &$done, $total, $onProgress): void {
+                foreach ($records as $record) {
+                    $csv->insertOne(
+                        $selectedFields
+                            ->map(fn (string $field) => $this->resolveFieldValue($record, $field))
+                            ->all()
+                    );
+                    $done++;
+
+                    if ($onProgress && ($done % 25 === 0 || $done >= $total)) {
+                        $onProgress($done, max(1, $total));
+                    }
+                }
+            });
+
+        if ($onProgress) {
+            $onProgress(max($done, $total > 0 ? $total : 1), max(1, $total));
         }
 
-        $filename = str($template->name)->slug().'-'.now()->format('Y-m-d').'.csv';
-
-        return response()->streamDownload(
-            fn () => print ($csv->toString()),
-            $filename,
-            ['Content-Type' => 'text/csv'],
-        );
+        return [
+            'contents' => $csv->toString(),
+            'filename' => str($template->name)->slug().'-'.now()->format('Y-m-d').'.csv',
+        ];
     }
 
     /**

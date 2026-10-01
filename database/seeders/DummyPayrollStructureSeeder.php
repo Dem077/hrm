@@ -41,7 +41,6 @@ class DummyPayrollStructureSeeder extends Seeder
         $hra = PayrollComponent::query()->where('code', 'demo_hra')->firstOrFail();
         $transport = PayrollComponent::query()->where('code', 'demo_transport')->firstOrFail();
         $phone = PayrollComponent::query()->where('code', 'demo_phone')->firstOrFail();
-        $loan = PayrollComponent::query()->where('code', 'demo_staff_loan')->firstOrFail();
 
         foreach ($grades as $index => $grade) {
             $tier = $index % 6;
@@ -61,16 +60,6 @@ class DummyPayrollStructureSeeder extends Seeder
 
             if ($pension) {
                 $items[] = ['payroll_component_id' => $pension->id, 'amount' => 0];
-            }
-
-            // Attach a sample loan on every 3rd grade.
-            if ($index % 3 === 0) {
-                $items[] = [
-                    'payroll_component_id' => $loan->id,
-                    'amount' => 1500 + ($tier * 250),
-                    'loan_months' => 12 + ($tier * 2),
-                    'loan_bank' => ['BML', 'MIB', 'CBM'][$index % 3],
-                ];
             }
 
             $service->syncPayrollItems($grade, $items);
@@ -103,14 +92,12 @@ class DummyPayrollStructureSeeder extends Seeder
                 'calculation_method' => PayrollComponentCalculationMethod::Fixed,
                 'sort_order' => 22,
             ],
-            [
-                'code' => 'demo_staff_loan',
-                'name' => 'Demo Staff Loan',
-                'type' => PayrollComponentType::Loan,
-                'calculation_method' => PayrollComponentCalculationMethod::Fixed,
-                'sort_order' => 80,
-            ],
         ];
+
+        // Legacy designation loans are managed per employee now.
+        PayrollComponent::query()
+            ->where('code', 'demo_staff_loan')
+            ->update(['is_active' => false]);
 
         foreach ($defs as $def) {
             PayrollComponent::query()->updateOrCreate(

@@ -11,6 +11,8 @@ import UiModal from '@/components/ui/UiModal.vue';
 import UiSelect from '@/components/ui/UiSelect.vue';
 import { usePermissions } from '@/composables/usePermissions';
 import AppLayout from '@/layouts/AppLayout.vue';
+import PayrollJobProgressModal from '@/pages/Payroll/components/PayrollJobProgressModal.vue';
+import { usePayrollJobProgress } from '@/pages/Payroll/components/usePayrollJobProgress';
 
 type Run = {
     id: number;
@@ -39,6 +41,8 @@ defineProps<{
 const { can } = usePermissions();
 const page = usePage<{ errors: Record<string, string> }>();
 const showStartModal = ref(false);
+const createError = ref<string | null>(null);
+const job = usePayrollJobProgress();
 
 const startForm = reactive({
     period_source: 'global',
@@ -64,15 +68,34 @@ function deleteRun(run: Run): void {
     router.delete(`/payroll/${run.id}`, { preserveScroll: true });
 }
 
-function createRun(): void {
-    router.post('/payroll', startForm, {
-        onSuccess: () => {
-            showStartModal.value = false;
-            startForm.period_source = 'global';
-            startForm.from = '';
-            startForm.to = '';
-        },
-    });
+async function createRun(): Promise<void> {
+    if (job.submitting.value) {
+        return;
+    }
+
+    createError.value = null;
+    showStartModal.value = false;
+
+    try {
+        const result = await job.startJob('/payroll', { ...startForm });
+        startForm.period_source = 'global';
+        startForm.from = '';
+        startForm.to = '';
+
+        if (result.payroll_run_id) {
+            router.visit(`/payroll/${result.payroll_run_id}`);
+        } else {
+            router.reload();
+        }
+    } catch (err) {
+        if (err instanceof Error && err.message === 'Cancelled') {
+            job.close();
+            router.reload({ preserveScroll: true });
+            return;
+        }
+
+        createError.value = err instanceof Error ? err.message : 'Failed to create payroll.';
+    }
 }
 </script>
 
@@ -82,7 +105,12 @@ function createRun(): void {
     <AppLayout>
         <PageHeader title="Payroll" description="View and manage payroll runs. Open a run to process, adjust, or export.">
             <template #actions>
-                <UiButton v-if="can('payroll.create')" variant="primary" @click="showStartModal = true">
+                <UiButton
+                    v-if="can('payroll.create')"
+                    variant="primary"
+                    :disabled="job.submitting.value"
+                    @click="showStartModal = true"
+                >
                     Start New Payroll
                 </UiButton>
             </template>
@@ -154,14 +182,29 @@ function createRun(): void {
                     <UiDateInput v-model="startForm.to" label="To" />
                 </div>
 
-                <p v-if="page.props.errors.period" class="text-xs text-red-600 dark:text-red-400">
-                    {{ page.props.errors.period }}
+                <p v-if="createError || page.props.errors.period" class="text-xs text-red-600 dark:text-red-400">
+                    {{ createError || page.props.errors.period }}
                 </p>
             </div>
             <template #footer>
-                <UiButton variant="ghost" @click="showStartModal = false">Cancel</UiButton>
-                <UiButton variant="primary" @click="createRun">Create Draft</UiButton>
+                <UiButton variant="ghost" :disabled="job.submitting.value" @click="showStartModal = false">Cancel</UiButton>
+                <UiButton variant="primary" :disabled="job.submitting.value" @click="createRun">
+                    {{ job.submitting.value ? 'Creating…' : 'Create Draft' }}
+                </UiButton>
             </template>
         </UiModal>
+
+        <PayrollJobProgressModal
+            :open="job.open.value"
+            :progress="job.progress.value"
+            :percent="job.percent.value"
+            :message="job.message.value"
+            :error="job.error.value"
+            :can-cancel="job.canCancel.value"
+            :cancelling="job.cancelling.value"
+            :is-terminal="job.isTerminal.value"
+            @cancel="job.cancelJob()"
+            @close="job.close()"
+        />
     </AppLayout>
 </template>

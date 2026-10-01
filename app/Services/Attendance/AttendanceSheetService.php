@@ -28,6 +28,8 @@ class AttendanceSheetService
         CarbonInterface $to,
         ?int $departmentId = null,
         ?int $employeeId = null,
+        bool $includePunchEdits = true,
+        bool $includeDepartment = true,
     ): array {
         $timezone = config('app.timezone', 'UTC');
 
@@ -52,7 +54,7 @@ class AttendanceSheetService
             ->keyBy(fn (PublicHoliday $holiday) => $holiday->date->toDateString());
 
         $employees = Employee::query()
-            ->with(['grade.level.group', 'grade.level.node.group'])
+            ->with(['grade.level.group', 'grade.level.node.group', 'grade.level.node.parent'])
             ->where('is_active', true)
             ->when($departmentId, function ($query) use ($departmentId) {
                 $query->whereHas('grade.level', fn ($levelQuery) => $levelQuery->where('structure_node_id', $departmentId));
@@ -78,7 +80,9 @@ class AttendanceSheetService
         $staffIds = $employees->pluck('staff_id')->filter()->values();
 
         $punchIndex = $this->indexPunches($staffIds, $from, $to, $timezone);
-        $punchEditIndex = $this->indexPunchEdits($staffIds, $from, $to, $timezone);
+        $punchEditIndex = $includePunchEdits
+            ? $this->indexPunchEdits($staffIds, $from, $to, $timezone)
+            : [];
         $leaveIndex = $this->indexApprovedLeave($employees, $from, $to, $timezone);
         $rosterIndex = $this->indexDutyRosters($employees, $from, $to);
 
@@ -109,6 +113,7 @@ class AttendanceSheetService
                     $approvedLeaveType,
                     $roster,
                     $punchEditIndex[$employee->staff_id][$dateKey] ?? [],
+                    $includeDepartment,
                 );
             }
         }
@@ -391,6 +396,7 @@ class AttendanceSheetService
         ?string $approvedLeaveType = null,
         ?DutyRoster $roster = null,
         array $punchEdits = [],
+        bool $includeDepartment = true,
     ): array {
         if ($employee->isShiftDuty() && ! $roster) {
             return $this->baseRow($employee, $date, [
@@ -406,7 +412,7 @@ class AttendanceSheetService
                 'status' => AttendanceDayStatus::Holiday,
                 'status_label' => 'Off roster',
                 'holiday_name' => 'Off roster',
-            ], isHoliday: true, punchEdits: $punchEdits);
+            ], isHoliday: true, punchEdits: $punchEdits, includeDepartment: $includeDepartment);
         }
 
         $dutyTimes = $employee->resolveDutyTimes($date, $policy, $roster);
@@ -420,7 +426,7 @@ class AttendanceSheetService
                 'late_minutes' => null,
                 'status' => AttendanceDayStatus::Holiday,
                 'holiday_name' => $holiday->name,
-            ], isHoliday: true, punchEdits: $punchEdits);
+            ], isHoliday: true, punchEdits: $punchEdits, includeDepartment: $includeDepartment);
         }
 
         if ($weekendHoliday) {
@@ -432,7 +438,7 @@ class AttendanceSheetService
                 'late_minutes' => null,
                 'status' => AttendanceDayStatus::Holiday,
                 'holiday_name' => $weekendHoliday,
-            ], isHoliday: true, punchEdits: $punchEdits);
+            ], isHoliday: true, punchEdits: $punchEdits, includeDepartment: $includeDepartment);
         }
 
         $punchPair = $this->resolvePunchPair($dayPunches, $date, $dutyTimes, $timezone);
@@ -453,7 +459,7 @@ class AttendanceSheetService
                     'holiday_name' => null,
                     'leave_type_name' => $approvedLeaveType,
                     ...$manualFields,
-                ], punchEdits: $punchEdits);
+                ], punchEdits: $punchEdits, includeDepartment: $includeDepartment);
             }
 
             return $this->baseRow($employee, $date, $dutyTimes, [
@@ -465,7 +471,7 @@ class AttendanceSheetService
                 'status' => AttendanceDayStatus::Absent,
                 'holiday_name' => null,
                 ...$manualFields,
-            ], punchEdits: $punchEdits);
+            ], punchEdits: $punchEdits, includeDepartment: $includeDepartment);
         }
 
         $lateMinutes = $checkIn
@@ -498,7 +504,7 @@ class AttendanceSheetService
             'status' => $status,
             'holiday_name' => null,
             ...$manualFields,
-        ], punchEdits: $punchEdits);
+        ], punchEdits: $punchEdits, includeDepartment: $includeDepartment);
     }
 
     /**
@@ -537,18 +543,18 @@ class AttendanceSheetService
         array $values,
         bool $isHoliday = false,
         array $punchEdits = [],
+        bool $includeDepartment = true,
     ): array {
         /** @var AttendanceDayStatus $status */
         $status = $values['status'];
+        $path = $includeDepartment ? $employee->grade?->resolvePath() : null;
 
         return [
             'date' => $date->toDateString(),
             'employee_id' => $employee->id,
             'staff_id' => $employee->staff_id,
             'employee_name' => $employee->name,
-            'department' => $employee->grade?->resolvePath()['node']['name']
-                ?? $employee->grade?->resolvePath()['group']['name']
-                ?? null,
+            'department' => $path['node']['name'] ?? $path['group']['name'] ?? null,
             'check_in' => $values['check_in'],
             'check_out' => $values['check_out'],
             'working_minutes' => $values['working_minutes'],

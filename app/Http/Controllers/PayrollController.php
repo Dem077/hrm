@@ -10,13 +10,13 @@ use App\Models\Employee;
 use App\Models\PayrollRun;
 use App\Models\PayrollRunAdjustment;
 use App\Services\Attendance\PayrollPeriodService;
+use App\Services\Payroll\PayrollJobProgress;
 use App\Services\Payroll\PayrollRunService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Hash;
 use Inertia\Inertia;
 use Inertia\Response;
-use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class PayrollController extends Controller
 {
@@ -35,16 +35,42 @@ class PayrollController extends Controller
 
     public function show(Request $request, PayrollRun $payroll_run, PayrollRunService $payrollRunService): Response
     {
-        $detail = $payrollRunService->detailPayload($payroll_run);
+        $detail = $payrollRunService->detailPayload(
+            $payroll_run,
+            $request->string('q')->toString() ?: null,
+            $request->string('bank')->toString() ?: null,
+            $request->string('department')->toString() ?: null,
+        );
 
         return Inertia::render('Payroll/Show', [
             'selectedRun' => $detail['run'],
             'rows' => $detail['rows'],
             'bankTotals' => $detail['bank_totals'],
+            'filterOptions' => $detail['filter_options'],
             'can_edit' => $detail['can_edit'],
             'filters' => [
                 'q' => $request->string('q')->toString(),
+                'bank' => $request->string('bank')->toString(),
+                'department' => $request->string('department')->toString(),
             ],
+        ]);
+    }
+
+    public function matchingEmployeeIds(
+        Request $request,
+        PayrollRun $payroll_run,
+        PayrollRunService $payrollRunService,
+    ) {
+        $ids = $payrollRunService->matchingEmployeeIds(
+            $payroll_run,
+            $request->string('q')->toString() ?: null,
+            $request->string('bank')->toString() ?: null,
+            $request->string('department')->toString() ?: null,
+        );
+
+        return response()->json([
+            'employee_ids' => $ids,
+            'count' => count($ids),
         ]);
     }
 
@@ -75,16 +101,20 @@ class PayrollController extends Controller
             abort(403);
         }
 
-        $run = $request->input('period_source') === 'custom'
-            ? $payrollRunService->createDraftFromCustomPeriod(
+        $result = $request->input('period_source') === 'custom'
+            ? $payrollRunService->queueCreateFromCustomPeriod(
                 Carbon::parse((string) $request->input('from')),
                 Carbon::parse((string) $request->input('to')),
                 $user,
             )
-            : $payrollRunService->createDraftFromGlobalPeriod($user);
+            : $payrollRunService->queueCreateFromGlobalPeriod($user);
+
+        if ($request->wantsJson() || $request->ajax()) {
+            return response()->json($result);
+        }
 
         return redirect()
-            ->route('payroll.show', $run)
+            ->route('payroll.show', $result['payroll_run_id'])
             ->with('success', 'New payroll draft created.');
     }
 
@@ -128,7 +158,7 @@ class PayrollController extends Controller
         /** @var list<int> $employeeIds */
         $employeeIds = array_map('intval', $request->input('employee_ids', []));
 
-        $count = $payrollRunService->addBulkAdjustments(
+        $result = $payrollRunService->queueBulkAdjustments(
             $payroll_run,
             $employeeIds,
             (string) $request->input('type'),
@@ -139,9 +169,13 @@ class PayrollController extends Controller
             $request,
         );
 
+        if ($request->wantsJson() || $request->ajax()) {
+            return response()->json($result);
+        }
+
         return redirect()
             ->route('payroll.show', $payroll_run)
-            ->with('success', "Adjustment added for {$count} employees.");
+            ->with('success', 'Bulk adjustment queued.');
     }
 
     public function destroyAdjustment(
@@ -169,7 +203,11 @@ class PayrollController extends Controller
             abort(403);
         }
 
-        $payrollRunService->process($payroll_run, $user, $request);
+        $result = $payrollRunService->queueProcess($payroll_run, $user);
+
+        if ($request->wantsJson() || $request->ajax()) {
+            return response()->json($result);
+        }
 
         return redirect()
             ->route('payroll.show', $payroll_run)
@@ -183,11 +221,42 @@ class PayrollController extends Controller
             abort(403);
         }
 
-        $payrollRunService->rerun($payroll_run, $user, $request);
+        $result = $payrollRunService->queueRerun($payroll_run, $user);
+
+        if ($request->wantsJson() || $request->ajax()) {
+            return response()->json($result);
+        }
 
         return redirect()
             ->route('payroll.show', $payroll_run)
             ->with('success', 'Payroll data refreshed from the latest attendance and structure.');
+    }
+
+    public function jobStatus(string $jobId, PayrollJobProgress $payrollJobProgress)
+    {
+        $progress = $payrollJobProgress->get($jobId);
+
+        if ($progress === null) {
+            abort(404, 'Payroll job not found.');
+        }
+
+        return response()->json($progress);
+    }
+
+    public function cancelJob(string $jobId, PayrollJobProgress $payrollJobProgress)
+    {
+        $progress = $payrollJobProgress->get($jobId);
+
+        if ($progress === null) {
+            abort(404, 'Payroll job not found.');
+        }
+
+        $cancelled = $payrollJobProgress->requestCancel($jobId);
+
+        return response()->json([
+            'ok' => $cancelled,
+            'job' => $payrollJobProgress->get($jobId),
+        ]);
     }
 
     public function finalize(PayrollRun $payroll_run, PayrollRunService $payrollRunService, Request $request)
@@ -241,9 +310,47 @@ class PayrollController extends Controller
             ->with('success', 'Draft payroll deleted.');
     }
 
-    public function export(PayrollRun $payroll_run, PayrollRunService $payrollRunService): StreamedResponse
+    public function export(PayrollRun $payroll_run, PayrollRunService $payrollRunService, Request $request)
     {
-        return $payrollRunService->exportRun($payroll_run);
+        $user = $request->user();
+        if (! $user) {
+            abort(403);
+        }
+
+        $result = $payrollRunService->queueExport($payroll_run, $user);
+
+        if ($request->wantsJson() || $request->ajax()) {
+            return response()->json($result);
+        }
+
+        return redirect()
+            ->route('payroll.show', $payroll_run)
+            ->with('success', 'Payroll export queued.');
+    }
+
+    public function downloadJob(string $jobId, PayrollJobProgress $payrollJobProgress, Request $request)
+    {
+        $progress = $payrollJobProgress->get($jobId);
+
+        if ($progress === null || (int) ($progress['user_id'] ?? 0) !== (int) $request->user()?->id) {
+            abort(404, 'Payroll job not found.');
+        }
+
+        if (($progress['status'] ?? null) !== PayrollJobProgress::STATUS_COMPLETED || ! ($progress['download_ready'] ?? false)) {
+            abort(409, 'Payroll export is not ready yet.');
+        }
+
+        $path = $payrollJobProgress->fileAbsolutePath($jobId);
+
+        if ($path === null) {
+            abort(404, 'Payroll export file not found.');
+        }
+
+        $filename = (string) ($progress['filename'] ?? 'payroll-export.xlsx');
+
+        return response()->download($path, $filename, [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        ]);
     }
 
     /**

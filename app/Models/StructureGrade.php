@@ -20,6 +20,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 ])]
 class StructureGrade extends Model
 {
+    protected static ?string $strategicLeadershipName = null;
+
     protected function casts(): array
     {
         return [
@@ -74,9 +76,11 @@ class StructureGrade extends Model
         $node = $level?->node;
 
         $segments = [];
-        $strategicName = StructureGroup::query()
-            ->where('code', StructureGroupCode::StrategicLeadership)
-            ->value('name') ?? 'Strategic Leadership';
+        $strategicName = self::$strategicLeadershipName ??= (
+            StructureGroup::query()
+                ->where('code', StructureGroupCode::StrategicLeadership)
+                ->value('name') ?? 'Strategic Leadership'
+        );
 
         if ($node) {
             $segments[] = $strategicName;

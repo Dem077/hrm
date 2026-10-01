@@ -10,3 +10,4 @@ Artisan::command('inspire', function () {
 
 Schedule::command('zkt:sync')->everyFiveMinutes();
 Schedule::command('zkt:sync-time')->everyMinute();
+Schedule::command('horizon:snapshot')->everyFiveMinutes();

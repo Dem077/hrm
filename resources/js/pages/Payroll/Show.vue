@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Head, router, usePage } from '@inertiajs/vue3';
+import { Head, Link, router, usePage } from '@inertiajs/vue3';
 import { computed, reactive, ref, watch } from 'vue';
 
 import PageHeader from '@/components/ui/PageHeader.vue';
@@ -12,6 +12,9 @@ import UiSelect from '@/components/ui/UiSelect.vue';
 import { usePermissions } from '@/composables/usePermissions';
 import AppLayout from '@/layouts/AppLayout.vue';
 import BulkAdjustmentModal from '@/pages/Payroll/components/BulkAdjustmentModal.vue';
+import PayrollJobProgressModal from '@/pages/Payroll/components/PayrollJobProgressModal.vue';
+import { usePayrollJobProgress } from '@/pages/Payroll/components/usePayrollJobProgress';
+import type { Paginated } from '@/types/attendance';
 
 type Row = {
     employee_id: number;
@@ -61,20 +64,25 @@ const props = defineProps<{
         totals: { gross: number; deductions: number; net: number };
         audit_logs: AuditLog[];
     };
-    rows: Row[];
+    rows: Paginated<Row>;
     bankTotals: BankTotal[];
+    filterOptions: {
+        banks: string[];
+        departments: string[];
+    };
     can_edit: boolean;
-    filters: { q: string };
+    filters: { q: string; bank: string; department: string };
 }>();
 
 const { can } = usePermissions();
 const page = usePage<{ errors: Record<string, string> }>();
+const job = usePayrollJobProgress();
 const showReopenModal = ref(false);
 const showAuditModal = ref(false);
 const showBulkAdjustmentModal = ref(false);
 const searchText = ref(props.filters.q ?? '');
-const bankFilter = ref('');
-const departmentFilter = ref('');
+const bankFilter = ref(props.filters.bank ?? '');
+const departmentFilter = ref(props.filters.department ?? '');
 const selectedIds = ref<number[]>([]);
 
 const reopenForm = reactive({
@@ -82,64 +90,11 @@ const reopenForm = reactive({
     reason: '',
 });
 
-const bankOptions = computed(() => {
-    const banks = new Set<string>();
-    props.rows.forEach((row) => {
-        banks.add(row.bank_name?.trim() || 'No bank');
-    });
-
-    return Array.from(banks).sort((a, b) => a.localeCompare(b));
-});
-
-const departmentOptions = computed(() => {
-    const departments = new Set<string>();
-    props.rows.forEach((row) => {
-        departments.add(row.department?.trim() || 'No department');
-    });
-
-    return Array.from(departments).sort((a, b) => a.localeCompare(b));
-});
-
-const filteredRows = computed(() => {
-    const needle = searchText.value.trim().toLowerCase();
-
-    return props.rows.filter((row) => {
-        const bank = row.bank_name?.trim() || 'No bank';
-        const department = row.department?.trim() || 'No department';
-
-        if (bankFilter.value && bank !== bankFilter.value) {
-            return false;
-        }
-
-        if (departmentFilter.value && department !== departmentFilter.value) {
-            return false;
-        }
-
-        if (needle === '') {
-            return true;
-        }
-
-        const haystack = [
-            row.employee_name,
-            row.staff_id,
-            row.national_id,
-            row.bank_name,
-            row.account_name,
-            row.account_no,
-            row.department,
-            row.designation,
-        ]
-            .filter(Boolean)
-            .join(' ')
-            .toLowerCase();
-
-        return haystack.includes(needle);
-    });
-});
+const pageRows = computed(() => props.rows.data);
 
 const bankGroups = computed(() => {
     const map = new Map<string, Row[]>();
-    filteredRows.value.forEach((row) => {
+    pageRows.value.forEach((row) => {
         const key = row.bank_name?.trim() || 'No bank';
         const current = map.get(key) ?? [];
         current.push(row);
@@ -159,34 +114,77 @@ const bankGroups = computed(() => {
         });
 });
 
-const filteredIds = computed(() => filteredRows.value.map((row) => row.employee_id));
+const pageIds = computed(() => pageRows.value.map((row) => row.employee_id));
 
-const allFilteredSelected = computed(() => {
-    if (filteredIds.value.length === 0) {
+const allPageSelected = computed(() => {
+    if (pageIds.value.length === 0) {
         return false;
     }
 
-    return filteredIds.value.every((id) => selectedIds.value.includes(id));
+    return pageIds.value.every((id) => selectedIds.value.includes(id));
 });
 
-const selectedOutsideFiltersCount = computed(() => {
-    const visible = new Set(filteredIds.value);
+const selectedOutsidePageCount = computed(() => {
+    const visible = new Set(pageIds.value);
 
     return selectedIds.value.filter((id) => !visible.has(id)).length;
 });
+
+const allMatchingSelected = computed(
+    () => props.rows.total > 0 && selectedIds.value.length === props.rows.total,
+);
 
 const canBulkAdjust = computed(
     () => props.can_edit && can('payroll.adjust') && selectedIds.value.length > 0,
 );
 
-// Only drop selections when employees leave the payroll run entirely (not when filters hide them).
+const selectingAll = ref(false);
+
 watch(
-    () => props.rows,
-    (rows) => {
-        const valid = new Set(rows.map((row) => row.employee_id));
-        selectedIds.value = selectedIds.value.filter((id) => valid.has(id));
+    () => props.filters,
+    (filters) => {
+        searchText.value = filters.q ?? '';
+        bankFilter.value = filters.bank ?? '';
+        departmentFilter.value = filters.department ?? '';
     },
 );
+
+function applyFilters(overrides: Partial<{ q: string; bank: string; department: string }> = {}): void {
+    const q = overrides.q !== undefined ? overrides.q : searchText.value.trim();
+    const bank = overrides.bank !== undefined ? overrides.bank : bankFilter.value;
+    const department = overrides.department !== undefined ? overrides.department : departmentFilter.value;
+
+    router.get(
+        `/payroll/${props.selectedRun.id}`,
+        {
+            q: q || undefined,
+            bank: bank || undefined,
+            department: department || undefined,
+        },
+        {
+            preserveState: true,
+            preserveScroll: true,
+            replace: true,
+        },
+    );
+}
+
+function onBankFilterChange(value: string | number | null): void {
+    bankFilter.value = String(value ?? '');
+    applyFilters({ bank: bankFilter.value });
+}
+
+function onDepartmentFilterChange(value: string | number | null): void {
+    departmentFilter.value = String(value ?? '');
+    applyFilters({ department: departmentFilter.value });
+}
+
+function clearFilters(): void {
+    searchText.value = '';
+    bankFilter.value = '';
+    departmentFilter.value = '';
+    applyFilters({ q: '', bank: '', department: '' });
+}
 
 function statusColor(status: typeof props.selectedRun.status): string {
     if (status === 'draft') return 'warning';
@@ -239,12 +237,6 @@ function formatAuditContext(log: AuditLog): string | null {
     return parts.length > 0 ? parts.join(' · ') : null;
 }
 
-function clearLocalFilters(): void {
-    searchText.value = '';
-    bankFilter.value = '';
-    departmentFilter.value = '';
-}
-
 function isSelected(employeeId: number): boolean {
     return selectedIds.value.includes(employeeId);
 }
@@ -258,32 +250,143 @@ function toggleEmployee(employeeId: number): void {
     selectedIds.value = [...selectedIds.value, employeeId];
 }
 
-function toggleSelectAllFiltered(): void {
-    if (allFilteredSelected.value) {
-        const filtered = new Set(filteredIds.value);
-        selectedIds.value = selectedIds.value.filter((id) => !filtered.has(id));
+function toggleSelectAllPage(): void {
+    if (allPageSelected.value) {
+        const pageSet = new Set(pageIds.value);
+        selectedIds.value = selectedIds.value.filter((id) => !pageSet.has(id));
         return;
     }
 
     const next = new Set(selectedIds.value);
-    filteredIds.value.forEach((id) => next.add(id));
+    pageIds.value.forEach((id) => next.add(id));
     selectedIds.value = Array.from(next);
+}
+
+async function selectAllMatching(): Promise<void> {
+    if (selectingAll.value || props.rows.total === 0) {
+        return;
+    }
+
+    if (allMatchingSelected.value) {
+        selectedIds.value = [];
+        return;
+    }
+
+    selectingAll.value = true;
+
+    try {
+        const params = new URLSearchParams();
+        if (props.filters.q) params.set('q', props.filters.q);
+        if (props.filters.bank) params.set('bank', props.filters.bank);
+        if (props.filters.department) params.set('department', props.filters.department);
+
+        const query = params.toString();
+        const response = await fetch(
+            `/payroll/${props.selectedRun.id}/employee-ids${query ? `?${query}` : ''}`,
+            {
+                method: 'GET',
+                credentials: 'same-origin',
+                headers: {
+                    Accept: 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+            },
+        );
+
+        if (! response.ok) {
+            throw new Error('Failed to load employee ids.');
+        }
+
+        const payload = (await response.json()) as { employee_ids?: number[] };
+        selectedIds.value = Array.isArray(payload.employee_ids)
+            ? payload.employee_ids.map((id) => Number(id))
+            : [];
+    } finally {
+        selectingAll.value = false;
+    }
 }
 
 function clearSelection(): void {
     selectedIds.value = [];
 }
 
-function processRun(): void {
-    router.post(`/payroll/${props.selectedRun.id}/process`);
+async function processRun(): Promise<void> {
+    if (job.submitting.value) {
+        return;
+    }
+
+    try {
+        await job.startJob(`/payroll/${props.selectedRun.id}/process`);
+        job.close();
+        router.reload({ preserveScroll: true });
+    } catch (err) {
+        if (err instanceof Error && err.message === 'Cancelled') {
+            job.close();
+        }
+    }
 }
 
-function rerunPayroll(): void {
+async function rerunPayroll(): Promise<void> {
+    if (job.submitting.value) {
+        return;
+    }
+
     if (!confirm('Refresh payroll data from the latest attendance and salary structure? Manual adjustments will be kept.')) {
         return;
     }
 
-    router.post(`/payroll/${props.selectedRun.id}/rerun`);
+    try {
+        await job.startJob(`/payroll/${props.selectedRun.id}/rerun`);
+        job.close();
+        router.reload({ preserveScroll: true });
+    } catch (err) {
+        if (err instanceof Error && err.message === 'Cancelled') {
+            job.close();
+        }
+    }
+}
+
+async function exportRun(): Promise<void> {
+    if (job.submitting.value) {
+        return;
+    }
+
+    try {
+        const result = await job.startJob(`/payroll/${props.selectedRun.id}/export`);
+        job.close();
+        window.location.href = `/payroll/jobs/${result.job_id}/download`;
+    } catch (err) {
+        if (err instanceof Error && err.message === 'Cancelled') {
+            job.close();
+        }
+    }
+}
+
+async function submitBulkAdjustment(payload: {
+    employee_ids: number[];
+    type: 'addition' | 'deduction';
+    title: string;
+    amount: number;
+    remarks: string | null;
+}): Promise<void> {
+    if (job.submitting.value) {
+        return;
+    }
+
+    showBulkAdjustmentModal.value = false;
+
+    try {
+        await job.startJob(`/payroll/${props.selectedRun.id}/adjustments/bulk`, payload);
+        clearSelection();
+        job.close();
+        router.reload({ preserveScroll: true });
+    } catch (err) {
+        if (err instanceof Error && err.message === 'Cancelled') {
+            clearSelection();
+            job.close();
+            router.reload({ preserveScroll: true });
+        }
+    }
 }
 
 function finalizeRun(): void {
@@ -307,8 +410,6 @@ function deleteRun(): void {
 
     router.delete(`/payroll/${props.selectedRun.id}`);
 }
-
-const exportUrl = computed(() => `/payroll/${props.selectedRun.id}/export`);
 </script>
 
 <template>
@@ -329,22 +430,29 @@ const exportUrl = computed(() => `/payroll/${props.selectedRun.id}/export`);
                 >
                     Audit log
                 </UiButton>
-                <UiButton v-if="can('payroll.export')" :href="exportUrl" external variant="secondary">
-                    Export List
+                <UiButton
+                    v-if="can('payroll.export')"
+                    variant="secondary"
+                    :disabled="job.submitting.value"
+                    @click="exportRun"
+                >
+                    {{ job.submitting.value ? 'Working…' : 'Export List' }}
                 </UiButton>
                 <UiButton
                     v-if="can('payroll.process') && selectedRun.status === 'draft'"
                     variant="secondary"
+                    :disabled="job.submitting.value"
                     @click="processRun"
                 >
-                    Process Payroll
+                    {{ job.submitting.value ? 'Processing…' : 'Process Payroll' }}
                 </UiButton>
                 <UiButton
                     v-if="can('payroll.process') && (selectedRun.status === 'draft' || selectedRun.status === 'processed')"
                     variant="ghost"
+                    :disabled="job.submitting.value"
                     @click="rerunPayroll"
                 >
-                    Rerun Payroll
+                    {{ job.submitting.value ? 'Rerunning…' : 'Rerun Payroll' }}
                 </UiButton>
                 <UiButton
                     v-if="can('payroll.delete') && selectedRun.status === 'draft'"
@@ -372,7 +480,7 @@ const exportUrl = computed(() => `/payroll/${props.selectedRun.id}/export`);
 
         <UiCard
             title="Payment totals"
-            :description="`${rows.length} employees | Gross ${formatMoney(selectedRun.totals.gross)} | Deductions ${formatMoney(selectedRun.totals.deductions)} | Net payable ${formatMoney(selectedRun.totals.net)}`"
+            :description="`${rows.total} employees | Gross ${formatMoney(selectedRun.totals.gross)} | Deductions ${formatMoney(selectedRun.totals.deductions)} | Net payable ${formatMoney(selectedRun.totals.net)}`"
         >
             <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 <div
@@ -398,21 +506,35 @@ const exportUrl = computed(() => `/payroll/${props.selectedRun.id}/export`);
             description="Payment figures grouped by employee bank for transfer preparation."
         >
             <div class="mb-4 flex flex-wrap items-end gap-3">
-                <UiInput v-model="searchText" label="Search employee" placeholder="Staff ID, NID, name, bank, or account" />
-                <UiSelect v-model="bankFilter" label="Bank">
+                <UiInput
+                    v-model="searchText"
+                    label="Search employee"
+                    placeholder="Staff ID, NID, name, bank, or account"
+                    @keydown.enter.prevent="applyFilters()"
+                />
+                <UiSelect
+                    v-model="bankFilter"
+                    label="Bank"
+                    @update:model-value="onBankFilterChange"
+                >
                     <option value="">All banks</option>
-                    <option v-for="bank in bankOptions" :key="bank" :value="bank">{{ bank }}</option>
+                    <option v-for="bank in filterOptions.banks" :key="bank" :value="bank">{{ bank }}</option>
                 </UiSelect>
-                <UiSelect v-model="departmentFilter" label="Department">
+                <UiSelect
+                    v-model="departmentFilter"
+                    label="Department"
+                    @update:model-value="onDepartmentFilterChange"
+                >
                     <option value="">All departments</option>
-                    <option v-for="department in departmentOptions" :key="department" :value="department">
+                    <option v-for="department in filterOptions.departments" :key="department" :value="department">
                         {{ department }}
                     </option>
                 </UiSelect>
+                <UiButton variant="secondary" @click="applyFilters()">Search</UiButton>
                 <UiButton
-                    v-if="searchText || bankFilter || departmentFilter"
+                    v-if="filters.q || filters.bank || filters.department"
                     variant="ghost"
-                    @click="clearLocalFilters"
+                    @click="clearFilters"
                 >
                     Clear filters
                 </UiButton>
@@ -427,15 +549,29 @@ const exportUrl = computed(() => `/payroll/${props.selectedRun.id}/export`);
                         <input
                             type="checkbox"
                             class="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
-                            :checked="allFilteredSelected"
-                            @change="toggleSelectAllFiltered"
+                            :checked="allPageSelected"
+                            @change="toggleSelectAllPage"
                         />
-                        <span>Select filtered ({{ filteredRows.length }})</span>
+                        <span>Select page ({{ pageRows.length }})</span>
                     </label>
+                    <UiButton
+                        v-if="rows.total > 0"
+                        size="sm"
+                        variant="ghost"
+                        :disabled="selectingAll"
+                        @click="selectAllMatching"
+                    >
+                        <template v-if="selectingAll">Loading…</template>
+                        <template v-else-if="allMatchingSelected">Clear all matching</template>
+                        <template v-else>Select all matching ({{ rows.total }})</template>
+                    </UiButton>
                     <span v-if="selectedIds.length" class="text-slate-500">
                         {{ selectedIds.length }} selected
-                        <template v-if="selectedOutsideFiltersCount">
-                            · {{ selectedOutsideFiltersCount }} outside current filters
+                        <template v-if="selectedOutsidePageCount && !allMatchingSelected">
+                            · {{ selectedOutsidePageCount }} on other pages
+                        </template>
+                        <template v-else-if="allMatchingSelected">
+                            · all matching filters
                         </template>
                     </span>
                 </div>
@@ -451,7 +587,7 @@ const exportUrl = computed(() => `/payroll/${props.selectedRun.id}/export`);
                     <UiButton
                         size="sm"
                         variant="primary"
-                        :disabled="!canBulkAdjust"
+                        :disabled="!canBulkAdjust || job.submitting.value"
                         @click="showBulkAdjustmentModal = true"
                     >
                         Bulk adjustment
@@ -536,10 +672,31 @@ const exportUrl = computed(() => `/payroll/${props.selectedRun.id}/export`);
                         </table>
                     </div>
                 </div>
-                <p v-if="filteredRows.length === 0" class="py-6 text-center text-sm text-slate-500 dark:text-slate-400">
+                <p v-if="pageRows.length === 0" class="py-6 text-center text-sm text-slate-500 dark:text-slate-400">
                     No employees match your search or filters.
                 </p>
             </div>
+
+            <div v-if="rows.links.length > 3" class="mt-5 flex flex-wrap gap-2">
+                <Link
+                    v-for="link in rows.links"
+                    :key="`${link.label}-${link.url}`"
+                    :href="link.url ?? '#'"
+                    class="rounded-lg border px-3 py-1.5 text-sm transition"
+                    :class="[
+                        link.active
+                            ? 'border-brand-300 bg-brand-50 text-brand-800 dark:border-brand-600/40 dark:bg-brand-600/15 dark:text-brand-400'
+                            : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-surface-elevated dark:text-slate-400 dark:hover:bg-surface-muted dark:hover:text-slate-200',
+                        !link.url ? 'pointer-events-none opacity-50' : '',
+                    ]"
+                    preserve-scroll
+                    preserve-state
+                    v-html="link.label"
+                />
+            </div>
+            <p v-if="rows.total > 0" class="mt-3 text-xs text-slate-500 dark:text-slate-400">
+                Showing {{ rows.from }}–{{ rows.to }} of {{ rows.total }} employees
+            </p>
         </UiCard>
 
         <UiModal
@@ -575,11 +732,11 @@ const exportUrl = computed(() => `/payroll/${props.selectedRun.id}/export`);
 
         <BulkAdjustmentModal
             :open="showBulkAdjustmentModal"
-            :run-id="selectedRun.id"
             :employee-ids="selectedIds"
             :selected-count="selectedIds.length"
+            :submitting="job.submitting.value"
             @close="showBulkAdjustmentModal = false"
-            @success="clearSelection"
+            @submit="submitBulkAdjustment"
         />
 
         <UiModal
@@ -601,5 +758,18 @@ const exportUrl = computed(() => `/payroll/${props.selectedRun.id}/export`);
                 <UiButton variant="danger" @click="reopenRun">Reopen Payroll</UiButton>
             </template>
         </UiModal>
+
+        <PayrollJobProgressModal
+            :open="job.open.value"
+            :progress="job.progress.value"
+            :percent="job.percent.value"
+            :message="job.message.value"
+            :error="job.error.value"
+            :can-cancel="job.canCancel.value"
+            :cancelling="job.cancelling.value"
+            :is-terminal="job.isTerminal.value"
+            @cancel="job.cancelJob()"
+            @close="job.close()"
+        />
     </AppLayout>
 </template>

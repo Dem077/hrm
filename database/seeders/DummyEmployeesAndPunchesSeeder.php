@@ -18,17 +18,18 @@ use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Adds demo employees (staff_id DEMO###) and weekday punch history.
- * Does not modify or delete existing non-demo employees.
+ * Ensures demo employees (staff_id DEMO####) exist, then seeds weekday punch history
+ * for those demo employees so payroll / attendance queues can be load-tested.
+ * Only replaces punches on the Demo Gate device for the seeded window.
  */
 class DummyEmployeesAndPunchesSeeder extends Seeder
 {
     private const STAFF_PREFIX = 'DEMO';
 
-    private const EMPLOYEE_COUNT = 40;
+    private const EMPLOYEE_COUNT = 2000;
 
-    /** Months of punch history ending today (inclusive of current month). */
-    private const PUNCH_MONTHS = 3;
+    /** Months of punch history ending yesterday (inclusive of current month). */
+    private const PUNCH_MONTHS = 1;
 
     public function run(): void
     {
@@ -45,13 +46,13 @@ class DummyEmployeesAndPunchesSeeder extends Seeder
         }
 
         $device = $this->demoDevice();
-        $employees = $this->ensureDemoEmployees($grades);
+        $demoEmployees = $this->ensureDemoEmployees($grades);
 
-        $this->command?->info('Seeding punches for '.count($employees).' demo employees…');
+        $this->command?->info('Seeding punches for '.count($demoEmployees).' demo employees…');
 
-        $this->seedPunches($employees, $device);
+        $this->seedPunches($demoEmployees, $device);
 
-        $this->command?->info('Demo employees and punches ready (existing employees left unchanged).');
+        $this->command?->info('Ready: '.count($demoEmployees).' DEMO employees with punch history for queue testing.');
     }
 
     protected function demoDevice(): ZktDevice
@@ -125,51 +126,90 @@ class DummyEmployeesAndPunchesSeeder extends Seeder
      */
     protected function ensureDemoEmployees(array $gradeIds): array
     {
-        $profiles = array_slice($this->profiles(), 0, self::EMPLOYEE_COUNT);
-        $employees = [];
+        $profiles = $this->profiles();
+        $profileCount = count($profiles);
+        $joinedDate = now()->subMonths(self::PUNCH_MONTHS + 2)->startOfMonth()->toDateString();
+        $now = now();
+        $banks = ['BML', 'MIB', 'CBM'];
 
-        foreach ($profiles as $index => $profile) {
-            $n = $index + 1;
-            $staffId = sprintf('%s%03d', self::STAFF_PREFIX, $n);
-            $nationalId = sprintf('A%07d', 9000000 + $n);
+        $existingStaffIds = Employee::query()
+            ->where('staff_id', 'like', self::STAFF_PREFIX.'%')
+            ->pluck('staff_id');
 
-            $employee = Employee::query()->firstOrCreate(
-                ['staff_id' => $staffId],
-                [
-                    'name' => $profile['name'],
-                    'national_id' => $nationalId,
-                    'email' => strtolower($staffId).'@demo.local',
-                    'personal_email' => strtolower($staffId).'.personal@demo.local',
-                    'mobile_number' => sprintf('7%07d', 1000000 + $n),
-                    'joined_date' => now()->subMonths(self::PUNCH_MONTHS + 2)->startOfMonth()->toDateString(),
-                    'gender' => $profile['gender'],
-                    'employment_type' => $profile['employment_type'],
-                    'duty_type' => DutyType::Normal,
-                    'grade_id' => $gradeIds[$index % count($gradeIds)],
-                    'bank_name' => ['BML', 'MIB', 'CBM'][$index % 3],
-                    'account_name' => $profile['name'],
-                    'account_no' => sprintf('77%08d', 10000000 + $n),
-                    'is_active' => true,
-                    'works_saturday' => $index % 4 === 0,
-                    'nationality' => 'Maldivian',
-                    'work_location' => 'Male\' Head Office',
-                ],
-            );
+        $existingNumbers = $existingStaffIds
+            ->map(function (string $staffId): int {
+                return (int) preg_replace('/\D+/', '', substr($staffId, strlen(self::STAFF_PREFIX)));
+            })
+            ->filter(fn (int $n) => $n > 0)
+            ->unique()
+            ->values();
 
-            $employees[] = $employee;
+        $existingCount = $existingNumbers->count();
+        $needed = max(0, self::EMPLOYEE_COUNT - $existingCount);
+        $nextNumber = ($existingNumbers->max() ?: 0) + 1;
+
+        $this->command?->info("Demo employees already present: {$existingCount}. Creating {$needed} more…");
+
+        $toInsert = [];
+
+        for ($i = 0; $i < $needed; $i++) {
+            $n = $nextNumber + $i;
+            $staffId = sprintf('%s%04d', self::STAFF_PREFIX, $n);
+            $profile = $profiles[($n - 1) % $profileCount];
+            $batch = (int) ceil($n / $profileCount);
+            $name = $batch === 1
+                ? $profile['name']
+                : $profile['name'].' '.$batch;
+
+            $toInsert[] = [
+                'staff_id' => $staffId,
+                'name' => $name,
+                'national_id' => sprintf('A%07d', 9000000 + $n),
+                'email' => strtolower($staffId).'@demo.local',
+                'personal_email' => strtolower($staffId).'.personal@demo.local',
+                'mobile_number' => sprintf('7%07d', 1000000 + $n),
+                'joined_date' => $joinedDate,
+                'gender' => $profile['gender']->value,
+                'employment_type' => $profile['employment_type']->value,
+                'duty_type' => DutyType::Normal->value,
+                'grade_id' => $gradeIds[($n - 1) % count($gradeIds)],
+                'bank_name' => $banks[($n - 1) % 3],
+                'account_name' => $name,
+                'account_no' => sprintf('77%08d', 10000000 + $n),
+                'is_active' => true,
+                'works_saturday' => $n % 4 === 0,
+                'nationality' => 'Maldivian',
+                'work_location' => 'Male\' Head Office',
+                'created_at' => $now,
+                'updated_at' => $now,
+            ];
         }
 
-        // Wire manager relationships among demo staff only.
-        if (count($employees) >= 4) {
-            $manager = $employees[0];
-            foreach ([1, 2, 3, 4, 5] as $i) {
-                if (! isset($employees[$i])) {
-                    break;
-                }
+        foreach (array_chunk($toInsert, 250) as $chunk) {
+            DB::table('employees')->insert($chunk);
+        }
 
-                if ((int) $employees[$i]->manager_id !== (int) $manager->id) {
-                    $employees[$i]->update(['manager_id' => $manager->id]);
-                }
+        if ($toInsert !== []) {
+            $this->command?->info('Inserted '.count($toInsert).' new demo employees.');
+        }
+
+        $employees = Employee::query()
+            ->where('staff_id', 'like', self::STAFF_PREFIX.'%')
+            ->where('is_active', true)
+            ->orderBy('staff_id')
+            ->limit(self::EMPLOYEE_COUNT)
+            ->get()
+            ->all();
+
+        if (count($employees) >= 4) {
+            $managerId = $employees[0]->id;
+            $followerIds = collect(array_slice($employees, 1, 5))
+                ->filter(fn (Employee $follower) => (int) $follower->manager_id !== (int) $managerId)
+                ->pluck('id')
+                ->all();
+
+            if ($followerIds !== []) {
+                Employee::query()->whereIn('id', $followerIds)->update(['manager_id' => $managerId]);
             }
         }
 
@@ -190,12 +230,15 @@ class DummyEmployeesAndPunchesSeeder extends Seeder
 
         $staffIds = array_map(fn (Employee $e) => $e->staff_id, $employees);
 
-        // Replace only demo punches on the demo device in this window (idempotent re-runs).
-        ZktAttendanceLog::withTrashed()
-            ->where('zkt_device_id', $device->id)
-            ->whereIn('device_user_id', $staffIds)
-            ->whereBetween('punched_at', [$start, $end])
-            ->forceDelete();
+        $this->command?->info('Clearing previous demo punches…');
+
+        foreach (array_chunk($staffIds, 500) as $staffChunk) {
+            ZktAttendanceLog::withTrashed()
+                ->where('zkt_device_id', $device->id)
+                ->whereIn('device_user_id', $staffChunk)
+                ->whereBetween('punched_at', [$start, $end])
+                ->forceDelete();
+        }
 
         $nextUid = (int) ZktAttendanceLog::withTrashed()
             ->where('zkt_device_id', $device->id)
@@ -203,43 +246,46 @@ class DummyEmployeesAndPunchesSeeder extends Seeder
 
         $rows = [];
         $now = now();
+        $inserted = 0;
+        $workdays = [];
+
+        foreach (CarbonPeriod::create($start->copy(), $end->copy()) as $day) {
+            /** @var Carbon $day */
+            if ($day->isSunday()) {
+                continue;
+            }
+
+            $workdays[] = $day->copy();
+        }
+
+        $total = count($employees);
+        $progressEvery = max(1, (int) floor($total / 10));
 
         foreach ($employees as $employeeIndex => $employee) {
             $worksSaturday = (bool) $employee->works_saturday;
 
-            foreach (CarbonPeriod::create($start->copy(), $end->copy()) as $day) {
-                /** @var Carbon $day */
-                if ($day->isSunday()) {
-                    continue;
-                }
-
+            foreach ($workdays as $day) {
                 if ($day->isSaturday() && ! $worksSaturday) {
                     continue;
                 }
 
-                // ~8% chance of a full absence day.
-                if (mt_rand(1, 100) <= 8) {
+                // Deterministic-ish absence (~8%) without mt_rand storms per day.
+                $seed = crc32($employee->staff_id.'|'.$day->toDateString());
+                if (($seed % 100) < 8) {
                     continue;
                 }
 
-                $inHour = 8;
-                $inMinute = mt_rand(40, 59);
-                if (mt_rand(1, 100) <= 15) {
-                    // Occasional late arrival.
-                    $inHour = 9;
-                    $inMinute = mt_rand(5, 40);
-                }
+                $late = ($seed % 100) >= 85;
+                $earlyLeave = (($seed >> 8) % 100) < 10;
+                $missingCheckout = (($seed >> 16) % 100) < 5;
 
-                $outHour = 17;
-                $outMinute = mt_rand(0, 45);
-                if (mt_rand(1, 100) <= 10) {
-                    // Occasional early leave.
-                    $outHour = 16;
-                    $outMinute = mt_rand(0, 30);
-                }
+                $inHour = $late ? 9 : 8;
+                $inMinute = $late ? (5 + ($seed % 36)) : (40 + ($seed % 20));
+                $outHour = $earlyLeave ? 16 : 17;
+                $outMinute = $earlyLeave ? ($seed % 31) : ($seed % 46);
 
-                $checkIn = $day->copy()->setTime($inHour, $inMinute, mt_rand(0, 59));
-                $checkOut = $day->copy()->setTime($outHour, $outMinute, mt_rand(0, 59));
+                $checkIn = $day->copy()->setTime($inHour, $inMinute, $seed % 60);
+                $checkOut = $day->copy()->setTime($outHour, $outMinute, ($seed >> 4) % 60);
 
                 if ($checkOut->lte($checkIn)) {
                     $checkOut = $checkIn->copy()->addHours(8);
@@ -258,33 +304,38 @@ class DummyEmployeesAndPunchesSeeder extends Seeder
                     'updated_at' => $now,
                 ];
 
-                // ~5% missing checkout.
-                if (mt_rand(1, 100) <= 5) {
-                    continue;
+                if (! $missingCheckout) {
+                    $nextUid++;
+                    $rows[] = [
+                        'zkt_device_id' => $device->id,
+                        'device_uid' => $nextUid,
+                        'device_user_id' => $employee->staff_id,
+                        'punch_state' => 1,
+                        'punch_type' => null,
+                        'punched_at' => $checkOut,
+                        'source' => AttendancePunchSource::Device->value,
+                        'created_at' => $now,
+                        'updated_at' => $now,
+                    ];
                 }
 
-                $nextUid++;
-                $rows[] = [
-                    'zkt_device_id' => $device->id,
-                    'device_uid' => $nextUid,
-                    'device_user_id' => $employee->staff_id,
-                    'punch_state' => 1,
-                    'punch_type' => null,
-                    'punched_at' => $checkOut,
-                    'source' => AttendancePunchSource::Device->value,
-                    'created_at' => $now,
-                    'updated_at' => $now,
-                ];
+                if (count($rows) >= 1000) {
+                    DB::table('zkt_attendance_logs')->insert($rows);
+                    $inserted += count($rows);
+                    $rows = [];
+                }
             }
 
-            // Slight variation per employee for randomness seed feel.
-            unset($employeeIndex);
+            if (($employeeIndex + 1) % $progressEvery === 0 || ($employeeIndex + 1) === $total) {
+                $this->command?->info('Punch progress: '.($employeeIndex + 1).'/'.$total);
+            }
         }
 
-        foreach (array_chunk($rows, 500) as $chunk) {
-            DB::table('zkt_attendance_logs')->insert($chunk);
+        if ($rows !== []) {
+            DB::table('zkt_attendance_logs')->insert($rows);
+            $inserted += count($rows);
         }
 
-        $this->command?->info('Inserted '.count($rows).' demo punches from '.$start->toDateString().' to '.$end->toDateString().'.');
+        $this->command?->info("Inserted {$inserted} demo punches from {$start->toDateString()} to {$end->toDateString()}.");
     }
 }
