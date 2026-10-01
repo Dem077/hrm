@@ -209,13 +209,23 @@ class AttendanceSheetService
                 $from->copy()->startOfDay(),
                 $to->copy()->endOfDay(),
             ])
-            ->orderBy('punched_at')
+            // Do not orderBy punched_at here: chunkById paginates on id, and an
+            // extra time order skips rows (many staff end up with 0 attendance).
             ->chunkById(1000, function ($logs) use (&$index, $timezone) {
                 foreach ($logs as $log) {
                     $dateKey = $log->punched_at->timezone($timezone)->toDateString();
                     $index[$log->device_user_id][$dateKey][] = $log;
                 }
             });
+
+        foreach ($index as $staffId => $dates) {
+            foreach ($dates as $dateKey => $logs) {
+                usort(
+                    $index[$staffId][$dateKey],
+                    fn (ZktAttendanceLog $a, ZktAttendanceLog $b) => $a->punched_at <=> $b->punched_at,
+                );
+            }
+        }
 
         return $index;
     }
@@ -266,7 +276,8 @@ class AttendanceSheetService
                 $from->copy()->startOfDay(),
                 $to->copy()->endOfDay(),
             ])
-            ->orderBy('punched_at')
+            // Do not orderBy punched_at here: chunkById paginates on id, and an
+            // extra time order skips rows.
             ->chunkById(1000, function ($logs) use (&$index, $timezone) {
                 foreach ($logs as $log) {
                     $dateKey = $log->punched_at->timezone($timezone)->toDateString();
